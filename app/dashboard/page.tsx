@@ -64,7 +64,7 @@ export default async function DashboardPage() {
       {ordersError || paymentsError ? (
         <div className="vh-status vh-status--error" style={{ marginTop: "2rem" }}>
           Supabase commerce tables are not set up yet. Run `supabase/schema.sql` in the Supabase SQL Editor, then
-          refresh and try again.
+          refresh and try again. 
         </div>
       ) : null}
 
