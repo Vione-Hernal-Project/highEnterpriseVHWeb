@@ -49,6 +49,16 @@ textarea {
   cursor: pointer;
 }
 
+.vh-header-auth-links {
+  display: inline-flex;
+  align-items: center;
+}
+
+.global-header__tertiary-nav .vh-auth-link[href="/dashboard"] {
+  display: inline-block;
+  margin-inline-end: 0.875rem;
+}
+
 .vh-wallet-status {
   display: grid;
   gap: 0.35rem;
