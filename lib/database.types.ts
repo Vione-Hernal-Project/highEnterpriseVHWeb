@@ -105,6 +105,93 @@ export type Database = {
         };
         Relationships: [];
       };
+      fund_allocation_rules: {
+        Row: {
+          id: string;
+          code: string;
+          name: string;
+          description: string | null;
+          color: string;
+          percentage_basis_points: number;
+          display_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          code: string;
+          name: string;
+          description?: string | null;
+          color?: string;
+          percentage_basis_points: number;
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          code?: string;
+          name?: string;
+          description?: string | null;
+          color?: string;
+          percentage_basis_points?: number;
+          display_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      payment_allocations: {
+        Row: {
+          id: string;
+          payment_id: string;
+          allocation_rule_id: string | null;
+          allocation_code: string;
+          allocation_name: string;
+          allocation_description: string | null;
+          allocation_color: string;
+          percentage_basis_points: number;
+          base_amount: string;
+          currency: string;
+          allocated_amount: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          payment_id: string;
+          allocation_rule_id?: string | null;
+          allocation_code: string;
+          allocation_name: string;
+          allocation_description?: string | null;
+          allocation_color?: string;
+          percentage_basis_points: number;
+          base_amount?: string;
+          currency: string;
+          allocated_amount?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          payment_id?: string;
+          allocation_rule_id?: string | null;
+          allocation_code?: string;
+          allocation_name?: string;
+          allocation_description?: string | null;
+          allocation_color?: string;
+          percentage_basis_points?: number;
+          base_amount?: string;
+          currency?: string;
+          allocated_amount?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       payments: {
         Row: {
           id: string;

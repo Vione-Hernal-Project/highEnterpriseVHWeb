@@ -76,6 +76,11 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
                 <Link href="/dashboard">Dashboard</Link>
               </li>
               {isManagementUser ? (
+                <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
+                  <Link href="/admin/ledger">Ledger</Link>
+                </li>
+              ) : null}
+              {isManagementUser ? (
                 <li className="global-header__secondary-nav-list-item">
                   <Link href="/admin">Admin</Link>
                 </li>

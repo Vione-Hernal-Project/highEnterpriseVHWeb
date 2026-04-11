@@ -41,16 +41,33 @@ export default async function AdminPage() {
         <h1 className="vh-mvp-title">Orders, payments, and customer access controls.</h1>
         <p className="vh-mvp-copy">
           This area is protected on the server. Effective role: {role}. Use it to review orders, inspect Sepolia
-          payment records, adjust order status when needed, and manage admin access.
+          payment records, inspect the live allocation ledger, adjust order status when needed, and manage admin access.
         </p>
         {adminError ? <div className="vh-status vh-status--error">{adminError}</div> : null}
         <div className="vh-actions">
+          <Link className="vh-button" href="/admin/ledger">
+            Open Allocation Ledger
+          </Link>
           <Link className="vh-button vh-button--ghost" href="/dashboard">
             Back To Dashboard
           </Link>
           <LogoutButton />
         </div>
       </div>
+
+      <section className="vh-data-card" style={{ marginTop: "2rem" }}>
+        <p className="vh-mvp-eyebrow">Live Monitoring</p>
+        <h2 className="h3 u-margin-b--sm">Fund allocation now has its own admin dashboard.</h2>
+        <p className="vh-mvp-copy" style={{ marginTop: 0 }}>
+          Open the allocation ledger to watch successful payments stream in, inspect source-of-funds metadata, review
+          the live payment-distribution split, and keep the VHL token-allocation framework visible in the same view.
+        </p>
+        <div className="vh-actions">
+          <Link className="vh-button vh-button--ghost" href="/admin/ledger">
+            Go To Ledger
+          </Link>
+        </div>
+      </section>
 
       <div className="vh-admin-columns" style={{ marginTop: "2rem" }}>
         <section className="vh-data-card">
