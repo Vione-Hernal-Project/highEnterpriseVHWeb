@@ -29,24 +29,24 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
             <li className="global-header__tertiary-nav-list-item u-margin-r--xxl">
               <WalletStatus />
             </li>
-            <li className="global-header__tertiary-nav-list-item">
-              {signedIn ? (
-                <Link className="vh-auth-link" href="/dashboard">
-                  Account
-                </Link>
-              ) : (
+            {signedIn ? (
+              <li className="global-header__tertiary-nav-list-item">
+                <div className="vh-header-auth-links">
+                  <Link className="vh-auth-link" href="/dashboard">
+                    Account
+                  </Link>
+                  <LogoutButton redirectTo="/" variant="link">
+                    Log Out
+                  </LogoutButton>
+                </div>
+              </li>
+            ) : (
+              <li className="global-header__tertiary-nav-list-item">
                 <Link className="vh-auth-link" href="/sign-in">
                   Sign In
                 </Link>
-              )}
-            </li>
-            {signedIn ? (
-              <li className="global-header__tertiary-nav-list-item">
-                <LogoutButton redirectTo="/" variant="link">
-                  Log Out
-                </LogoutButton>
               </li>
-            ) : null}
+            )}
           </ul>
         </div>
       </nav>
