@@ -32,6 +32,30 @@ type VerificationResult =
       message: string;
     };
 
+type TransferVerificationResult =
+  | {
+      status: "paid";
+      amountReceived: string;
+      walletAddress: string;
+      recipientAddress: string;
+      txHash: string;
+      message: string;
+    }
+  | {
+      status: "pending";
+      txHash: string;
+      walletAddress: string;
+      recipientAddress: string;
+      message: string;
+    }
+  | {
+      status: "invalid";
+      txHash: string;
+      walletAddress: string;
+      recipientAddress: string;
+      message: string;
+    };
+
 const transferInterface = new Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
 
 let sepoliaProvider: JsonRpcProvider | undefined;
@@ -65,6 +89,179 @@ function normalizeAddress(address: string, fallbackMessage: string) {
   }
 
   return getAddress(address);
+}
+
+export async function verifySepoliaTransfer(input: {
+  paymentMethod: string;
+  txHash: string;
+  walletAddress?: string | null;
+  expectedSenderAddress: string;
+  expectedRecipientAddress: string;
+  expectedAmount: string | number;
+  expectedChainId?: number | null;
+}): Promise<TransferVerificationResult> {
+  const normalizedExpectedAmount = normalizePaymentAmount(input.expectedAmount);
+  const config = getPaymentMethodConfig(input.paymentMethod);
+  const setupError = getPaymentMethodSetupError(input.paymentMethod);
+
+  if (!config || setupError) {
+    throw new Error(setupError || "Unsupported payment method.");
+  }
+
+  const provider = getSepoliaProvider();
+  const senderAddress = normalizeAddress(input.expectedSenderAddress, "Merchant wallet address is invalid.");
+  const recipientAddress = normalizeAddress(input.expectedRecipientAddress, "Destination wallet address is invalid.");
+  const txHash = input.txHash.trim();
+  const transaction = await provider.getTransaction(txHash);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  const submittedWallet = normalizeAddress(
+    input.walletAddress || transaction?.from || "",
+    "A valid merchant wallet address is required to verify this cash-out.",
+  );
+
+  logPaymentDebug("cash-out-verify-fetch", {
+    txHash,
+    paymentMethod: input.paymentMethod,
+    expectedSenderAddress: senderAddress,
+    expectedRecipientAddress: recipientAddress,
+    expectedChainId: input.expectedChainId ?? null,
+    connectedWalletAddress: submittedWallet,
+    amountExpected: normalizedExpectedAmount,
+  });
+
+  if (!transaction || !receipt) {
+    return {
+      status: "pending",
+      txHash,
+      walletAddress: submittedWallet,
+      recipientAddress,
+      message: "Transaction submitted. Waiting for Sepolia confirmation.",
+    };
+  }
+
+  if (receipt.status !== 1) {
+    return {
+      status: "invalid",
+      txHash,
+      walletAddress: submittedWallet,
+      recipientAddress,
+      message: "The merchant wallet transaction did not complete successfully on Sepolia.",
+    };
+  }
+
+  if (input.expectedChainId && transaction.chainId && Number(transaction.chainId) !== input.expectedChainId) {
+    return {
+      status: "invalid",
+      txHash,
+      walletAddress: submittedWallet,
+      recipientAddress,
+      message: "This cash-out was not submitted on the expected Sepolia chain.",
+    };
+  }
+
+  if (normalizeAddress(transaction.from, "Transaction sender is invalid.") !== senderAddress) {
+    return {
+      status: "invalid",
+      txHash,
+      walletAddress: submittedWallet,
+      recipientAddress,
+      message: "This cash-out transaction was not sent from the configured merchant wallet.",
+    };
+  }
+
+  if (config.kind === "native") {
+    const expectedAmount = parseUnits(normalizedExpectedAmount, config.decimals);
+    const txRecipient = transaction.to ? normalizeAddress(transaction.to, "Transaction recipient is invalid.") : null;
+
+    if (txRecipient !== recipientAddress) {
+      return {
+        status: "invalid",
+        txHash,
+        walletAddress: submittedWallet,
+        recipientAddress,
+        message: "This Sepolia ETH cash-out was not sent to the selected destination wallet.",
+      };
+    }
+
+    if ((transaction.value ?? 0n) < expectedAmount) {
+      return {
+        status: "invalid",
+        txHash,
+        walletAddress: submittedWallet,
+        recipientAddress,
+        message: `The cash-out transaction did not send enough ${config.label}.`,
+      };
+    }
+
+    return {
+      status: "paid",
+      txHash,
+      walletAddress: submittedWallet,
+      recipientAddress,
+      amountReceived: formatUnits(transaction.value, config.decimals),
+      message: `${config.label} cash-out confirmed on Sepolia.`,
+    };
+  }
+
+  const tokenAddress = normalizeAddress(
+    config.tokenAddress || "",
+    `${config.label} token address is invalid. Update NEXT_PUBLIC_${config.label}_TOKEN_ADDRESS in .env.local.`,
+  );
+  const tokenContract = new Contract(tokenAddress, ERC20_PAYMENT_ABI, provider);
+  const decimals = Number((await tokenContract.decimals().catch(() => config.decimals)) ?? config.decimals);
+  const expectedAmount = parseUnits(normalizedExpectedAmount, decimals);
+  const normalizedTokenAddress = tokenAddress.toLowerCase();
+  const matchingTransfers = receipt.logs
+    .filter((log) => log.address.toLowerCase() === normalizedTokenAddress)
+    .map((log) => {
+      try {
+        return transferInterface.parseLog(log);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .filter((log) => {
+      const from = getAddress(log!.args.from);
+      const to = getAddress(log!.args.to);
+
+      return from === senderAddress && to === recipientAddress;
+    });
+
+  if (!matchingTransfers.length) {
+    return {
+      status: "invalid",
+      txHash,
+      walletAddress: submittedWallet,
+      recipientAddress,
+      message: `No ${getPaymentMethodLabel(input.paymentMethod)} transfer to the destination wallet was found in this Sepolia transaction.`,
+    };
+  }
+
+  const transferredValue = matchingTransfers.reduce((highest, log) => {
+    const nextValue = log!.args.value as bigint;
+
+    return nextValue > highest ? nextValue : highest;
+  }, 0n);
+
+  if (transferredValue < expectedAmount) {
+    return {
+      status: "invalid",
+      txHash,
+      walletAddress: submittedWallet,
+      recipientAddress,
+      message: `The cash-out transaction did not send enough ${config.label}.`,
+    };
+  }
+
+  return {
+    status: "paid",
+    txHash,
+    walletAddress: submittedWallet,
+    recipientAddress,
+    amountReceived: formatUnits(transferredValue, decimals),
+    message: `${config.label} cash-out confirmed on Sepolia.`,
+  };
 }
 
 export async function verifySepoliaPayment(input: {

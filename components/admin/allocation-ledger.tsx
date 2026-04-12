@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Activity, History, Layers3, MoveRight, RefreshCw, ShieldCheck, Sparkles, Wallet } from "lucide-react";
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
+import { LedgerCashOutPanel } from "@/components/admin/ledger-cash-out-panel";
 import { getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatDateTime } from "@/lib/utils";
@@ -104,6 +105,14 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
   const [lastSyncedAt, setLastSyncedAt] = useState(initialSnapshot.generatedAt);
   const [selectedPaymentId, setSelectedPaymentId] = useState(initialSnapshot.latestPayments[0]?.id ?? "");
 
+  const applySnapshotUpdate = useEffectEvent((nextSnapshot: AllocationLedgerSnapshot) => {
+    startTransition(() => {
+      setSnapshot(nextSnapshot);
+      setLastSyncedAt(nextSnapshot.generatedAt);
+      setError("");
+    });
+  });
+
   const refreshSnapshot = useEffectEvent(async () => {
     setRefreshing(true);
 
@@ -119,11 +128,7 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
 
       const nextSnapshot = payload.snapshot;
 
-      startTransition(() => {
-        setSnapshot(nextSnapshot);
-        setLastSyncedAt(nextSnapshot.generatedAt);
-        setError("");
-      });
+      applySnapshotUpdate(nextSnapshot);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "Unable to refresh the allocation ledger.");
     } finally {
@@ -153,6 +158,8 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, queueRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "payment_allocations" }, queueRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "fund_allocation_rules" }, queueRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "admin_cash_outs" }, queueRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "admin_cash_out_breakdowns" }, queueRefresh)
       .subscribe();
 
     return () => {
@@ -248,9 +255,13 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
             <div className="vh-ledger-stat-card__icon">
               <ShieldCheck size={18} />
             </div>
-            <p className="vh-ledger-stat-card__label">Access Scope</p>
-            <span className="vh-ledger-stat-card__value">{role}</span>
-            <p className="vh-ledger-stat-card__meta">{snapshot.summary.activeSources} live source buckets</p>
+            <p className="vh-ledger-stat-card__label">Withdrawable Balance</p>
+            <span className="vh-ledger-stat-card__value">
+              {formatLedgerCurrency(snapshot.cashOut.withdrawableAmount, snapshot.cashOut.primaryCurrency)}
+            </span>
+            <p className="vh-ledger-stat-card__meta">
+              {role} access · {snapshot.summary.activeSources} live source buckets
+            </p>
           </article>
         </div>
 
@@ -478,6 +489,8 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
         </section>
 
         <div className="vh-ledger-side-grid">
+          <LedgerCashOutPanel snapshot={snapshot} onSnapshotUpdate={applySnapshotUpdate} />
+
           <section className="vh-ledger-panel">
             <div className="vh-ledger-panel__header">
               <div>

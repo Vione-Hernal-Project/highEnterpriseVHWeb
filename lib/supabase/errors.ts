@@ -9,7 +9,7 @@ export function getSupabaseTableErrorMessage(error: unknown, fallback: string) {
     return "Your Supabase payments schema is out of date. Re-run supabase/schema.sql in the Supabase SQL Editor so the new recipient_address and chain_id columns are added, then refresh and try again.";
   }
 
-  if (/schema cache/i.test(message) || /relation .* does not exist/i.test(message)) {
+  if (/schema cache/i.test(message) || /relation .* does not exist/i.test(message) || /function .* does not exist/i.test(message) || /could not find the function/i.test(message)) {
     return "Supabase commerce tables are not set up yet. Run supabase/schema.sql in the Supabase SQL Editor, then refresh and try again.";
   }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { rebuildPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -94,6 +95,8 @@ export async function PATCH(request: Request) {
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
+
+      await rebuildPaymentAllocations(payment.id);
     }
 
     return NextResponse.json({ order: updatedOrder });

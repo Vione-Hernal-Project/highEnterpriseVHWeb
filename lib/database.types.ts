@@ -192,6 +192,120 @@ export type Database = {
         };
         Relationships: [];
       };
+      admin_cash_outs: {
+        Row: {
+          id: string;
+          request_id: string;
+          created_by: string;
+          payment_method: string;
+          chain_id: number;
+          source_mode: string;
+          source_allocation_code: string | null;
+          source_allocation_name: string | null;
+          amount: string;
+          amount_input_mode: string;
+          amount_php_equivalent: string | null;
+          quote_php_per_eth: string | null;
+          quote_source: string | null;
+          quote_updated_at: string | null;
+          sender_wallet_address: string;
+          destination_wallet_address: string;
+          tx_hash: string;
+          available_before: string;
+          available_after: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          request_id: string;
+          created_by: string;
+          payment_method: string;
+          chain_id?: number;
+          source_mode?: string;
+          source_allocation_code?: string | null;
+          source_allocation_name?: string | null;
+          amount: string;
+          amount_input_mode?: string;
+          amount_php_equivalent?: string | null;
+          quote_php_per_eth?: string | null;
+          quote_source?: string | null;
+          quote_updated_at?: string | null;
+          sender_wallet_address: string;
+          destination_wallet_address: string;
+          tx_hash: string;
+          available_before?: string;
+          available_after?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          request_id?: string;
+          created_by?: string;
+          payment_method?: string;
+          chain_id?: number;
+          source_mode?: string;
+          source_allocation_code?: string | null;
+          source_allocation_name?: string | null;
+          amount?: string;
+          amount_input_mode?: string;
+          amount_php_equivalent?: string | null;
+          quote_php_per_eth?: string | null;
+          quote_source?: string | null;
+          quote_updated_at?: string | null;
+          sender_wallet_address?: string;
+          destination_wallet_address?: string;
+          tx_hash?: string;
+          available_before?: string;
+          available_after?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      admin_cash_out_breakdowns: {
+        Row: {
+          id: string;
+          cash_out_id: string;
+          allocation_rule_id: string | null;
+          allocation_code: string;
+          allocation_name: string;
+          allocation_color: string;
+          amount: string;
+          available_before: string;
+          available_after: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          cash_out_id: string;
+          allocation_rule_id?: string | null;
+          allocation_code: string;
+          allocation_name: string;
+          allocation_color?: string;
+          amount?: string;
+          available_before?: string;
+          available_after?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          cash_out_id?: string;
+          allocation_rule_id?: string | null;
+          allocation_code?: string;
+          allocation_name?: string;
+          allocation_color?: string;
+          amount?: string;
+          available_before?: string;
+          available_after?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       payments: {
         Row: {
           id: string;
@@ -257,7 +371,34 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      rebuild_payment_allocations: {
+        Args: {
+          target_payment_id: string;
+        };
+        Returns: undefined;
+      };
+      record_admin_cash_out_transfer: {
+        Args: {
+          p_amount: string;
+          p_payment_method: string;
+          p_request_id: string;
+          p_created_by: string;
+          p_chain_id: number;
+          p_source_mode: string;
+          p_source_allocation_code?: string | null;
+          p_amount_input_mode?: string;
+          p_amount_php_equivalent?: string | null;
+          p_quote_php_per_eth?: string | null;
+          p_quote_source?: string | null;
+          p_quote_updated_at?: string | null;
+          p_sender_wallet_address: string;
+          p_destination_wallet_address: string;
+          p_tx_hash: string;
+        };
+        Returns: Json;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
