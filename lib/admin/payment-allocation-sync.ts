@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getPaymentMethodConfig } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseTableErrorMessage } from "@/lib/supabase/errors";
 
@@ -26,7 +27,7 @@ async function loadPaidPaymentIds() {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
     .from("payments")
-    .select("id, updated_at")
+    .select("id, payment_method, updated_at")
     .eq("status", "paid")
     .order("updated_at", { ascending: true });
 
@@ -34,7 +35,9 @@ async function loadPaidPaymentIds() {
     throw new Error(getAllocationSyncErrorMessage(error.message, "Unable to load paid payments for the ledger rebuild."));
   }
 
-  return (data || []).map((payment) => payment.id);
+  return (data || [])
+    .filter((payment) => Boolean(getPaymentMethodConfig(payment.payment_method)))
+    .map((payment) => payment.id);
 }
 
 async function loadPaymentAllocationCounts(paymentIds: string[]) {
@@ -58,6 +61,17 @@ async function loadPaymentAllocationCounts(paymentIds: string[]) {
   return counts;
 }
 
+async function paymentHasAllocationRows(paymentId: string) {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.from("payment_allocations").select("id").eq("payment_id", paymentId).limit(1);
+
+  if (error) {
+    throw new Error(getAllocationSyncErrorMessage(error.message, "Unable to inspect the existing allocation rows."));
+  }
+
+  return Boolean(data?.length);
+}
+
 export async function rebuildPaymentAllocations(paymentId: string) {
   const admin = createSupabaseAdminClient();
   const { error } = await admin.rpc("rebuild_payment_allocations", {
@@ -67,6 +81,31 @@ export async function rebuildPaymentAllocations(paymentId: string) {
   if (error) {
     throw new Error(getAllocationSyncErrorMessage(error.message, "Unable to rebuild payment allocation rows."));
   }
+}
+
+export async function ensureConfirmedOnChainPaymentAllocations(paymentId: string) {
+  const admin = createSupabaseAdminClient();
+  const { data: payment, error } = await admin
+    .from("payments")
+    .select("id, payment_method, status")
+    .eq("id", paymentId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(getAllocationSyncErrorMessage(error.message, "Unable to load the confirmed payment for allocation sync."));
+  }
+
+  if (!payment || payment.status !== "paid" || !getPaymentMethodConfig(payment.payment_method)) {
+    return false;
+  }
+
+  if (await paymentHasAllocationRows(payment.id)) {
+    return false;
+  }
+
+  await rebuildPaymentAllocations(payment.id);
+
+  return true;
 }
 
 export async function rebuildPaymentAllocationBackfill(

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { rebuildPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
+import { ensureConfirmedOnChainPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
@@ -45,6 +45,8 @@ export async function POST(request: Request) {
     }
 
     if (payment.status === "paid") {
+      await ensureConfirmedOnChainPaymentAllocations(payment.id);
+
       return NextResponse.json({
         verificationStatus: "paid",
         message: "This payment is already confirmed.",
@@ -213,7 +215,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: updateOrderError?.message || "Unable to update order." }, { status: 500 });
     }
 
-    await rebuildPaymentAllocations(updatedPayment.id);
+    await ensureConfirmedOnChainPaymentAllocations(updatedPayment.id);
 
     return NextResponse.json({
       verificationStatus: "paid",
