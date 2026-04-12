@@ -140,6 +140,10 @@ export type AllocationLedgerSnapshot = {
     percentageLabel: string;
     totalAllocated: number;
     totalAllocatedLabel: string;
+    totalCashedOut: number;
+    totalCashedOutLabel: string;
+    withdrawableAmount: number;
+    withdrawableAmountLabel: string;
     paymentCount: number;
     shareOfTotal: number;
     subAllocations: SnapshotBreakdownItem[];

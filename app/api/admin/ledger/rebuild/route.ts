@@ -28,17 +28,32 @@ export async function POST(request: Request) {
     const mode = resolveBackfillMode(body?.mode);
     const result = await rebuildPaymentAllocationBackfill(mode);
     const snapshot = await loadAllocationLedgerSnapshot();
+    const remainingMissingCount = snapshot.cashOut.missingAllocationPaymentCount;
     const message =
       result.rebuiltPaymentsCount > 0
-        ? `Ledger rebuild complete. Rebuilt ${result.rebuiltPaymentsCount} paid payment allocation set${
-            result.rebuiltPaymentsCount === 1 ? "" : "s"
-          }.`
-        : "Ledger rebuild complete. No missing allocation rows were found.";
+        ? remainingMissingCount === 0
+          ? `Ledger rebuild complete. Rebuilt ${result.rebuiltPaymentsCount} confirmed on-chain payment allocation set${
+              result.rebuiltPaymentsCount === 1 ? "" : "s"
+            }. Cash-out balances now include the rebuilt allocations.`
+          : `Ledger rebuild complete. Rebuilt ${result.rebuiltPaymentsCount} confirmed on-chain payment allocation set${
+              result.rebuiltPaymentsCount === 1 ? "" : "s"
+            }, but ${remainingMissingCount} confirmed on-chain payment${
+              remainingMissingCount === 1 ? "" : "s"
+            } still need allocation rows.`
+        : remainingMissingCount === 0
+          ? "Ledger rebuild complete. No missing confirmed on-chain allocation rows were found."
+          : `Ledger rebuild finished, but ${remainingMissingCount} confirmed on-chain payment${
+              remainingMissingCount === 1 ? "" : "s"
+            } still need allocation rows.`;
 
     return NextResponse.json({
       message,
       result,
       snapshot,
+      validation: {
+        missingAllocationPaymentCount: remainingMissingCount,
+        cashOutBalancesIncludeRebuiltAllocations: remainingMissingCount === 0,
+      },
     });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error, "Unable to rebuild the allocation ledger right now.") }, { status: 500 });

@@ -453,7 +453,7 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
                       </div>
                     </div>
                     <div className="vh-ledger-breakdown-row__totals">
-                      <AnimatedAmount amount={category.totalAllocated} currency={snapshot.summary.primaryCurrency} />
+                      <AnimatedAmount amount={category.withdrawableAmount} currency={snapshot.summary.primaryCurrency} />
                       <span>{category.percentageLabel}</span>
                     </div>
                   </div>
@@ -461,7 +461,7 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
                     <span
                       className="vh-ledger-breakdown-row__fill"
                       style={{
-                        width: `${Math.max(8, category.shareOfTotal)}%`,
+                        width: `${category.withdrawableAmount > 0 ? Math.max(8, category.shareOfTotal) : 0}%`,
                         backgroundColor: category.color,
                       }}
                     />

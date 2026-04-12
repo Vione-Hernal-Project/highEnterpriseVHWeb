@@ -24,7 +24,7 @@ import {
   type PaymentRow,
 } from "@/lib/fund-allocation";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
-import { getPaymentMethodConfig, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
+import { PAYMENT_METHOD_VALUES, getPaymentMethodConfig, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
 import { getSupabaseTableErrorMessage } from "@/lib/supabase/errors";
 
 type BucketMeta = {
@@ -90,6 +90,46 @@ function resolveCashOutSourceLabel(cashOut: AdminCashOutRow, breakdowns: AdminCa
   }
 
   return "All Buckets / Proportional";
+}
+
+function resolveCashOutPaymentMethod(cashOut: AdminCashOutRow) {
+  const directPaymentMethod = normalizeLookupKey(cashOut.payment_method);
+
+  if (getPaymentMethodConfig(directPaymentMethod)) {
+    return directPaymentMethod as PaymentMethod;
+  }
+
+  const legacyCurrency = normalizeLookupKey((cashOut as AdminCashOutRow & { currency?: string | null }).currency);
+
+  for (const paymentMethod of PAYMENT_METHOD_VALUES) {
+    if (legacyCurrency === paymentMethod || legacyCurrency === normalizeLookupKey(getPaymentMethodLabel(paymentMethod))) {
+      return paymentMethod;
+    }
+  }
+
+  return null;
+}
+
+function resolveCashOutCurrencyLabel(cashOut: AdminCashOutRow, paymentMethod: PaymentMethod) {
+  const legacyCurrency = (cashOut as AdminCashOutRow & { currency?: string | null }).currency?.trim().toUpperCase();
+
+  return legacyCurrency || getPaymentMethodLabel(paymentMethod).toUpperCase();
+}
+
+function resolveCashOutStringField<K extends string>(cashOut: AdminCashOutRow, key: K) {
+  const value = (cashOut as AdminCashOutRow & Record<K, string | null | undefined>)[key];
+
+  return typeof value === "string" ? value : null;
+}
+
+function addAmount(target: Map<string, number>, code: string | null | undefined, amount: number) {
+  const normalizedCode = normalizeLookupKey(code);
+
+  if (!normalizedCode || !Number.isFinite(amount) || amount <= 0) {
+    return;
+  }
+
+  target.set(normalizedCode, roundAmount((target.get(normalizedCode) || 0) + amount));
 }
 
 export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSnapshot> {
@@ -165,6 +205,8 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
   const cashOutBreakdownsByCashOutId = new Map<string, AdminCashOutBreakdownRow[]>();
   const bucketMetaByCode = new Map<string, BucketMeta>();
   const currencyTotals = new Map<string, number>();
+  const grossAllocatedByCode = new Map<string, number>();
+  const displayCashedOutByCode = new Map<string, number>();
   const sourceTotals = new Map<
     string,
     {
@@ -204,6 +246,7 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
 
     current.push(allocation);
     allocationsByPayment.set(allocation.payment_id, current);
+    addAmount(grossAllocatedByCode, allocation.allocation_code, toNumber(allocation.allocated_amount));
 
     if (!bucketMetaByCode.has(allocation.allocation_code)) {
       bucketMetaByCode.set(allocation.allocation_code, {
@@ -217,7 +260,7 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
   }
 
   for (const cashOut of cashOuts) {
-    const paymentMethod = normalizeLookupKey(cashOut.payment_method);
+    const paymentMethod = resolveCashOutPaymentMethod(cashOut);
 
     if (!paymentMethod) {
       continue;
@@ -258,9 +301,15 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
     }
 
     if (cashOut && allocationCode) {
+      const paymentMethod = resolveCashOutPaymentMethod(cashOut);
+
+      if (!paymentMethod) {
+        continue;
+      }
+
       addNestedAmount(
         assetBucketCashedOutByMethod,
-        cashOut.payment_method,
+        paymentMethod,
         allocationCode,
         toNumber(breakdown.amount),
       );
@@ -339,6 +388,48 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
   const primaryCurrency = currencySummary[0]?.currency || "PHP";
   const totalReceived = currencySummary[0]?.amount || 0;
   const totalReceivedLabel = currencySummary[0]?.label || formatLedgerCurrency(0, primaryCurrency);
+
+  for (const cashOut of cashOuts) {
+    const resolvedPaymentMethod = resolveCashOutPaymentMethod(cashOut);
+    const cashOutCurrency = resolveCashOutStringField(cashOut, "currency")?.trim().toUpperCase() || null;
+    const breakdowns = cashOutBreakdownsByCashOutId.get(cashOut.id) || [];
+    const totalBreakdownAmount = roundAmount(
+      breakdowns.reduce((total, breakdown) => total + toNumber(breakdown.amount), 0),
+    );
+    const directDisplayAmount =
+      cashOut.amount_php_equivalent != null
+        ? toNumber(cashOut.amount_php_equivalent)
+        : cashOutCurrency === primaryCurrency
+          ? toNumber(cashOut.amount)
+          : null;
+
+    for (const breakdown of breakdowns) {
+      const breakdownAmount = toNumber(breakdown.amount);
+
+      if (breakdownAmount <= 0) {
+        continue;
+      }
+
+      if (directDisplayAmount != null && totalBreakdownAmount > 0) {
+        addAmount(displayCashedOutByCode, breakdown.allocation_code, (directDisplayAmount * breakdownAmount) / totalBreakdownAmount);
+        continue;
+      }
+
+      if (!resolvedPaymentMethod) {
+        continue;
+      }
+
+      const grossDisplayAmount = grossAllocatedByCode.get(normalizeLookupKey(breakdown.allocation_code)) || 0;
+      const grossAssetAmount = getNestedAmount(assetBucketGrossByMethod, resolvedPaymentMethod, breakdown.allocation_code);
+
+      if (grossDisplayAmount <= 0 || grossAssetAmount <= 0) {
+        continue;
+      }
+
+      addAmount(displayCashedOutByCode, breakdown.allocation_code, (grossDisplayAmount * breakdownAmount) / grossAssetAmount);
+    }
+  }
+
   const sortedBucketMeta = [...bucketMetaByCode.values()].sort(
     (left, right) => left.displayOrder - right.displayOrder || left.name.localeCompare(right.name),
   );
@@ -393,13 +484,13 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
   const recentCashOuts = cashOuts
     .slice(0, 8)
     .flatMap((cashOut) => {
-      const paymentMethod = normalizeLookupKey(cashOut.payment_method) as PaymentMethod;
+      const resolvedPaymentMethod = resolveCashOutPaymentMethod(cashOut);
 
-      if (!getPaymentMethodConfig(paymentMethod)) {
+      if (!resolvedPaymentMethod || !getPaymentMethodConfig(resolvedPaymentMethod)) {
         return [];
       }
 
-      const currency = getPaymentMethodLabel(paymentMethod).toUpperCase();
+      const currency = resolveCashOutCurrencyLabel(cashOut, resolvedPaymentMethod);
       const actor = cashOutProfileById.get(cashOut.created_by);
       const breakdowns = (cashOutBreakdownsByCashOutId.get(cashOut.id) || [])
         .slice()
@@ -421,11 +512,19 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
           availableAfter: toNumber(breakdown.available_after),
           availableAfterLabel: formatLedgerCurrency(breakdown.available_after, currency),
         }));
+      const bucketBreakdown =
+        normalizeLookupKey(cashOut.source_mode) === "bucket"
+          ? breakdowns.find((breakdown) => normalizeLookupKey(breakdown.code) === normalizeLookupKey(cashOut.source_allocation_code)) ||
+            breakdowns[0] ||
+            null
+          : null;
+      const availableBefore = bucketBreakdown?.availableBefore ?? toNumber(cashOut.available_before);
+      const availableAfter = bucketBreakdown?.availableAfter ?? toNumber(cashOut.available_after);
 
       return [
         {
           id: cashOut.id,
-          paymentMethod,
+          paymentMethod: resolvedPaymentMethod,
           currency,
           chainId: cashOut.chain_id ?? null,
           sourceMode: cashOut.source_mode || "proportional",
@@ -445,13 +544,13 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
               : `${formatLedgerCurrency(cashOut.quote_php_per_eth, "PHP")} / ETH`,
           quoteSource: cashOut.quote_source || null,
           quoteUpdatedAt: cashOut.quote_updated_at || null,
-          senderWalletAddress: cashOut.sender_wallet_address,
-          destinationWalletAddress: cashOut.destination_wallet_address,
-          txHash: cashOut.tx_hash,
-          availableBefore: toNumber(cashOut.available_before),
-          availableBeforeLabel: formatLedgerCurrency(cashOut.available_before, currency),
-          availableAfter: toNumber(cashOut.available_after),
-          availableAfterLabel: formatLedgerCurrency(cashOut.available_after, currency),
+          senderWalletAddress: resolveCashOutStringField(cashOut, "sender_wallet_address") || "",
+          destinationWalletAddress: resolveCashOutStringField(cashOut, "destination_wallet_address") || "",
+          txHash: resolveCashOutStringField(cashOut, "tx_hash") || "",
+          availableBefore,
+          availableBeforeLabel: formatLedgerCurrency(availableBefore, currency),
+          availableAfter,
+          availableAfterLabel: formatLedgerCurrency(availableAfter, currency),
           createdAt: cashOut.created_at,
           createdByEmail: actor?.email || null,
           breakdowns,
@@ -466,8 +565,10 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
       (allocation) => allocation.allocation_rule_id === rule.id || allocation.allocation_code === rule.code,
     );
     const totalAllocated = matchingAllocations.reduce((total, allocation) => total + toNumber(allocation.allocated_amount), 0);
+    const totalCashedOut = Math.min(totalAllocated, displayCashedOutByCode.get(normalizeLookupKey(rule.code)) || 0);
+    const withdrawableAmount = roundAmount(Math.max(0, totalAllocated - totalCashedOut), 2);
     const subAllocations = categoryFramework?.subAllocations
-      ? buildSegmentBreakdown(totalAllocated, primaryCurrency, categoryFramework.subAllocations)
+      ? buildSegmentBreakdown(withdrawableAmount, primaryCurrency, categoryFramework.subAllocations)
       : [];
 
     return {
@@ -481,8 +582,12 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
       percentageLabel: formatPercentageBasisPoints(rule.percentage_basis_points),
       totalAllocated,
       totalAllocatedLabel: formatLedgerCurrency(totalAllocated, primaryCurrency),
+      totalCashedOut,
+      totalCashedOutLabel: formatLedgerCurrency(totalCashedOut, primaryCurrency),
+      withdrawableAmount,
+      withdrawableAmountLabel: formatLedgerCurrency(withdrawableAmount, primaryCurrency),
       paymentCount: matchingAllocations.length,
-      shareOfTotal: totalReceived > 0 ? Math.min(100, (totalAllocated / totalReceived) * 100) : 0,
+      shareOfTotal: totalReceived > 0 ? Math.min(100, (withdrawableAmount / totalReceived) * 100) : 0,
       subAllocations,
     };
   });
