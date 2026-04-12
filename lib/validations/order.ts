@@ -102,3 +102,149 @@ export const profileRoleSchema = z.object({
     }),
   }),
 });
+
+export const adminCashOutSchema = z
+  .object({
+    requestId: z.string().uuid("Request ID is invalid."),
+    paymentMethod: z.enum(PAYMENT_METHOD_VALUES, {
+      errorMap: () => ({
+        message: "Cash-out asset is invalid.",
+      }),
+    }),
+    chainId: z.coerce.number().int().positive("Cash-out chain is invalid."),
+    sourceMode: z.enum(["bucket", "proportional"], {
+      errorMap: () => ({
+        message: "Cash-out source mode is invalid.",
+      }),
+    }),
+    sourceAllocationCode: z
+      .string()
+      .trim()
+      .max(120, "Cash-out source bucket is too long.")
+      .optional()
+      .nullable()
+      .transform((value) => {
+        const normalizedValue = value?.trim().toLowerCase() || "";
+
+        return normalizedValue || null;
+      }),
+    amount: z
+      .union([z.string(), z.number()])
+      .transform((value) => (typeof value === "number" ? value.toString() : value.trim()))
+      .refine((value) => /^\d+(\.\d+)?$/.test(value), "Please enter a valid cash-out amount.")
+      .refine((value) => Number(value) > 0, "Cash-out amount must be greater than zero.")
+      .refine((value) => Number(value) <= 100000000, "Cash-out amount is too large.")
+      .transform((value) => normalizePaymentAmount(value)),
+    amountMode: z.enum(["asset", "eth", "php"], {
+      errorMap: () => ({
+        message: "Cash-out amount mode is invalid.",
+      }),
+    }),
+    amountPhpEquivalent: z
+      .union([z.string(), z.number()])
+      .optional()
+      .nullable()
+      .transform((value) => {
+        if (value === null || value === undefined) {
+          return null;
+        }
+
+        const normalizedValue = typeof value === "number" ? value.toString() : value.trim();
+
+        return normalizedValue ? normalizePaymentAmount(normalizedValue) : null;
+      })
+      .refine((value) => value === null || /^\d+(\.\d+)?$/.test(value), "Cash-out PHP equivalent is invalid.")
+      .refine((value) => value === null || Number(value) > 0, "Cash-out PHP equivalent must be greater than zero.")
+      .refine((value) => value === null || Number(value) <= 1000000000, "Cash-out PHP equivalent is too large."),
+    quotePhpPerEth: z
+      .union([z.string(), z.number()])
+      .optional()
+      .nullable()
+      .transform((value) => {
+        if (value === null || value === undefined) {
+          return null;
+        }
+
+        const normalizedValue = typeof value === "number" ? value.toString() : value.trim();
+
+        return normalizedValue ? normalizePaymentAmount(normalizedValue) : null;
+      })
+      .refine((value) => value === null || /^\d+(\.\d+)?$/.test(value), "ETH/PHP quote is invalid.")
+      .refine((value) => value === null || Number(value) > 0, "ETH/PHP quote must be greater than zero.")
+      .refine((value) => value === null || Number(value) <= 1000000000, "ETH/PHP quote is too large."),
+    quoteSource: z
+      .string()
+      .trim()
+      .max(120, "Quote source is too long.")
+      .optional()
+      .nullable()
+      .transform((value) => value?.trim() || null),
+    quoteUpdatedAt: z
+      .string()
+      .trim()
+      .datetime({ offset: true, message: "Quote update timestamp is invalid." })
+      .optional()
+      .nullable(),
+    senderWalletAddress: z
+      .string()
+      .trim()
+      .regex(/^0x[a-fA-F0-9]{40}$/, "Merchant wallet address must be a valid EVM address."),
+    destinationWalletAddress: z
+      .string()
+      .trim()
+      .regex(/^0x[a-fA-F0-9]{40}$/, "Destination wallet address must be a valid EVM address."),
+    txHash: z.string().trim().regex(/^0x([A-Fa-f0-9]{64})$/, "Transaction hash is invalid."),
+  })
+  .superRefine((value, context) => {
+    if (value.sourceMode === "bucket" && !value.sourceAllocationCode) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cash-out source bucket is required.",
+        path: ["sourceAllocationCode"],
+      });
+    }
+
+    if (value.paymentMethod === "eth") {
+      if (value.amountMode !== "eth" && value.amountMode !== "php") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "ETH cash-out amount mode is invalid.",
+          path: ["amountMode"],
+        });
+      }
+
+      if (!value.quotePhpPerEth) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "ETH/PHP quote is required for ETH cash-outs.",
+          path: ["quotePhpPerEth"],
+        });
+      }
+
+      if (!value.quoteSource) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Quote source is required for ETH cash-outs.",
+          path: ["quoteSource"],
+        });
+      }
+
+      if (!value.amountPhpEquivalent) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Cash-out PHP equivalent is required for ETH cash-outs.",
+          path: ["amountPhpEquivalent"],
+        });
+      }
+
+      return;
+    }
+
+    if (value.amountMode !== "asset") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Only ETH cash-outs support PHP amount mode.",
+        path: ["amountMode"],
+      });
+    }
+  });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { rebuildPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
@@ -211,6 +212,8 @@ export async function POST(request: Request) {
     if (updateOrderError || !updatedOrder) {
       return NextResponse.json({ error: updateOrderError?.message || "Unable to update order." }, { status: 500 });
     }
+
+    await rebuildPaymentAllocations(updatedPayment.id);
 
     return NextResponse.json({
       verificationStatus: "paid",

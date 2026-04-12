@@ -1,9 +1,11 @@
 import type { Database } from "@/lib/database.types";
-import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
+import { formatAmountWithUnit, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
 import { formatTransactionHash, formatWalletAddress } from "@/lib/utils";
 
 export type FundAllocationRuleRow = Database["public"]["Tables"]["fund_allocation_rules"]["Row"];
 export type PaymentAllocationRow = Database["public"]["Tables"]["payment_allocations"]["Row"];
+export type AdminCashOutRow = Database["public"]["Tables"]["admin_cash_outs"]["Row"];
+export type AdminCashOutBreakdownRow = Database["public"]["Tables"]["admin_cash_out_breakdowns"]["Row"];
 export type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 export type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 type BreakdownSegment = {
@@ -42,6 +44,80 @@ export type AllocationLedgerSnapshot = {
     }>;
     activePercentageBasisPoints: number;
     activePercentageLabel: string;
+  };
+  cashOut: {
+    merchantWalletAddress: string | null;
+    primaryPaymentMethod: PaymentMethod | null;
+    primaryCurrency: string;
+    withdrawableAmount: number;
+    withdrawableLabel: string;
+    totalCashedOutAmount: number;
+    totalCashedOutLabel: string;
+    totalEvents: number;
+    latestCashOutAt: string | null;
+    missingAllocationPaymentCount: number;
+    assets: Array<{
+      paymentMethod: PaymentMethod;
+      currency: string;
+      grossAmount: number;
+      grossAmountLabel: string;
+      cashedOutAmount: number;
+      cashedOutAmountLabel: string;
+      withdrawableAmount: number;
+      withdrawableAmountLabel: string;
+      totalEvents: number;
+      latestCashOutAt: string | null;
+      sources: Array<{
+        code: string;
+        name: string;
+        color: string;
+        grossAmount: number;
+        grossAmountLabel: string;
+        cashedOutAmount: number;
+        cashedOutAmountLabel: string;
+        withdrawableAmount: number;
+        withdrawableAmountLabel: string;
+      }>;
+    }>;
+    recentEvents: Array<{
+      id: string;
+      paymentMethod: PaymentMethod;
+      currency: string;
+      chainId: number | null;
+      sourceMode: string;
+      sourceAllocationCode: string | null;
+      sourceLabel: string;
+      amount: number;
+      amountLabel: string;
+      amountInputMode: string;
+      amountPhpEquivalent: number | null;
+      amountPhpEquivalentLabel: string | null;
+      quotePhpPerEth: number | null;
+      quotePhpPerEthLabel: string | null;
+      quoteSource: string | null;
+      quoteUpdatedAt: string | null;
+      senderWalletAddress: string;
+      destinationWalletAddress: string;
+      txHash: string;
+      availableBefore: number;
+      availableBeforeLabel: string;
+      availableAfter: number;
+      availableAfterLabel: string;
+      createdAt: string;
+      createdByEmail: string | null;
+      breakdowns: Array<{
+        id: string;
+        code: string;
+        name: string;
+        color: string;
+        amount: number;
+        amountLabel: string;
+        availableBefore: number;
+        availableBeforeLabel: string;
+        availableAfter: number;
+        availableAfterLabel: string;
+      }>;
+    }>;
   };
   preview: {
     baseAmount: number;
@@ -335,6 +411,20 @@ export function resolveLedgerBaseAmount(payment: Pick<PaymentRow, "amount_expect
     amount: expectedAmount,
     currency,
     amountLabel: formatLedgerCurrency(expectedAmount, currency),
+  };
+}
+
+export function resolveCashOutAssetAmount(payment: Pick<PaymentRow, "amount_expected" | "amount_received" | "payment_method">) {
+  const receivedAmount = toNumber(payment.amount_received);
+  const amount = receivedAmount > 0 ? receivedAmount : toNumber(payment.amount_expected);
+  const paymentMethod = (payment.payment_method || "").trim().toLowerCase() as PaymentMethod;
+  const currency = getPaymentMethodLabel(paymentMethod).toUpperCase();
+
+  return {
+    amount,
+    paymentMethod,
+    currency,
+    amountLabel: formatLedgerCurrency(amount, currency),
   };
 }
 

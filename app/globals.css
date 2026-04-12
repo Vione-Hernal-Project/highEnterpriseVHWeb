@@ -19,6 +19,7 @@ a {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -1391,6 +1392,92 @@ textarea {
 .vh-ledger-activity-list {
   display: grid;
   gap: 0.85rem;
+}
+
+.vh-ledger-cashout-stack,
+.vh-ledger-cashout-history,
+.vh-ledger-cashout-form,
+.vh-ledger-cashout-breakdown-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.vh-ledger-cashout-summary,
+.vh-ledger-cashout-route,
+.vh-ledger-cashout-wallet,
+.vh-ledger-cashout-item {
+  padding: 1rem;
+  border: 1px solid #ece7e0;
+  background: linear-gradient(180deg, #fff 0%, #fbf8f5 100%);
+}
+
+.vh-ledger-cashout-summary strong,
+.vh-ledger-cashout-route strong,
+.vh-ledger-cashout-wallet strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.vh-ledger-cashout-route p,
+.vh-ledger-cashout-wallet p,
+.vh-ledger-cashout-summary p {
+  margin-top: 0.35rem;
+  color: #6c6c6c;
+  line-height: 1.6;
+}
+
+.vh-ledger-cashout-note,
+.vh-ledger-cashout-conversion {
+  color: #4e4b47;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.vh-ledger-cashout-conversion {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid #ece7e0;
+  background: #fbf8f5;
+}
+
+.vh-ledger-cashout-meta,
+.vh-ledger-cashout-item__meta {
+  margin: 0;
+  color: #6c6c6c;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.vh-ledger-cashout-item__topline,
+.vh-ledger-cashout-breakdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.vh-ledger-cashout-item__topline strong,
+.vh-ledger-cashout-breakdown-item strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.vh-ledger-cashout-breakdown-list {
+  padding-top: 0.9rem;
+  border-top: 1px solid #eee7df;
+}
+
+.vh-ledger-cashout-breakdown-item span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
 }
 
 .vh-ledger-breakdown-row,
