@@ -1,26 +1,23 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { PasswordField } from "@/components/auth/password-field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Props = {
-  nextPath: string;
   configError?: string | null;
 };
 
-export function SignInForm({ nextPath, configError = null }: Props) {
-  const router = useRouter();
+export function ForgotPasswordForm({ configError = null }: Props) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [success, setSuccess] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setMessage("");
+    setSuccess(false);
 
     try {
       if (configError) {
@@ -29,22 +26,23 @@ export function SignInForm({ nextPath, configError = null }: Props) {
 
       const formData = new FormData(event.currentTarget);
       const email = String(formData.get("email") || "").trim();
-      const password = String(formData.get("password") || "");
       const supabase = createSupabaseBrowserClient();
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/reset-password")}`;
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
       });
 
       if (error) {
         throw error;
       }
 
-      router.push(nextPath);
-      router.refresh();
+      setSuccess(true);
+      setMessage("If an account exists for that email, a reset link has been sent.");
+      event.currentTarget.reset();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to sign in right now.");
+      setSuccess(false);
+      setMessage(error instanceof Error ? error.message : "Unable to send the reset link right now.");
     } finally {
       setLoading(false);
     }
@@ -52,20 +50,16 @@ export function SignInForm({ nextPath, configError = null }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="vh-form-card">
-      <h1 className="h2 u-margin-b--lg">Sign In</h1>
+      <h1 className="h2 u-margin-b--lg">Forgot Password</h1>
       <div className="vh-field">
-        <label htmlFor="signin-email">Email</label>
-        <input id="signin-email" name="email" type="email" className="vh-input" autoComplete="email" required />
-      </div>
-      <PasswordField id="signin-password" name="password" label="Password" autoComplete="current-password" required />
-      <div className="vh-form-inline-link">
-        <Link href="/forgot-password">Forgot Password?</Link>
+        <label htmlFor="forgot-password-email">Email</label>
+        <input id="forgot-password-email" name="email" type="email" className="vh-input" autoComplete="email" required />
       </div>
       {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}
-      {message ? <div className="vh-status vh-status--error">{message}</div> : null}
+      {message ? <div className={`vh-status ${success ? "vh-status--success" : "vh-status--error"}`}>{message}</div> : null}
       <div className="vh-actions">
         <button type="submit" className="vh-button" disabled={loading || Boolean(configError)}>
-          {loading ? "Signing In..." : "Sign In"}
+          {loading ? "Sending..." : "Send Reset Link"}
         </button>
       </div>
     </form>

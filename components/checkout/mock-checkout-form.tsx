@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Heart } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
-import { featuredProducts, getCatalogPriceLabel, getCatalogProduct } from "@/lib/catalog";
+import { WishlistToggleButton } from "@/components/storefront/wishlist-toggle-button";
+import {
+  getStorefrontBagItemKey,
+  removeBagItem,
+} from "@/lib/storefront/storage";
+import { getCatalogPriceLabel, getCatalogProduct, getCatalogProductUiMeta } from "@/lib/catalog";
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 import { formatPhpCurrencyFromCents } from "@/lib/payments/amounts";
 import { getDefaultCheckoutInput, resolveCheckoutInput, type CheckoutAmountMode } from "@/lib/payments/checkout";
@@ -53,32 +57,7 @@ type SubmissionState = {
   message: string;
 };
 
-type ProductUiMeta = {
-  categoryLabel: string;
-  department: string;
-  sizes: string[];
-};
-
 const SHIPPING_FLAT_RATE_PHP_CENTS = 0;
-const WISHLIST_STORAGE_KEY = "vionehernal_checkout_wishlist";
-
-const PRODUCT_UI_METADATA: Record<string, ProductUiMeta> = {
-  "MIUF-WZ238": {
-    categoryLabel: "Shoes",
-    department: "Womens",
-    sizes: ["36", "37", "38", "39"],
-  },
-  "BOFE-WS139": {
-    categoryLabel: "Ready to Wear",
-    department: "Womens",
-    sizes: ["XS", "S", "M", "L"],
-  },
-  "BOFE-WY20": {
-    categoryLabel: "Bags",
-    department: "Womens",
-    sizes: ["One Size"],
-  },
-};
 
 function formatQuoteTime(value: string | null) {
   if (!value) {
@@ -89,14 +68,6 @@ function formatQuoteTime(value: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function getProductUiMeta(productId: string | null | undefined): ProductUiMeta {
-  return PRODUCT_UI_METADATA[productId || ""] || {
-    categoryLabel: "Collection",
-    department: "Womens",
-    sizes: ["One Size"],
-  };
 }
 
 function buildShippingAddress(parts: Array<string | null | undefined>) {
@@ -113,47 +84,31 @@ function buildOrderNotes(selectedSize: string, notes: string) {
   return segments.filter(Boolean).join("\n");
 }
 
-function readWishlistedProductIds() {
-  if (typeof window === "undefined") {
-    return [] as string[];
+function normalizeRequestedQuantity(value: string | null) {
+  const parsed = Number(value || "1");
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return "1";
   }
 
-  try {
-    const raw = window.localStorage.getItem(WISHLIST_STORAGE_KEY);
-
-    if (!raw) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeWishlistedProductIds(productIds: string[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(WISHLIST_STORAGE_KEY, JSON.stringify(productIds));
+  return String(Math.floor(parsed));
 }
 
 export function MockCheckoutForm({ customerEmail }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const searchParams = useSearchParams();
+  const fromBag = searchParams.get("from") === "bag";
   const requestedProductId = searchParams.get("product");
-  const initialProduct = getCatalogProduct(requestedProductId);
+  const requestedSize = searchParams.get("size");
+  const requestedQuantity = normalizeRequestedQuantity(searchParams.get("quantity"));
+  const requestedProduct = fromBag ? getCatalogProduct(requestedProductId) : null;
+  const initialProduct = requestedProduct?.id === requestedProductId ? requestedProduct : null;
   const [loading, setLoading] = useState(false);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [error, setError] = useState("");
   const [quoteError, setQuoteError] = useState("");
   const [reviewMode, setReviewMode] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [bagMessage, setBagMessage] = useState("");
-  const [wishlisted, setWishlisted] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [address1, setAddress1] = useState("");
@@ -161,9 +116,17 @@ export function MockCheckoutForm({ customerEmail }: Props) {
   const [province, setProvince] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("Philippines");
-  const [productId, setProductId] = useState(initialProduct?.id ?? featuredProducts[0]?.id ?? "");
-  const [selectedSize, setSelectedSize] = useState(getProductUiMeta(initialProduct?.id).sizes[0] ?? "One Size");
-  const [quantity, setQuantity] = useState("1");
+  const [productId, setProductId] = useState(initialProduct?.id ?? "");
+  const [selectedSize, setSelectedSize] = useState(() => {
+    const initialMeta = getCatalogProductUiMeta(initialProduct?.id);
+
+    if (requestedSize && initialMeta.sizes.includes(requestedSize)) {
+      return requestedSize;
+    }
+
+    return initialMeta.sizes[0] ?? "One Size";
+  });
+  const [quantity, setQuantity] = useState(requestedQuantity);
   const [paymentMethod] = useState<"eth">("eth");
   const [amountMode, setAmountMode] = useState<CheckoutAmountMode>("php");
   const [enteredAmount, setEnteredAmount] = useState("");
@@ -172,19 +135,24 @@ export function MockCheckoutForm({ customerEmail }: Props) {
   const [submission, setSubmission] = useState<SubmissionState | null>(null);
 
   useEffect(() => {
-    const searchProduct = getCatalogProduct(requestedProductId);
+    const matchedProduct = fromBag ? getCatalogProduct(requestedProductId) : null;
+    const searchProduct = matchedProduct?.id === requestedProductId ? matchedProduct : null;
+    const nextMeta = getCatalogProductUiMeta(searchProduct?.id);
+    const nextSize = requestedSize && nextMeta.sizes.includes(requestedSize) ? requestedSize : nextMeta.sizes[0] ?? "One Size";
 
-    if (searchProduct?.id && searchProduct.id !== productId) {
-      setProductId(searchProduct.id);
+    if (searchProduct?.id !== productId) {
+      setProductId(searchProduct?.id ?? "");
       setReviewMode(false);
       setSubmission(null);
       setError("");
-      setBagMessage("");
     }
-  }, [productId, requestedProductId]);
 
-  const selectedProduct = useMemo(() => getCatalogProduct(productId), [productId]);
-  const productUiMeta = useMemo(() => getProductUiMeta(selectedProduct?.id), [selectedProduct?.id]);
+    setSelectedSize(nextSize);
+    setQuantity(requestedQuantity);
+  }, [fromBag, productId, requestedProductId, requestedQuantity, requestedSize]);
+
+  const selectedProduct = useMemo(() => (productId ? getCatalogProduct(productId) : null), [productId]);
+  const productUiMeta = useMemo(() => getCatalogProductUiMeta(selectedProduct?.id), [selectedProduct?.id]);
   const shippingAddress = useMemo(
     () => buildShippingAddress([address1, city, province, postalCode, country]),
     [address1, city, province, postalCode, country],
@@ -195,10 +163,6 @@ export function MockCheckoutForm({ customerEmail }: Props) {
 
     setSelectedSize((current) => (productUiMeta.sizes.includes(current) ? current : firstSize));
   }, [productUiMeta]);
-
-  useEffect(() => {
-    setWishlisted(readWishlistedProductIds().includes(productId));
-  }, [productId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -263,38 +227,6 @@ export function MockCheckoutForm({ customerEmail }: Props) {
   const shippingLabel = formatPhpCurrencyFromCents(SHIPPING_FLAT_RATE_PHP_CENTS);
   const totalLabel = pricing ? formatPhpCurrencyFromCents(pricing.subtotalPhpCents + SHIPPING_FLAT_RATE_PHP_CENTS) : subtotalLabel;
 
-  function toggleWishlist() {
-    if (!productId) {
-      return;
-    }
-
-    setWishlisted((current) => {
-      const productIds = readWishlistedProductIds();
-      const next = !current;
-      const nextIds = next ? [...new Set([...productIds, productId])] : productIds.filter((id) => id !== productId);
-
-      writeWishlistedProductIds(nextIds);
-
-      return next;
-    });
-  }
-
-  function handleAddToBag(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!selectedProduct) {
-      return;
-    }
-
-    setBagMessage(`${selectedProduct.name} added to bag. Continue below to complete checkout.`);
-    setReviewMode(false);
-    setSubmission(null);
-    setError("");
-    setTimeout(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
-  }
-
   function resetForm() {
     setCustomerName("");
     setPhone("");
@@ -303,7 +235,6 @@ export function MockCheckoutForm({ customerEmail }: Props) {
     setProvince("");
     setPostalCode("");
     setCountry("Philippines");
-    setQuantity("1");
     setAmountMode("php");
     setEnteredAmount(pricing ? getDefaultCheckoutInput("php", pricing) : "");
     setNotes("");
@@ -405,6 +336,9 @@ export function MockCheckoutForm({ customerEmail }: Props) {
         recipientWalletAddress: createOrderPayload.payment.recipient_address || createOrderPayload.recipientWalletAddress || null,
         confirmationEmailStatus: createOrderPayload.order.confirmation_email_status,
       };
+      const selectedBagItemKey = getStorefrontBagItemKey(productId, selectedSize);
+
+      removeBagItem(selectedBagItemKey);
 
       try {
         const walletPayment = await sendCryptoPayment({
@@ -482,25 +416,24 @@ export function MockCheckoutForm({ customerEmail }: Props) {
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
-        <Link href="/">{productUiMeta.categoryLabel}</Link>
+        <Link href="/bag">My Bag</Link>
         <span>/</span>
         <span>{selectedProduct?.name || "Checkout"}</span>
       </nav>
 
-      {selectedProduct ? (
+      {!fromBag || !selectedProduct ? (
+        <section className="storefront-app-view">
+          <div className="storefront-app-empty">
+            <p className="u-margin-b--lg">Checkout is available from your bag only.</p>
+            <Link className="vh-button" href="/bag">
+              Go To My Bag
+            </Link>
+          </div>
+        </section>
+      ) : (
         <section className="storefront-app-grid">
           <div className="storefront-app-media vh-product-detail-media">
-            <button
-              type="button"
-              className={`storefront-app-wishlist-button ${wishlisted ? "is-active" : ""}`}
-              aria-pressed={wishlisted ? "true" : "false"}
-              aria-label={`${wishlisted ? "Remove from" : "Add to"} wish list: ${selectedProduct.name}`}
-              onClick={toggleWishlist}
-            >
-              <span className="storefront-app-wishlist-button__icon" aria-hidden="true">
-                <Heart />
-              </span>
-            </button>
+            <WishlistToggleButton productId={selectedProduct.id} productName={selectedProduct.name} />
             <img src={selectedProduct.image} alt={selectedProduct.name} width="720" height="960" />
           </div>
 
@@ -525,57 +458,31 @@ export function MockCheckoutForm({ customerEmail }: Props) {
               </div>
             </dl>
 
-            <form className="storefront-app-actions" onSubmit={handleAddToBag}>
+            <div className="storefront-app-actions">
               <div className="vh-product-action-grid">
                 <div className="vh-field u-margin-b--none">
                   <label htmlFor="checkout-size">Size</label>
-                  <select
-                    id="checkout-size"
-                    className="vh-input"
-                    value={selectedSize}
-                    onChange={(event) => setSelectedSize(event.target.value)}
-                  >
-                    {productUiMeta.sizes.map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
-                    ))}
-                  </select>
+                  <input id="checkout-size" className="vh-input" value={selectedSize} readOnly />
                 </div>
 
                 <div className="vh-field u-margin-b--none">
                   <label htmlFor="checkout-product-quantity">Quantity</label>
-                  <input
-                    id="checkout-product-quantity"
-                    className="vh-input"
-                    name="quantity"
-                    type="number"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={quantity}
-                    onChange={(event) => {
-                      setQuantity(event.target.value);
-                      setReviewMode(false);
-                      setSubmission(null);
-                      setError("");
-                      setBagMessage("");
-                    }}
-                  />
+                  <input id="checkout-product-quantity" className="vh-input" value={quantity} readOnly />
                 </div>
               </div>
 
-              <button type="submit" className="action-button action-button--black action-button--lg">
-                Add to Bag
-              </button>
-            </form>
-
-            {bagMessage ? <div className="vh-status vh-product-detail-note">{bagMessage}</div> : null}
+              <div className="vh-actions">
+                <Link className="vh-button vh-button--ghost" href="/bag">
+                  Edit In My Bag
+                </Link>
+              </div>
+            </div>
           </div>
         </section>
-      ) : null}
+      )}
 
-      <section className="storefront-app-grid vh-checkout-storefront-grid">
+      {fromBag && selectedProduct ? (
+        <section className="storefront-app-grid vh-checkout-storefront-grid">
         <form ref={formRef} className="storefront-app-card" onSubmit={handleSubmit}>
           <h2 className="h2 u-margin-b--lg">Checkout</h2>
 
@@ -885,11 +792,12 @@ export function MockCheckoutForm({ customerEmail }: Props) {
               <strong>{pricing?.quoteSource || "--"}</strong>
             </div>
             <p className="vh-payment-note">
-              Favorite and Add to Bag now match the static storefront UI. Crypto checkout remains active underneath.
+              Checkout is now scoped to items added through My Bag. The live crypto payment flow remains unchanged underneath.
             </p>
           </div>
         </aside>
       </section>
+      ) : null}
     </div>
   );
 }

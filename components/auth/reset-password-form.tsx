@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -8,11 +7,10 @@ import { PasswordField } from "@/components/auth/password-field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Props = {
-  nextPath: string;
   configError?: string | null;
 };
 
-export function SignInForm({ nextPath, configError = null }: Props) {
+export function ResetPasswordForm({ configError = null }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -28,12 +26,15 @@ export function SignInForm({ nextPath, configError = null }: Props) {
       }
 
       const formData = new FormData(event.currentTarget);
-      const email = String(formData.get("email") || "").trim();
       const password = String(formData.get("password") || "");
-      const supabase = createSupabaseBrowserClient();
+      const confirmPassword = String(formData.get("confirmPassword") || "");
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
+      if (password !== confirmPassword) {
+        throw new Error("Passwords do not match.");
+      }
+
+      const supabase = createSupabaseBrowserClient();
+      const { error } = await supabase.auth.updateUser({
         password,
       });
 
@@ -41,10 +42,11 @@ export function SignInForm({ nextPath, configError = null }: Props) {
         throw error;
       }
 
-      router.push(nextPath);
+      await supabase.auth.signOut();
+      router.push("/sign-in?reset=success");
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to sign in right now.");
+      setMessage(error instanceof Error ? error.message : "Unable to reset your password right now.");
     } finally {
       setLoading(false);
     }
@@ -52,20 +54,28 @@ export function SignInForm({ nextPath, configError = null }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="vh-form-card">
-      <h1 className="h2 u-margin-b--lg">Sign In</h1>
-      <div className="vh-field">
-        <label htmlFor="signin-email">Email</label>
-        <input id="signin-email" name="email" type="email" className="vh-input" autoComplete="email" required />
-      </div>
-      <PasswordField id="signin-password" name="password" label="Password" autoComplete="current-password" required />
-      <div className="vh-form-inline-link">
-        <Link href="/forgot-password">Forgot Password?</Link>
-      </div>
+      <h1 className="h2 u-margin-b--lg">Reset Password</h1>
+      <PasswordField
+        id="reset-password"
+        name="password"
+        label="New Password"
+        autoComplete="new-password"
+        minLength={6}
+        required
+      />
+      <PasswordField
+        id="reset-password-confirm"
+        name="confirmPassword"
+        label="Confirm Password"
+        autoComplete="new-password"
+        minLength={6}
+        required
+      />
       {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}
       {message ? <div className="vh-status vh-status--error">{message}</div> : null}
       <div className="vh-actions">
         <button type="submit" className="vh-button" disabled={loading || Boolean(configError)}>
-          {loading ? "Signing In..." : "Sign In"}
+          {loading ? "Updating..." : "Update Password"}
         </button>
       </div>
     </form>

@@ -33,7 +33,7 @@ export function SiteFooter() {
                       <Link href="/affiliate">Affiliate</Link>
                     </li>
                     <li className="ui-list__item">
-                      <Link href="/checkout">Checkout</Link>
+                      <Link href="/bag">My Bag</Link>
                     </li>
                     <li className="ui-list__item">
                       <Link href="/sign-in">Sign In</Link>

@@ -10,6 +10,12 @@ export type CatalogProduct = {
   hoverImage: string;
 };
 
+export type CatalogProductUiMeta = {
+  categoryLabel: string;
+  department: string;
+  sizes: string[];
+};
+
 export const featuredProducts: CatalogProduct[] = [
   {
     id: "MIUF-WZ238",
@@ -40,6 +46,24 @@ export const featuredProducts: CatalogProduct[] = [
   },
 ];
 
+const PRODUCT_UI_METADATA: Record<string, CatalogProductUiMeta> = {
+  "MIUF-WZ238": {
+    categoryLabel: "Shoes",
+    department: "Womens",
+    sizes: ["36", "37", "38", "39"],
+  },
+  "BOFE-WS139": {
+    categoryLabel: "Ready to Wear",
+    department: "Womens",
+    sizes: ["XS", "S", "M", "L"],
+  },
+  "BOFE-WY20": {
+    categoryLabel: "Bags",
+    department: "Womens",
+    sizes: ["One Size"],
+  },
+};
+
 export function getCatalogProduct(productId: string | null | undefined) {
   if (!productId) {
     return featuredProducts[0] ?? null;
@@ -54,4 +78,16 @@ export function getCatalogSubtotalPhpCents(pricePhpCents: number, quantity: numb
 
 export function getCatalogPriceLabel(pricePhpCents: number) {
   return formatPhpCurrencyFromCents(pricePhpCents);
+}
+
+export function getCatalogProductUiMeta(productId: string | null | undefined): CatalogProductUiMeta {
+  return PRODUCT_UI_METADATA[productId || ""] || {
+    categoryLabel: "Collection",
+    department: "Womens",
+    sizes: ["One Size"],
+  };
+}
+
+export function getCatalogProductPageHref(productId: string) {
+  return `/products/${encodeURIComponent(productId)}`;
 }
