@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { PasswordField } from "@/components/auth/password-field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 
 type Props = {
   configError?: string | null;
@@ -30,6 +32,18 @@ export function SignUpForm({ configError = null }: Props) {
       const email = String(formData.get("email") || "").trim();
       const password = String(formData.get("password") || "");
       const supabase = createSupabaseBrowserClient();
+      const duplicateCheckResponse = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
+      const duplicateCheckPayload = await readJsonSafely<{ error?: string }>(duplicateCheckResponse);
+
+      if (!duplicateCheckResponse.ok) {
+        throw new Error(getResponseErrorMessage(duplicateCheckPayload, "Unable to validate email right now."));
+      }
 
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -41,6 +55,10 @@ export function SignUpForm({ configError = null }: Props) {
 
       if (error) {
         throw error;
+      }
+
+      if (!data.session && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        throw new Error("Email already registered");
       }
 
       setSuccess(true);
@@ -69,18 +87,14 @@ export function SignUpForm({ configError = null }: Props) {
         <label htmlFor="signup-email">Email</label>
         <input id="signup-email" name="email" type="email" className="vh-input" autoComplete="email" required />
       </div>
-      <div className="vh-field">
-        <label htmlFor="signup-password">Password</label>
-        <input
-          id="signup-password"
-          name="password"
-          type="password"
-          className="vh-input"
-          autoComplete="new-password"
-          minLength={6}
-          required
-        />
-      </div>
+      <PasswordField
+        id="signup-password"
+        name="password"
+        label="Password"
+        autoComplete="new-password"
+        minLength={6}
+        required
+      />
       {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}
       {message ? <div className={`vh-status ${success ? "vh-status--success" : "vh-status--error"}`}>{message}</div> : null}
       <div className="vh-actions">

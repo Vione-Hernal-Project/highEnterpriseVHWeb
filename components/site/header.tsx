@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { HeaderStoreLinks } from "@/components/storefront/header-store-links";
 import { WalletStatus } from "@/components/wallet/wallet-status";
 
 type Props = {
@@ -69,9 +70,7 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
               <li className="global-header__secondary-nav-list-item u-margin-r--xxl">
                 <Link href="/">Womens</Link>
               </li>
-              <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
-                <Link href="/checkout">Checkout</Link>
-              </li>
+              <HeaderStoreLinks />
               <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
                 <Link href="/dashboard">Dashboard</Link>
               </li>

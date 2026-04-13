@@ -1,9 +1,11 @@
 import Link from "next/link";
 
 import { FeaturedProducts } from "@/components/home/featured-products";
+import { featuredProducts, getCatalogProductPageHref } from "@/lib/catalog";
 
 export function LandingPage() {
   const heroBackgroundSrc: string | null = null;
+  const heroProductHref = getCatalogProductPageHref(featuredProducts[0]?.id ?? "");
 
   return (
     <div className="storefront-app-view">
@@ -36,8 +38,8 @@ export function LandingPage() {
               The Vione Hernal MVP keeps the current fashion storefront feel intact while adding real sign in,
               protected dashboards, PHP-priced product checkout, and Supabase-backed order storage.
             </p>
-            <Link className="story-hero__copy-link" href="/checkout">
-              Try the MVP checkout
+            <Link className="story-hero__copy-link" href={heroProductHref}>
+              Shop the featured edit
             </Link>
           </div>
           <div className="story-hero__secondary-pane" aria-hidden="true">
@@ -91,39 +93,6 @@ export function LandingPage() {
       </div>
 
       <FeaturedProducts />
-
-      <section className="vh-mvp-strip">
-        <div className="vh-mvp-grid">
-          <div>
-            <p className="vh-mvp-eyebrow">MVP Checkout Entry</p>
-            <h2 className="vh-mvp-title">A clean proof that the storefront and backend are working together.</h2>
-            <p className="vh-mvp-copy">
-              This phase now uses real PHP product pricing and live Sepolia ETH conversion through MetaMask. It focuses
-              on working auth, protected routes, stored orders, verified payment attempts, and a clean admin view that
-              confirms the storefront flow is functioning end to end.
-            </p>
-            <div className="vh-actions">
-              <Link className="vh-button" href="/checkout">
-                Open Sepolia Checkout
-              </Link>
-              <Link className="vh-button vh-button--ghost" href="/sign-in">
-                Sign In
-              </Link>
-            </div>
-          </div>
-
-          <div>
-            <article className="vh-mini-card">
-              <p className="vh-mvp-eyebrow">What works now</p>
-              <p className="u-margin-b--none">Supabase auth, PHP product pricing, live Sepolia ETH checkout, protected dashboard, order history, and admin review.</p>
-            </article>
-            <article className="vh-mini-card">
-              <p className="vh-mvp-eyebrow">What comes later</p>
-              <p className="u-margin-b--none">Base/Base Sepolia expansion, richer recovery flows, and production hardening.</p>
-            </article>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

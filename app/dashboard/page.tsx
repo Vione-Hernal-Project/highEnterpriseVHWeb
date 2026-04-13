@@ -27,8 +27,8 @@ export default async function DashboardPage() {
             security, and it now tracks your Sepolia payment attempts and order history.
           </p>
           <div className="vh-actions">
-            <Link className="vh-button" href="/checkout">
-              New Test Order
+            <Link className="vh-button" href="/">
+              Shop Collection
             </Link>
             {isManagementUser ? (
               <Link className="vh-button vh-button--ghost" href="/admin">
