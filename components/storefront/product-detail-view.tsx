@@ -1,33 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { WishlistToggleButton } from "@/components/storefront/wishlist-toggle-button";
 import { addBagItem } from "@/lib/storefront/storage";
-import { getCatalogPriceLabel, getCatalogProduct, getCatalogProductUiMeta } from "@/lib/catalog";
+import { getCatalogPriceLabel, getCatalogProductUiMeta, type CatalogProduct } from "@/lib/catalog";
 
 type Props = {
-  productId: string;
+  product: CatalogProduct;
 };
 
-export function ProductDetailView({ productId }: Props) {
-  const product = useMemo(() => getCatalogProduct(productId), [productId]);
-  const productUiMeta = useMemo(() => getCatalogProductUiMeta(product?.id), [product?.id]);
+export function ProductDetailView({ product }: Props) {
+  const productUiMeta = getCatalogProductUiMeta(product);
   const [selectedSize, setSelectedSize] = useState(productUiMeta.sizes[0] ?? "One Size");
   const [quantity, setQuantity] = useState("1");
   const [message, setMessage] = useState("");
-
-  if (!product) {
-    return null;
-  }
 
   return (
     <section className="storefront-app-view">
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
-        <Link href="/">{productUiMeta.categoryLabel}</Link>
+        <Link href="/shop">{productUiMeta.categoryLabel}</Link>
         <span>/</span>
         <span>{product.name}</span>
       </nav>

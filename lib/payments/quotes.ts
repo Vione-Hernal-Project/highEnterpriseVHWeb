@@ -3,8 +3,9 @@ import "server-only";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { getCatalogProduct, getCatalogSubtotalPhpCents } from "@/lib/catalog";
+import { getCatalogSubtotalPhpCents, type CatalogProduct } from "@/lib/catalog";
 import { getErrorMessage } from "@/lib/http";
+import { loadPublishedCatalogProduct } from "@/lib/products";
 import {
   convertPhpCentsToEthAmount,
   formatPhpCurrency,
@@ -30,7 +31,7 @@ export type EthPhpQuote = {
 };
 
 export type CheckoutPricing = {
-  product: NonNullable<ReturnType<typeof getCatalogProduct>>;
+  product: CatalogProduct;
   quantity: number;
   subtotalPhpCents: number;
   subtotalPhp: string;
@@ -322,7 +323,7 @@ export async function fetchEthPhpQuote(): Promise<EthPhpQuote> {
 }
 
 export async function getCheckoutPricing(productId: string, quantity: number): Promise<CheckoutPricing> {
-  const product = getCatalogProduct(productId);
+  const product = await loadPublishedCatalogProduct(productId);
 
   if (!product) {
     throw new Error("Selected product was not found.");

@@ -8,13 +8,20 @@ export type CatalogProduct = {
   pricePhpCents: number;
   image: string;
   hoverImage: string;
-};
-
-export type CatalogProductUiMeta = {
   categoryLabel: string;
   department: string;
   sizes: string[];
+  sizeInventory: Record<string, number>;
+  galleryImages: string[];
+  status: "draft" | "published";
+  showInFeatured: boolean;
+  showInNewArrivals: boolean;
+  publishedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
+
+export type CatalogProductUiMeta = Pick<CatalogProduct, "categoryLabel" | "department" | "sizes">;
 
 export const featuredProducts: CatalogProduct[] = [
   {
@@ -25,6 +32,22 @@ export const featuredProducts: CatalogProduct[] = [
     pricePhpCents: 50000,
     image: "/assets/images/maryjaneshoe.png",
     hoverImage: "/assets/images/maryjaneshoe.png",
+    categoryLabel: "Shoes",
+    department: "Womens",
+    sizes: ["36", "37", "38", "39"],
+    sizeInventory: {
+      "36": 5,
+      "37": 4,
+      "38": 4,
+      "39": 3,
+    },
+    galleryImages: [],
+    status: "published",
+    showInFeatured: true,
+    showInNewArrivals: true,
+    publishedAt: "2026-04-10T00:00:00.000Z",
+    createdAt: "2026-04-10T00:00:00.000Z",
+    updatedAt: "2026-04-10T00:00:00.000Z",
   },
   {
     id: "BOFE-WS139",
@@ -34,6 +57,22 @@ export const featuredProducts: CatalogProduct[] = [
     pricePhpCents: 150000,
     image: "/assets/images/SheerLayeredCo-OrdSet-1.png",
     hoverImage: "/assets/images/SheerLayeredCo-OrdSet.png",
+    categoryLabel: "Ready to Wear",
+    department: "Womens",
+    sizes: ["XS", "S", "M", "L"],
+    sizeInventory: {
+      XS: 5,
+      S: 4,
+      M: 3,
+      L: 2,
+    },
+    galleryImages: [],
+    status: "published",
+    showInFeatured: true,
+    showInNewArrivals: true,
+    publishedAt: "2026-04-11T00:00:00.000Z",
+    createdAt: "2026-04-11T00:00:00.000Z",
+    updatedAt: "2026-04-11T00:00:00.000Z",
   },
   {
     id: "BOFE-WY20",
@@ -43,33 +82,50 @@ export const featuredProducts: CatalogProduct[] = [
     pricePhpCents: 200000,
     image: "/assets/images/RoseTweedTopHandleBag.png",
     hoverImage: "/assets/images/RoseTweedTopHandleBag-1.png",
-  },
-];
-
-const PRODUCT_UI_METADATA: Record<string, CatalogProductUiMeta> = {
-  "MIUF-WZ238": {
-    categoryLabel: "Shoes",
-    department: "Womens",
-    sizes: ["36", "37", "38", "39"],
-  },
-  "BOFE-WS139": {
-    categoryLabel: "Ready to Wear",
-    department: "Womens",
-    sizes: ["XS", "S", "M", "L"],
-  },
-  "BOFE-WY20": {
     categoryLabel: "Bags",
     department: "Womens",
     sizes: ["One Size"],
+    sizeInventory: {
+      "One Size": 4,
+    },
+    galleryImages: [],
+    status: "published",
+    showInFeatured: true,
+    showInNewArrivals: true,
+    publishedAt: "2026-04-12T00:00:00.000Z",
+    createdAt: "2026-04-12T00:00:00.000Z",
+    updatedAt: "2026-04-12T00:00:00.000Z",
   },
-};
+];
+
+function resolveFallbackProduct(productOrId: CatalogProduct | string | null | undefined) {
+  if (!productOrId) {
+    return null;
+  }
+
+  if (typeof productOrId === "string") {
+    return featuredProducts.find((product) => product.id === productOrId) ?? null;
+  }
+
+  return productOrId;
+}
+
+export function getProductAvailableSizes(product: CatalogProduct | null | undefined) {
+  if (!product) {
+    return ["One Size"];
+  }
+
+  const inStockSizes = product.sizes.filter((size) => (product.sizeInventory[size] ?? 0) > 0);
+
+  return inStockSizes.length ? inStockSizes : product.sizes.length ? product.sizes : ["One Size"];
+}
 
 export function getCatalogProduct(productId: string | null | undefined) {
   if (!productId) {
-    return featuredProducts[0] ?? null;
+    return null;
   }
 
-  return featuredProducts.find((product) => product.id === productId) ?? featuredProducts[0] ?? null;
+  return featuredProducts.find((product) => product.id === productId) ?? null;
 }
 
 export function getCatalogSubtotalPhpCents(pricePhpCents: number, quantity: number) {
@@ -80,8 +136,18 @@ export function getCatalogPriceLabel(pricePhpCents: number) {
   return formatPhpCurrencyFromCents(pricePhpCents);
 }
 
-export function getCatalogProductUiMeta(productId: string | null | undefined): CatalogProductUiMeta {
-  return PRODUCT_UI_METADATA[productId || ""] || {
+export function getCatalogProductUiMeta(productOrId: CatalogProduct | string | null | undefined): CatalogProductUiMeta {
+  const product = resolveFallbackProduct(productOrId);
+
+  if (product) {
+    return {
+      categoryLabel: product.categoryLabel,
+      department: product.department,
+      sizes: getProductAvailableSizes(product),
+    };
+  }
+
+  return {
     categoryLabel: "Collection",
     department: "Womens",
     sizes: ["One Size"],

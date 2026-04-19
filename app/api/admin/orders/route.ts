@@ -8,14 +8,14 @@ import { adminOrderStatusSchema } from "@/lib/validations/order";
 
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, canManageOrders } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!canManageOrders) {
+      return NextResponse.json({ error: "Order operations access required." }, { status: 403 });
     }
 
     const admin = createSupabaseAdminClient();
@@ -33,14 +33,14 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, canManageOrders, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!canManageOrders) {
+      return NextResponse.json({ error: "Order operations access required." }, { status: 403 });
     }
 
     const body = await request.json().catch(() => null);
@@ -68,6 +68,15 @@ export async function PATCH(request: Request) {
     }
 
     const nextStatus = parsed.data.status;
+
+    if (role === "staff" && order.status === "paid") {
+      return NextResponse.json({ error: "Paid orders are view-only for staff." }, { status: 403 });
+    }
+
+    if (role === "staff" && nextStatus === "paid") {
+      return NextResponse.json({ error: "Staff cannot mark orders as paid." }, { status: 403 });
+    }
+
     const { data: updatedOrder, error: updateError } = await admin
       .from("orders")
       .update({

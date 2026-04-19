@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getCatalogProduct } from "@/lib/catalog";
+import { getProductAvailableSizes } from "@/lib/catalog";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { getSepoliaRpcEnvError } from "@/lib/env/server";
 import { getErrorMessage } from "@/lib/http";
@@ -12,6 +12,7 @@ import { logPaymentDebug } from "@/lib/payments/debug";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { getPaymentMethodSetupError } from "@/lib/payments/options";
 import { getCheckoutPricing } from "@/lib/payments/quotes";
+import { loadPublishedCatalogProduct } from "@/lib/products";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseTableErrorMessage } from "@/lib/supabase/errors";
 import { orderSchema } from "@/lib/validations/order";
@@ -71,10 +72,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: rpcSetupError }, { status: 400 });
     }
 
-    const product = getCatalogProduct(parsed.data.productId);
+    const product = await loadPublishedCatalogProduct(parsed.data.productId);
 
     if (!product) {
       return NextResponse.json({ error: "Selected product was not found." }, { status: 404 });
+    }
+
+    if (!getProductAvailableSizes(product).includes(parsed.data.selectedSize)) {
+      return NextResponse.json({ error: "Selected size is unavailable for this product." }, { status: 400 });
     }
 
     const pricing = await getCheckoutPricing(product.id, parsed.data.quantity);
@@ -121,6 +126,7 @@ export async function POST(request: Request) {
         email: user.email ?? null,
         product_id: product.id,
         product_name: product.name,
+        selected_size: parsed.data.selectedSize,
         quantity: pricing.quantity,
         unit_price: phpCentsToDecimalString(product.pricePhpCents),
         customer_name: parsed.data.customerName,

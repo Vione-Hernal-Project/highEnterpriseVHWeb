@@ -8,7 +8,7 @@ import { getConfiguredOwnerEmails, hasSupabaseAdminEnv } from "@/lib/env/server"
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export type StoreRole = "user" | "admin" | "owner";
+export type StoreRole = "user" | "staff" | "admin" | "owner";
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
@@ -20,7 +20,7 @@ function resolveRole(profileRole: string | null | undefined, email: string | nul
     return "owner";
   }
 
-  if (profileRole === "owner" || profileRole === "admin") {
+  if (profileRole === "owner" || profileRole === "admin" || profileRole === "staff") {
     return profileRole;
   }
 
@@ -89,6 +89,8 @@ export async function getCurrentUserContext() {
       user: null,
       profile: null,
       role: "user" as StoreRole,
+      isStaffUser: false,
+      canManageOrders: false,
       isManagementUser: false,
       isOwner: false,
     };
@@ -104,6 +106,8 @@ export async function getCurrentUserContext() {
     user,
     profile,
     role,
+    isStaffUser: role === "staff",
+    canManageOrders: role === "staff" || role === "admin" || role === "owner",
     isManagementUser: role === "admin" || role === "owner",
     isOwner: role === "owner",
   };
@@ -126,6 +130,16 @@ export async function requireManagementUser() {
   const context = await requireUser();
 
   if (!context.isManagementUser) {
+    redirect("/dashboard");
+  }
+
+  return context;
+}
+
+export async function requireOrderOperationsUser() {
+  const context = await requireUser();
+
+  if (!context.canManageOrders) {
     redirect("/dashboard");
   }
 

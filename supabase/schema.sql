@@ -13,7 +13,7 @@ $$;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
-  role text not null default 'user' check (role in ('user', 'admin', 'owner')),
+  role text not null default 'user' check (role in ('user', 'staff', 'admin', 'owner')),
   wallet_address text null,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -27,7 +27,90 @@ alter table public.profiles add column if not exists updated_at timestamptz not 
 
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles
-add constraint profiles_role_check check (role in ('user', 'admin', 'owner'));
+add constraint profiles_role_check check (role in ('user', 'staff', 'admin', 'owner'));
+
+create table if not exists public.products (
+  id text primary key,
+  name text not null,
+  brand text not null,
+  description text not null default '',
+  price_php_cents integer not null default 0,
+  department text not null default 'Womens',
+  category_label text not null default 'Collection',
+  main_image_url text not null,
+  hover_image_url text null,
+  gallery_image_urls jsonb not null default '[]'::jsonb,
+  size_inventory jsonb not null default '{}'::jsonb,
+  status text not null default 'draft',
+  show_in_new_arrivals boolean not null default false,
+  show_in_featured boolean not null default false,
+  published_at timestamptz null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint products_status_check check (status in ('draft', 'published')),
+  constraint products_price_php_cents_check check (price_php_cents >= 0),
+  constraint products_id_trimmed_check check (char_length(trim(id)) > 0),
+  constraint products_name_trimmed_check check (char_length(trim(name)) > 0),
+  constraint products_brand_trimmed_check check (char_length(trim(brand)) > 0),
+  constraint products_main_image_trimmed_check check (char_length(trim(main_image_url)) > 0)
+);
+
+alter table public.products add column if not exists id text;
+alter table public.products add column if not exists name text;
+alter table public.products add column if not exists brand text;
+alter table public.products add column if not exists description text not null default '';
+alter table public.products add column if not exists price_php_cents integer not null default 0;
+alter table public.products add column if not exists department text not null default 'Womens';
+alter table public.products add column if not exists category_label text not null default 'Collection';
+alter table public.products add column if not exists main_image_url text;
+alter table public.products add column if not exists hover_image_url text null;
+alter table public.products add column if not exists gallery_image_urls jsonb not null default '[]'::jsonb;
+alter table public.products add column if not exists size_inventory jsonb not null default '{}'::jsonb;
+alter table public.products add column if not exists status text not null default 'draft';
+alter table public.products add column if not exists show_in_new_arrivals boolean not null default false;
+alter table public.products add column if not exists show_in_featured boolean not null default false;
+alter table public.products add column if not exists published_at timestamptz null;
+alter table public.products add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.products add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.products
+  alter column id set not null,
+  alter column name set not null,
+  alter column brand set not null,
+  alter column description set not null,
+  alter column price_php_cents set not null,
+  alter column department set not null,
+  alter column category_label set not null,
+  alter column main_image_url set not null,
+  alter column gallery_image_urls set not null,
+  alter column size_inventory set not null,
+  alter column status set not null,
+  alter column show_in_new_arrivals set not null,
+  alter column show_in_featured set not null;
+
+alter table public.products drop constraint if exists products_status_check;
+alter table public.products
+add constraint products_status_check check (status in ('draft', 'published'));
+
+alter table public.products drop constraint if exists products_price_php_cents_check;
+alter table public.products
+add constraint products_price_php_cents_check check (price_php_cents >= 0);
+
+alter table public.products drop constraint if exists products_id_trimmed_check;
+alter table public.products
+add constraint products_id_trimmed_check check (char_length(trim(id)) > 0);
+
+alter table public.products drop constraint if exists products_name_trimmed_check;
+alter table public.products
+add constraint products_name_trimmed_check check (char_length(trim(name)) > 0);
+
+alter table public.products drop constraint if exists products_brand_trimmed_check;
+alter table public.products
+add constraint products_brand_trimmed_check check (char_length(trim(brand)) > 0);
+
+alter table public.products drop constraint if exists products_main_image_trimmed_check;
+alter table public.products
+add constraint products_main_image_trimmed_check check (char_length(trim(main_image_url)) > 0);
 
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
@@ -36,6 +119,7 @@ create table if not exists public.orders (
   email text null,
   product_id text null,
   product_name text null,
+  selected_size text null,
   quantity integer not null default 1,
   unit_price numeric not null default 0,
   customer_name text not null default '',
@@ -61,6 +145,7 @@ alter table public.orders add column if not exists user_id uuid null references 
 alter table public.orders add column if not exists email text null;
 alter table public.orders add column if not exists product_id text null;
 alter table public.orders add column if not exists product_name text null;
+alter table public.orders add column if not exists selected_size text null;
 alter table public.orders add column if not exists quantity integer not null default 1;
 alter table public.orders add column if not exists unit_price numeric not null default 0;
 alter table public.orders add column if not exists customer_name text not null default '';
@@ -379,6 +464,9 @@ add constraint admin_cash_out_breakdowns_amount_check check (amount > 0);
 
 create index if not exists profiles_role_idx on public.profiles (role);
 create index if not exists profiles_wallet_address_idx on public.profiles (wallet_address);
+create index if not exists products_status_published_idx on public.products (status, published_at desc, created_at desc);
+create index if not exists products_featured_idx on public.products (show_in_featured, published_at desc);
+create index if not exists products_new_arrivals_idx on public.products (show_in_new_arrivals, published_at desc);
 create index if not exists orders_order_number_idx on public.orders (order_number);
 create index if not exists orders_user_created_idx on public.orders (user_id, created_at desc);
 create index if not exists orders_status_idx on public.orders (status);
@@ -474,6 +562,11 @@ end $$;
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
 before update on public.profiles
+for each row execute function public.set_updated_at();
+
+drop trigger if exists products_set_updated_at on public.products;
+create trigger products_set_updated_at
+before update on public.products
 for each row execute function public.set_updated_at();
 
 drop trigger if exists orders_set_updated_at on public.orders;
@@ -1154,6 +1247,92 @@ on conflict (code) do update set
 delete from public.fund_allocation_rules
 where code in ('atelier', 'growth', 'operations', 'community', 'reserve');
 
+insert into public.products (
+  id,
+  name,
+  brand,
+  description,
+  price_php_cents,
+  department,
+  category_label,
+  main_image_url,
+  hover_image_url,
+  gallery_image_urls,
+  size_inventory,
+  status,
+  show_in_new_arrivals,
+  show_in_featured,
+  published_at
+)
+values
+  (
+    'MIUF-WZ238',
+    'Maison Mary Jane Flat',
+    'VIONE HERNAL',
+    'Glossed leather lines with an editorial finish for day-to-night dressing.',
+    50000,
+    'Womens',
+    'Shoes',
+    '/assets/images/maryjaneshoe.png',
+    '/assets/images/maryjaneshoe.png',
+    '[]'::jsonb,
+    '{"36": 5, "37": 4, "38": 4, "39": 3}'::jsonb,
+    'published',
+    true,
+    true,
+    timezone('utc', now())
+  ),
+  (
+    'BOFE-WS139',
+    'Sheer Layered Co-Ord Set',
+    'VIONE HERNAL',
+    'Layered tailoring with a softened structure that keeps the silhouette refined.',
+    150000,
+    'Womens',
+    'Ready to Wear',
+    '/assets/images/SheerLayeredCo-OrdSet-1.png',
+    '/assets/images/SheerLayeredCo-OrdSet.png',
+    '[]'::jsonb,
+    '{"XS": 5, "S": 4, "M": 3, "L": 2}'::jsonb,
+    'published',
+    true,
+    true,
+    timezone('utc', now())
+  ),
+  (
+    'BOFE-WY20',
+    'Rose Tweed Top Handle Bag',
+    'VIONE HERNAL',
+    'A statement carryall shaped with couture texture and a polished top-handle profile.',
+    200000,
+    'Womens',
+    'Bags',
+    '/assets/images/RoseTweedTopHandleBag.png',
+    '/assets/images/RoseTweedTopHandleBag-1.png',
+    '[]'::jsonb,
+    '{"One Size": 4}'::jsonb,
+    'published',
+    true,
+    true,
+    timezone('utc', now())
+  )
+on conflict (id) do update set
+  name = excluded.name,
+  brand = excluded.brand,
+  description = excluded.description,
+  price_php_cents = excluded.price_php_cents,
+  department = excluded.department,
+  category_label = excluded.category_label,
+  main_image_url = excluded.main_image_url,
+  hover_image_url = excluded.hover_image_url,
+  gallery_image_urls = excluded.gallery_image_urls,
+  size_inventory = excluded.size_inventory,
+  status = excluded.status,
+  show_in_new_arrivals = excluded.show_in_new_arrivals,
+  show_in_featured = excluded.show_in_featured,
+  published_at = coalesce(products.published_at, excluded.published_at),
+  updated_at = timezone('utc', now());
+
 do $$
 declare
   existing_payment record;
@@ -1168,6 +1347,7 @@ begin
 end $$;
 
 alter table public.profiles enable row level security;
+alter table public.products enable row level security;
 alter table public.orders enable row level security;
 alter table public.payments enable row level security;
 alter table public.fund_allocation_rules enable row level security;
@@ -1199,6 +1379,31 @@ on public.profiles
 for update
 using (auth.uid() = id)
 with check (auth.uid() = id);
+
+drop policy if exists "products_select_published" on public.products;
+create policy "products_select_published"
+on public.products
+for select
+using (status = 'published');
+
+drop policy if exists "products_select_management" on public.products;
+create policy "products_select_management"
+on public.products
+for select
+using (public.is_management_user());
+
+drop policy if exists "products_insert_management" on public.products;
+create policy "products_insert_management"
+on public.products
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "products_update_management" on public.products;
+create policy "products_update_management"
+on public.products
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
 
 drop policy if exists "orders_select_own" on public.orders;
 create policy "orders_select_own"
@@ -1252,7 +1457,22 @@ grant select on public.fund_allocation_rules to authenticated;
 grant select on public.payment_allocations to authenticated;
 grant select on public.admin_cash_outs to authenticated;
 grant select on public.admin_cash_out_breakdowns to authenticated;
+grant select on public.products to anon;
+grant select on public.products to authenticated;
 grant execute on function public.record_admin_cash_out_transfer(numeric, text, uuid, uuid, bigint, text, text, text, numeric, numeric, text, timestamptz, text, text, text) to authenticated;
 
 -- Service-role operations from the Next.js backend bypass RLS, which keeps
 -- client reads restricted while still allowing secure server-side writes.
+
+insert into storage.buckets (id, name, public)
+values ('product-media', 'product-media', true)
+on conflict (id) do update
+set
+  name = excluded.name,
+  public = excluded.public;
+
+drop policy if exists "product_media_public_read" on storage.objects;
+create policy "product_media_public_read"
+on storage.objects
+for select
+using (bucket_id = 'product-media');

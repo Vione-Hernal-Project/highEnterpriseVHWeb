@@ -9,7 +9,7 @@ import { formatAmountWithUnit, getPaymentMethodConfig, getPaymentMethodLabel } f
 import { formatDateTime, formatTransactionHash, formatWalletAddress } from "@/lib/utils";
 
 export default async function DashboardPage() {
-  const { supabase, user, profile, role, isManagementUser } = await requireUser();
+  const { supabase, user, profile, role, canManageOrders, isManagementUser } = await requireUser();
 
   const [{ data: orders, error: ordersError }, { data: payments, error: paymentsError }] = await Promise.all([
     supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
@@ -27,9 +27,14 @@ export default async function DashboardPage() {
             security, and it now tracks your Sepolia payment attempts and order history.
           </p>
           <div className="vh-actions">
-            <Link className="vh-button" href="/">
+            <Link className="vh-button" href="/shop">
               Shop Collection
             </Link>
+            {canManageOrders ? (
+              <Link className="vh-button vh-button--ghost" href="/admin/orders">
+                View Orders
+              </Link>
+            ) : null}
             {isManagementUser ? (
               <Link className="vh-button vh-button--ghost" href="/admin">
                 Manage Store

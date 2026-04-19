@@ -8,6 +8,11 @@ const CHECKOUT_AMOUNT_MODES = ["php", "eth"] as const satisfies readonly Checkou
 
 export const orderSchema = z.object({
   productId: z.string().trim().min(1, "Please select a product."),
+  selectedSize: z
+    .string()
+    .trim()
+    .min(1, "Please select a size.")
+    .max(60, "Selected size is too long."),
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1.").max(10, "Quantity must be 10 or less."),
   customerName: z
     .string()
@@ -96,9 +101,9 @@ export const adminOrderStatusSchema = z.object({
 
 export const profileRoleSchema = z.object({
   profileId: z.string().uuid("Profile ID is invalid."),
-  role: z.enum(["user", "admin"], {
+  role: z.enum(["user", "staff", "admin"], {
     errorMap: () => ({
-      message: "Role must be user or admin.",
+      message: "Role must be user, staff, or admin.",
     }),
   }),
 });

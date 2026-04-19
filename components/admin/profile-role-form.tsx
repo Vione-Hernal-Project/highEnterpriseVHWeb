@@ -7,13 +7,13 @@ import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/
 
 type Props = {
   profileId: string;
-  initialRole: "user" | "admin" | "owner" | string;
+  initialRole: "user" | "staff" | "admin" | "owner" | string;
   disabled?: boolean;
 };
 
 export function ProfileRoleForm({ profileId, initialRole, disabled = false }: Props) {
   const router = useRouter();
-  const [role, setRole] = useState(initialRole === "admin" ? "admin" : "user");
+  const [role, setRole] = useState(initialRole === "admin" ? "admin" : initialRole === "staff" ? "staff" : "user");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -23,6 +23,7 @@ export function ProfileRoleForm({ profileId, initialRole, disabled = false }: Pr
       <div className="vh-actions" style={{ marginTop: 0 }}>
         <select className="vh-input" value={role} onChange={(event) => setRole(event.target.value)} disabled={loading || disabled}>
           <option value="user">User</option>
+          <option value="staff">Staff</option>
           <option value="admin">Admin</option>
         </select>
         <button

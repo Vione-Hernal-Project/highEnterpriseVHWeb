@@ -13,7 +13,7 @@ export type Database = {
         Row: {
           id: string;
           email: string | null;
-          role: "user" | "admin" | "owner" | string;
+          role: "user" | "staff" | "admin" | "owner" | string;
           wallet_address: string | null;
           created_at: string;
           updated_at: string;
@@ -21,7 +21,7 @@ export type Database = {
         Insert: {
           id: string;
           email?: string | null;
-          role?: "user" | "admin" | "owner" | string;
+          role?: "user" | "staff" | "admin" | "owner" | string;
           wallet_address?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -29,8 +29,68 @@ export type Database = {
         Update: {
           id?: string;
           email?: string | null;
-          role?: "user" | "admin" | "owner" | string;
+          role?: "user" | "staff" | "admin" | "owner" | string;
           wallet_address?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      products: {
+        Row: {
+          id: string;
+          name: string;
+          brand: string;
+          description: string;
+          price_php_cents: number;
+          department: string;
+          category_label: string;
+          main_image_url: string;
+          hover_image_url: string | null;
+          gallery_image_urls: Json;
+          size_inventory: Json;
+          status: string;
+          show_in_new_arrivals: boolean;
+          show_in_featured: boolean;
+          published_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          name: string;
+          brand: string;
+          description?: string;
+          price_php_cents?: number;
+          department?: string;
+          category_label?: string;
+          main_image_url: string;
+          hover_image_url?: string | null;
+          gallery_image_urls?: Json;
+          size_inventory?: Json;
+          status?: string;
+          show_in_new_arrivals?: boolean;
+          show_in_featured?: boolean;
+          published_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          brand?: string;
+          description?: string;
+          price_php_cents?: number;
+          department?: string;
+          category_label?: string;
+          main_image_url?: string;
+          hover_image_url?: string | null;
+          gallery_image_urls?: Json;
+          size_inventory?: Json;
+          status?: string;
+          show_in_new_arrivals?: boolean;
+          show_in_featured?: boolean;
+          published_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -44,6 +104,7 @@ export type Database = {
           email: string | null;
           product_id: string | null;
           product_name: string | null;
+          selected_size: string | null;
           quantity: number;
           unit_price: string;
           customer_name: string;
@@ -66,6 +127,7 @@ export type Database = {
           email?: string | null;
           product_id?: string | null;
           product_name?: string | null;
+          selected_size?: string | null;
           quantity?: number;
           unit_price?: string;
           customer_name?: string;
@@ -88,6 +150,7 @@ export type Database = {
           email?: string | null;
           product_id?: string | null;
           product_name?: string | null;
+          selected_size?: string | null;
           quantity?: number;
           unit_price?: string;
           customer_name?: string;

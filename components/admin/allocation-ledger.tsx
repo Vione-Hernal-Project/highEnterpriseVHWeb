@@ -431,62 +431,94 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
       {error ? <div className="vh-status vh-status--error">{error}</div> : null}
 
       <div className="vh-ledger-dashboard">
-        <section className="vh-ledger-panel">
-          <div className="vh-ledger-panel__header">
-            <div>
-              <p className="vh-mvp-eyebrow">Payment Distribution</p>
-              <h2 className="h3 u-margin-b--sm">Every successful payment is routed through the breakdown from your diagram.</h2>
+        <div className="vh-ledger-main-column">
+          <section className="vh-ledger-panel">
+            <div className="vh-ledger-panel__header">
+              <div>
+                <p className="vh-mvp-eyebrow">Payment Distribution</p>
+                <h2 className="h3 u-margin-b--sm">Every successful payment is routed through the breakdown from your diagram.</h2>
+              </div>
+              <Sparkles size={18} />
             </div>
-            <Sparkles size={18} />
-          </div>
 
-          <div className="vh-ledger-breakdown-list">
-            {snapshot.categories.length ? (
-              snapshot.categories.map((category) => (
-                <article key={category.id} className="vh-ledger-breakdown-row">
-                  <div className="vh-ledger-breakdown-row__header">
-                    <div className="vh-ledger-breakdown-row__title">
-                      <span className="vh-ledger-swatch" style={{ backgroundColor: category.color }} aria-hidden="true" />
-                      <div>
-                        <strong>{category.name}</strong>
-                        <p className="u-margin-b--none">{category.lead || category.description || "Allocation category"}</p>
+            <div className="vh-ledger-breakdown-list">
+              {snapshot.categories.length ? (
+                snapshot.categories.map((category) => (
+                  <article key={category.id} className="vh-ledger-breakdown-row">
+                    <div className="vh-ledger-breakdown-row__header">
+                      <div className="vh-ledger-breakdown-row__title">
+                        <span className="vh-ledger-swatch" style={{ backgroundColor: category.color }} aria-hidden="true" />
+                        <div>
+                          <strong>{category.name}</strong>
+                          <p className="u-margin-b--none">{category.lead || category.description || "Allocation category"}</p>
+                        </div>
+                      </div>
+                      <div className="vh-ledger-breakdown-row__totals">
+                        <AnimatedAmount amount={category.withdrawableAmount} currency={snapshot.summary.primaryCurrency} />
+                        <span>{category.percentageLabel}</span>
                       </div>
                     </div>
-                    <div className="vh-ledger-breakdown-row__totals">
-                      <AnimatedAmount amount={category.withdrawableAmount} currency={snapshot.summary.primaryCurrency} />
-                      <span>{category.percentageLabel}</span>
+                    <div className="vh-ledger-breakdown-row__bar">
+                      <span
+                        className="vh-ledger-breakdown-row__fill"
+                        style={{
+                          width: `${category.withdrawableAmount > 0 ? Math.max(8, category.shareOfTotal) : 0}%`,
+                          backgroundColor: category.color,
+                        }}
+                      />
                     </div>
+                    {category.subAllocations.length ? (
+                      <div className="vh-ledger-suballocation-list">
+                        {category.subAllocations.map((subAllocation) => (
+                          <div key={subAllocation.code} className="vh-ledger-suballocation-item">
+                            <span>
+                              {subAllocation.name}
+                              {subAllocation.note ? ` · ${subAllocation.note}` : ""}
+                            </span>
+                            <strong>{subAllocation.amountLabel}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <p className="vh-ledger-breakdown-row__meta">{category.paymentCount} successful payments contributed to this bucket.</p>
+                  </article>
+                ))
+              ) : (
+                <div className="vh-empty">No allocation categories are active yet.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="vh-ledger-panel">
+            <div className="vh-ledger-panel__header">
+              <div>
+                <p className="vh-mvp-eyebrow">VHL Token Allocation</p>
+                <h2 className="h3 u-margin-b--sm">{snapshot.tokenAllocation.totalSupplyLabel} total supply framework.</h2>
+              </div>
+              <Layers3 size={18} />
+            </div>
+
+            <div className="vh-ledger-token-grid">
+              {snapshot.tokenAllocation.items.map((item) => (
+                <article key={item.code} className="vh-ledger-token-card">
+                  <div className="vh-ledger-token-card__topline">
+                    <strong>{item.name}</strong>
+                    <span>{item.percentageLabel}</span>
                   </div>
-                  <div className="vh-ledger-breakdown-row__bar">
-                    <span
-                      className="vh-ledger-breakdown-row__fill"
-                      style={{
-                        width: `${category.withdrawableAmount > 0 ? Math.max(8, category.shareOfTotal) : 0}%`,
-                        backgroundColor: category.color,
-                      }}
-                    />
+                  <div className="vh-ledger-token-card__value">{item.tokenAmountLabel}</div>
+                  <p className="vh-ledger-token-card__meta">
+                    {item.fundedBySales ? "Included in the broader operating framework." : "Not funded through sales directly."}
+                  </p>
+                  <div className="vh-ledger-token-card__notes">
+                    {item.notes.map((note) => (
+                      <span key={note}>{note}</span>
+                    ))}
                   </div>
-                  {category.subAllocations.length ? (
-                    <div className="vh-ledger-suballocation-list">
-                      {category.subAllocations.map((subAllocation) => (
-                        <div key={subAllocation.code} className="vh-ledger-suballocation-item">
-                          <span>
-                            {subAllocation.name}
-                            {subAllocation.note ? ` · ${subAllocation.note}` : ""}
-                          </span>
-                          <strong>{subAllocation.amountLabel}</strong>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <p className="vh-ledger-breakdown-row__meta">{category.paymentCount} successful payments contributed to this bucket.</p>
                 </article>
-              ))
-            ) : (
-              <div className="vh-empty">No allocation categories are active yet.</div>
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        </div>
 
         <div className="vh-ledger-side-grid">
           <LedgerCashOutPanel snapshot={snapshot} onSnapshotUpdate={applySnapshotUpdate} />
@@ -540,36 +572,6 @@ export function AllocationLedger({ initialSnapshot, role }: Props) {
           </section>
         </div>
       </div>
-
-      <section className="vh-ledger-panel">
-        <div className="vh-ledger-panel__header">
-          <div>
-            <p className="vh-mvp-eyebrow">VHL Token Allocation</p>
-            <h2 className="h3 u-margin-b--sm">{snapshot.tokenAllocation.totalSupplyLabel} total supply framework.</h2>
-          </div>
-          <Layers3 size={18} />
-        </div>
-
-        <div className="vh-ledger-token-grid">
-          {snapshot.tokenAllocation.items.map((item) => (
-            <article key={item.code} className="vh-ledger-token-card">
-              <div className="vh-ledger-token-card__topline">
-                <strong>{item.name}</strong>
-                <span>{item.percentageLabel}</span>
-              </div>
-              <div className="vh-ledger-token-card__value">{item.tokenAmountLabel}</div>
-              <p className="vh-ledger-token-card__meta">
-                {item.fundedBySales ? "Included in the broader operating framework." : "Not funded through sales directly."}
-              </p>
-              <div className="vh-ledger-token-card__notes">
-                {item.notes.map((note) => (
-                  <span key={note}>{note}</span>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
 
       <section className="vh-ledger-panel">
         <div className="vh-ledger-panel__header">

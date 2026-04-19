@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ProductDetailView } from "@/components/storefront/product-detail-view";
-import { getCatalogProduct } from "@/lib/catalog";
+import { loadPublishedCatalogProduct } from "@/lib/products";
 
 type Props = {
   params: Promise<{
@@ -11,11 +11,11 @@ type Props = {
 
 export default async function ProductPage({ params }: Props) {
   const { productId } = await params;
-  const product = getCatalogProduct(productId);
+  const product = await loadPublishedCatalogProduct(productId);
 
-  if (!product || product.id !== productId) {
+  if (!product) {
     notFound();
   }
 
-  return <ProductDetailView productId={product.id} />;
+  return <ProductDetailView product={product} />;
 }

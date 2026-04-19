@@ -8,22 +8,26 @@ import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/
 type Props = {
   orderId: string;
   initialStatus: "pending" | "paid" | "cancelled" | string;
+  allowedStatuses?: string[];
 };
 
-export function AdminOrderStatusForm({ orderId, initialStatus }: Props) {
+export function AdminOrderStatusForm({ orderId, initialStatus, allowedStatuses }: Props) {
   const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const statusOptions = Array.from(new Set([initialStatus, ...(allowedStatuses || ["pending", "paid", "cancelled"])]));
 
   return (
     <div style={{ marginTop: "1rem" }}>
       <div className="vh-actions" style={{ marginTop: 0 }}>
         <select className="vh-input" value={status} onChange={(event) => setStatus(event.target.value)} disabled={loading}>
-          <option value="pending">Pending</option>
-          <option value="paid">Paid</option>
-          <option value="cancelled">Cancelled</option>
+          {statusOptions.map((option) => (
+            <option key={option} value={option}>
+              {option.charAt(0).toUpperCase() + option.slice(1)}
+            </option>
+          ))}
         </select>
         <button
           type="button"

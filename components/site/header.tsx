@@ -68,7 +68,7 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
           <nav className="global-header__secondary-nav" aria-label="Secondary">
             <ul className="global-header__secondary-nav-list">
               <li className="global-header__secondary-nav-list-item u-margin-r--xxl">
-                <Link href="/">Womens</Link>
+                <Link href="/shop">Womens</Link>
               </li>
               <HeaderStoreLinks />
               <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
@@ -91,7 +91,7 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
         <nav className="nav-primary" aria-label="Primary">
           <ul className="nav-primary__list u-static">
             <li className="nav-primary__item first">
-              <Link className="nav-primary__link" href="/">
+              <Link className="nav-primary__link" href="/new">
                 new
               </Link>
             </li>

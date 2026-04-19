@@ -1,5 +1,8 @@
 import { WishlistPageView } from "@/components/storefront/wishlist-page-view";
+import { loadPublishedCatalogProducts } from "@/lib/products";
 
-export default function WishlistPage() {
-  return <WishlistPageView />;
+export default async function WishlistPage() {
+  const products = await loadPublishedCatalogProducts();
+
+  return <WishlistPageView products={products} />;
 }

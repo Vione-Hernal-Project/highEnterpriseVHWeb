@@ -6,9 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { formatPhpCurrencyFromCents } from "@/lib/payments/amounts";
 import {
   getCatalogPriceLabel,
-  getCatalogProduct,
   getCatalogProductPageHref,
   getCatalogSubtotalPhpCents,
+  type CatalogProduct,
 } from "@/lib/catalog";
 import { readBagItems, removeBagItem, subscribeToStorefrontState, updateBagItemQuantity, type StorefrontBagItem } from "@/lib/storefront/storage";
 
@@ -20,8 +20,13 @@ type BagLineItem = StorefrontBagItem & {
   productHref: string;
 };
 
-export function BagPageView() {
+type Props = {
+  products: CatalogProduct[];
+};
+
+export function BagPageView({ products }: Props) {
   const [bagItems, setBagItems] = useState<StorefrontBagItem[]>([]);
+  const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
   useEffect(() => {
     function syncBag() {
@@ -37,7 +42,7 @@ export function BagPageView() {
     () =>
       bagItems
         .map((item) => {
-          const product = getCatalogProduct(item.productId);
+          const product = productMap.get(item.productId);
 
           if (!product) {
             return null;
@@ -53,7 +58,7 @@ export function BagPageView() {
           } satisfies BagLineItem;
         })
         .filter((item): item is BagLineItem => Boolean(item)),
-    [bagItems],
+    [bagItems, productMap],
   );
 
   const subtotalPhpCents = items.reduce(

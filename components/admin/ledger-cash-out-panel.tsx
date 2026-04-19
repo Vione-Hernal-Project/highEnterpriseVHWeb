@@ -689,57 +689,67 @@ export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
           {cashOutMessage ? <div className="vh-status vh-status--success">{cashOutMessage}</div> : null}
         </form>
 
-        <div className="vh-ledger-cashout-history">
-          {snapshot.cashOut.recentEvents.length ? (
-            snapshot.cashOut.recentEvents.map((cashOutEvent) => (
-              <article key={cashOutEvent.id} className="vh-ledger-cashout-item">
-                <div className="vh-ledger-cashout-item__topline">
-                  <strong>{cashOutEvent.amountLabel}</strong>
-                  <span className="vh-ledger-cashout-item__meta">{cashOutEvent.currency}</span>
-                </div>
-                <p className="u-margin-b--none">
-                  Source: <strong>{cashOutEvent.sourceLabel}</strong>
-                </p>
-                <p className="u-margin-b--none">
-                  {formatWalletAddress(cashOutEvent.senderWalletAddress)} -&gt; {formatWalletAddress(cashOutEvent.destinationWalletAddress)}
-                </p>
-                <p className="u-margin-b--none">
-                  Tx Hash: <strong>{formatTransactionHash(cashOutEvent.txHash)}</strong>
-                </p>
-                {cashOutEvent.amountPhpEquivalentLabel ? (
-                  <p className="u-margin-b--none">
-                    PHP equivalent: <strong>{cashOutEvent.amountPhpEquivalentLabel}</strong>
-                  </p>
-                ) : null}
-                {cashOutEvent.quotePhpPerEthLabel ? (
-                  <p className="u-margin-b--none">
-                    Locked ETH/PHP rate: <strong>{cashOutEvent.quotePhpPerEthLabel}</strong>
-                  </p>
-                ) : null}
-                <p className="u-margin-b--none">
-                  Remaining balance after this deduction: <strong>{cashOutEvent.availableAfterLabel}</strong>
-                </p>
-                {cashOutEvent.breakdowns.length ? (
-                  <div className="vh-ledger-cashout-breakdown-list">
-                    {cashOutEvent.breakdowns.map((breakdown) => (
-                      <div key={breakdown.id} className="vh-ledger-cashout-breakdown-item">
-                        <span>
-                          <span className="vh-ledger-swatch" style={{ backgroundColor: breakdown.color }} aria-hidden="true" />
-                          {breakdown.name}
-                        </span>
-                        <strong>{breakdown.amountLabel}</strong>
-                      </div>
-                    ))}
+        <div className="vh-ledger-cashout-history-shell">
+          <div className="vh-ledger-cashout-history__header">
+            <div>
+              <p className="vh-mvp-eyebrow">Recent Cash-Outs</p>
+              <p className="u-margin-b--none">Latest transfer records stay contained here as the ledger grows.</p>
+            </div>
+            <span className="vh-ledger-cashout-history__count">{snapshot.cashOut.totalEvents} total</span>
+          </div>
+
+          <div className="vh-ledger-cashout-history" role="list" aria-label="Recent admin cash-outs">
+            {snapshot.cashOut.recentEvents.length ? (
+              snapshot.cashOut.recentEvents.map((cashOutEvent) => (
+                <article key={cashOutEvent.id} className="vh-ledger-cashout-item">
+                  <div className="vh-ledger-cashout-item__topline">
+                    <strong>{cashOutEvent.amountLabel}</strong>
+                    <span className="vh-ledger-cashout-item__meta">{cashOutEvent.currency}</span>
                   </div>
-                ) : null}
-                <p className="vh-ledger-cashout-item__meta u-margin-b--none">
-                  {cashOutEvent.createdByEmail || "Management"} · {formatDateTime(cashOutEvent.createdAt)}
-                </p>
-              </article>
-            ))
-          ) : (
-            <div className="vh-empty">No admin cash-outs have been recorded yet.</div>
-          )}
+                  <p className="u-margin-b--none">
+                    Source: <strong>{cashOutEvent.sourceLabel}</strong>
+                  </p>
+                  <p className="u-margin-b--none">
+                    {formatWalletAddress(cashOutEvent.senderWalletAddress)} -&gt; {formatWalletAddress(cashOutEvent.destinationWalletAddress)}
+                  </p>
+                  <p className="u-margin-b--none">
+                    Tx Hash: <strong>{formatTransactionHash(cashOutEvent.txHash)}</strong>
+                  </p>
+                  {cashOutEvent.amountPhpEquivalentLabel ? (
+                    <p className="u-margin-b--none">
+                      PHP equivalent: <strong>{cashOutEvent.amountPhpEquivalentLabel}</strong>
+                    </p>
+                  ) : null}
+                  {cashOutEvent.quotePhpPerEthLabel ? (
+                    <p className="u-margin-b--none">
+                      Locked ETH/PHP rate: <strong>{cashOutEvent.quotePhpPerEthLabel}</strong>
+                    </p>
+                  ) : null}
+                  <p className="u-margin-b--none">
+                    Remaining balance after this deduction: <strong>{cashOutEvent.availableAfterLabel}</strong>
+                  </p>
+                  {cashOutEvent.breakdowns.length ? (
+                    <div className="vh-ledger-cashout-breakdown-list">
+                      {cashOutEvent.breakdowns.map((breakdown) => (
+                        <div key={breakdown.id} className="vh-ledger-cashout-breakdown-item">
+                          <span>
+                            <span className="vh-ledger-swatch" style={{ backgroundColor: breakdown.color }} aria-hidden="true" />
+                            {breakdown.name}
+                          </span>
+                          <strong>{breakdown.amountLabel}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <p className="vh-ledger-cashout-item__meta u-margin-b--none">
+                    {cashOutEvent.createdByEmail || "Management"} · {formatDateTime(cashOutEvent.createdAt)}
+                  </p>
+                </article>
+              ))
+            ) : (
+              <div className="vh-empty">No admin cash-outs have been recorded yet.</div>
+            )}
+          </div>
         </div>
       </div>
     </section>

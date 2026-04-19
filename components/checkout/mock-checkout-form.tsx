@@ -9,7 +9,7 @@ import {
   getStorefrontBagItemKey,
   removeBagItem,
 } from "@/lib/storefront/storage";
-import { getCatalogPriceLabel, getCatalogProduct, getCatalogProductUiMeta } from "@/lib/catalog";
+import { getCatalogPriceLabel, getCatalogProductUiMeta, type CatalogProduct } from "@/lib/catalog";
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 import { formatPhpCurrencyFromCents } from "@/lib/payments/amounts";
 import { getDefaultCheckoutInput, resolveCheckoutInput, type CheckoutAmountMode } from "@/lib/payments/checkout";
@@ -17,18 +17,11 @@ import { sendCryptoPayment, validateWalletCanPay } from "@/lib/web3/payments";
 
 type Props = {
   customerEmail: string;
+  products: CatalogProduct[];
 };
 
 type PricingPreview = {
-  product: {
-    id: string;
-    name: string;
-    brand: string;
-    description: string;
-    pricePhpCents: number;
-    image: string;
-    hoverImage: string;
-  };
+  product: CatalogProduct;
   quantity: number;
   subtotalPhpCents: number;
   subtotalPhp: string;
@@ -94,14 +87,14 @@ function normalizeRequestedQuantity(value: string | null) {
   return String(Math.floor(parsed));
 }
 
-export function MockCheckoutForm({ customerEmail }: Props) {
+export function MockCheckoutForm({ customerEmail, products }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const searchParams = useSearchParams();
   const fromBag = searchParams.get("from") === "bag";
   const requestedProductId = searchParams.get("product");
   const requestedSize = searchParams.get("size");
   const requestedQuantity = normalizeRequestedQuantity(searchParams.get("quantity"));
-  const requestedProduct = fromBag ? getCatalogProduct(requestedProductId) : null;
+  const requestedProduct = fromBag ? products.find((product) => product.id === requestedProductId) ?? null : null;
   const initialProduct = requestedProduct?.id === requestedProductId ? requestedProduct : null;
   const [loading, setLoading] = useState(false);
   const [quoteLoading, setQuoteLoading] = useState(false);
@@ -118,7 +111,7 @@ export function MockCheckoutForm({ customerEmail }: Props) {
   const [country, setCountry] = useState("Philippines");
   const [productId, setProductId] = useState(initialProduct?.id ?? "");
   const [selectedSize, setSelectedSize] = useState(() => {
-    const initialMeta = getCatalogProductUiMeta(initialProduct?.id);
+    const initialMeta = getCatalogProductUiMeta(initialProduct);
 
     if (requestedSize && initialMeta.sizes.includes(requestedSize)) {
       return requestedSize;
@@ -135,9 +128,9 @@ export function MockCheckoutForm({ customerEmail }: Props) {
   const [submission, setSubmission] = useState<SubmissionState | null>(null);
 
   useEffect(() => {
-    const matchedProduct = fromBag ? getCatalogProduct(requestedProductId) : null;
+    const matchedProduct = fromBag ? products.find((product) => product.id === requestedProductId) ?? null : null;
     const searchProduct = matchedProduct?.id === requestedProductId ? matchedProduct : null;
-    const nextMeta = getCatalogProductUiMeta(searchProduct?.id);
+    const nextMeta = getCatalogProductUiMeta(searchProduct);
     const nextSize = requestedSize && nextMeta.sizes.includes(requestedSize) ? requestedSize : nextMeta.sizes[0] ?? "One Size";
 
     if (searchProduct?.id !== productId) {
@@ -149,10 +142,13 @@ export function MockCheckoutForm({ customerEmail }: Props) {
 
     setSelectedSize(nextSize);
     setQuantity(requestedQuantity);
-  }, [fromBag, productId, requestedProductId, requestedQuantity, requestedSize]);
+  }, [fromBag, productId, products, requestedProductId, requestedQuantity, requestedSize]);
 
-  const selectedProduct = useMemo(() => (productId ? getCatalogProduct(productId) : null), [productId]);
-  const productUiMeta = useMemo(() => getCatalogProductUiMeta(selectedProduct?.id), [selectedProduct?.id]);
+  const selectedProduct = useMemo(
+    () => (productId ? products.find((product) => product.id === productId) ?? null : null),
+    [productId, products],
+  );
+  const productUiMeta = useMemo(() => getCatalogProductUiMeta(selectedProduct), [selectedProduct]);
   const shippingAddress = useMemo(
     () => buildShippingAddress([address1, city, province, postalCode, country]),
     [address1, city, province, postalCode, country],
@@ -293,6 +289,7 @@ export function MockCheckoutForm({ customerEmail }: Props) {
         },
         body: JSON.stringify({
           productId,
+          selectedSize,
           quantity,
           customerName,
           phone,

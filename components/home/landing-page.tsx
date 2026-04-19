@@ -1,11 +1,13 @@
 import Link from "next/link";
 
 import { FeaturedProducts } from "@/components/home/featured-products";
-import { featuredProducts, getCatalogProductPageHref } from "@/lib/catalog";
+import { getCatalogProductPageHref } from "@/lib/catalog";
+import { loadFeaturedCatalogProducts } from "@/lib/products";
 
-export function LandingPage() {
+export async function LandingPage() {
+  const featuredProducts = await loadFeaturedCatalogProducts(3);
   const heroBackgroundSrc: string | null = null;
-  const heroProductHref = getCatalogProductPageHref(featuredProducts[0]?.id ?? "");
+  const heroProductHref = featuredProducts[0] ? getCatalogProductPageHref(featuredProducts[0].id) : "/shop";
 
   return (
     <div className="storefront-app-view">
@@ -92,7 +94,7 @@ export function LandingPage() {
         <h3 className="u-margin-tb--none u-padding-t--lg">Featured Items</h3>
       </div>
 
-      <FeaturedProducts />
+      <FeaturedProducts products={featuredProducts} />
     </div>
   );
 }

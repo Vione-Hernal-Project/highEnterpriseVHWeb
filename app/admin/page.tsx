@@ -41,10 +41,17 @@ export default async function AdminPage() {
         <h1 className="vh-mvp-title">Orders, payments, and customer access controls.</h1>
         <p className="vh-mvp-copy">
           This area is protected on the server. Effective role: {role}. Use it to review orders, inspect Sepolia
-          payment records, inspect the live allocation ledger, adjust order status when needed, and manage admin access.
+          payment records, inspect the live allocation ledger, adjust order status when needed, manage product launches,
+          and manage admin access.
         </p>
         {adminError ? <div className="vh-status vh-status--error">{adminError}</div> : null}
         <div className="vh-actions">
+          <Link className="vh-button" href="/admin/products">
+            Manage Products
+          </Link>
+          <Link className="vh-button vh-button--ghost" href="/admin/orders">
+            Open Order Operations
+          </Link>
           <Link className="vh-button" href="/admin/ledger">
             Open Allocation Ledger
           </Link>
@@ -54,6 +61,20 @@ export default async function AdminPage() {
           <LogoutButton />
         </div>
       </div>
+
+      <section className="vh-data-card" style={{ marginTop: "2rem" }}>
+        <p className="vh-mvp-eyebrow">Product Launches</p>
+        <h2 className="h3 u-margin-b--sm">Add new products without touching frontend code.</h2>
+        <p className="vh-mvp-copy" style={{ marginTop: 0 }}>
+          Use the product manager to upload images, save drafts, publish products, and control Shop, New Arrivals, and
+          Featured Items placement from one admin screen.
+        </p>
+        <div className="vh-actions">
+          <Link className="vh-button vh-button--ghost" href="/admin/products">
+            Open Product Manager
+          </Link>
+        </div>
+      </section>
 
       <section className="vh-data-card" style={{ marginTop: "2rem" }}>
         <p className="vh-mvp-eyebrow">Live Monitoring</p>

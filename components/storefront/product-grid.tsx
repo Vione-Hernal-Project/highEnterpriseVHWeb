@@ -8,9 +8,10 @@ import { featuredProducts, getCatalogPriceLabel, getCatalogProductPageHref, type
 type Props = {
   ctaLabel?: string;
   products?: CatalogProduct[];
+  showCta?: boolean;
 };
 
-export function ProductGrid({ ctaLabel = "View This Piece", products = featuredProducts }: Props) {
+export function ProductGrid({ ctaLabel = "View This Piece", products = featuredProducts, showCta = true }: Props) {
   return (
     <div className="g n-block-grid--4 product-grids js-product-opt-view">
       {products.map((product) => {
@@ -30,9 +31,15 @@ export function ProductGrid({ ctaLabel = "View This Piece", products = featuredP
                 <div className="product-grids__copy-item prices">{getCatalogPriceLabel(product.pricePhpCents)}</div>
               </div>
             </Link>
-            <Link className="vh-card-link" href={productHref}>
-              <span className="vh-button">{ctaLabel}</span>
-            </Link>
+            {showCta ? (
+              <Link className="vh-card-link" href={productHref}>
+                <span className="vh-button">{ctaLabel}</span>
+              </Link>
+            ) : (
+              <div className="vh-card-link" aria-hidden="true" style={{ visibility: "hidden" }}>
+                <span className="vh-button">{ctaLabel}</span>
+              </div>
+            )}
           </div>
         );
       })}
