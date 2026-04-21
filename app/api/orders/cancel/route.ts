@@ -43,6 +43,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Only pending orders can be cancelled." }, { status: 400 });
     }
 
+    const { data: relatedPayments, error: paymentsError } = await admin
+      .from("payments")
+      .select("id,status,tx_hash")
+      .eq("order_id", order.id);
+
+    if (paymentsError) {
+      return NextResponse.json({ error: paymentsError.message }, { status: 500 });
+    }
+
+    const hasSubmittedPayment = (relatedPayments || []).some((payment) => payment.status === "paid" || Boolean(payment.tx_hash));
+
+    if (hasSubmittedPayment) {
+      return NextResponse.json(
+        { error: "Orders with a submitted on-chain payment cannot be cancelled automatically. Contact support instead." },
+        { status: 400 },
+      );
+    }
+
     const cancelledAt = new Date().toISOString();
     const { data: updatedOrder, error: updateError } = await admin
       .from("orders")
@@ -64,7 +82,7 @@ export async function POST(request: Request) {
         status: "cancelled",
       })
       .eq("order_id", order.id)
-      .eq("status", "pending");
+      .in("status", ["pending", "failed"]);
 
     if (paymentError) {
       return NextResponse.json({ error: paymentError.message }, { status: 500 });

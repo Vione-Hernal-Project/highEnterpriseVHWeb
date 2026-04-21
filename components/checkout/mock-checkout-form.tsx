@@ -84,6 +84,8 @@ type SubmissionState = {
   orderNumber: string | null;
   paymentId: string;
   paymentMethod: string;
+  txHash: string | null;
+  walletAddress: string | null;
   itemCount: number;
   totalQuantity: number;
   itemLines: string[];
@@ -99,6 +101,18 @@ type SubmissionState = {
   verificationStatus: "paid" | "pending";
   message: string;
 };
+
+type VerifyPaymentPayload = {
+  error?: string;
+  message?: string;
+  verificationStatus?: "paid" | "pending" | "invalid";
+  order?: {
+    confirmation_email_status?: string;
+  };
+};
+
+const AUTO_VERIFY_INTERVAL_MS = 8000;
+const AUTO_VERIFY_MAX_ATTEMPTS = 10;
 
 function formatQuoteTime(value: string | null) {
   if (!value) {
@@ -116,6 +130,22 @@ function buildShippingAddress(parts: Array<string | null | undefined>) {
     .map((part) => (part || "").trim())
     .filter(Boolean)
     .join(", ");
+}
+
+async function rollbackPendingOrder(orderId: string) {
+  const response = await fetch("/api/orders/cancel", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ orderId }),
+  });
+
+  const payload = await readJsonSafely<{ error?: string }>(response);
+
+  if (!response.ok) {
+    throw new Error(getResponseErrorMessage(payload, "Unable to roll back the pending order."));
+  }
 }
 
 export function MockCheckoutForm({ customerEmail, products }: Props) {
@@ -142,6 +172,9 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
   const [notes, setNotes] = useState("");
   const [pricing, setPricing] = useState<PricingPreview | null>(null);
   const [submission, setSubmission] = useState<SubmissionState | null>(null);
+  const autoVerifyTimerRef = useRef<number | null>(null);
+  const autoVerifyAttemptRef = useRef(0);
+  const autoVerifyInFlightRef = useRef(false);
 
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
@@ -154,6 +187,115 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
     return subscribeToStorefrontState(syncBag);
   }, []);
+
+  useEffect(() => {
+    if (!submission || submission.verificationStatus !== "pending" || !submission.txHash) {
+      if (autoVerifyTimerRef.current !== null) {
+        window.clearTimeout(autoVerifyTimerRef.current);
+        autoVerifyTimerRef.current = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const clearAutoVerifyTimer = () => {
+      if (autoVerifyTimerRef.current !== null) {
+        window.clearTimeout(autoVerifyTimerRef.current);
+        autoVerifyTimerRef.current = null;
+      }
+    };
+
+    const runAutoVerify = async () => {
+      if (cancelled || autoVerifyInFlightRef.current) {
+        return;
+      }
+
+      if (autoVerifyAttemptRef.current >= AUTO_VERIFY_MAX_ATTEMPTS) {
+        clearAutoVerifyTimer();
+        setSubmission((current) =>
+          current && current.paymentId === submission.paymentId
+            ? {
+                ...current,
+                message: "Transaction submitted. Still waiting for Sepolia confirmation. You can also check the dashboard.",
+              }
+            : current,
+        );
+        return;
+      }
+
+      autoVerifyAttemptRef.current += 1;
+      autoVerifyInFlightRef.current = true;
+
+      try {
+        const response = await fetch("/api/payments/verify", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            paymentId: submission.paymentId,
+            txHash: submission.txHash,
+            walletAddress: submission.walletAddress || undefined,
+          }),
+        });
+
+        const payload = await readJsonSafely<VerifyPaymentPayload>(response);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (response.status === 202) {
+          setError("");
+          setSubmission((current) =>
+            current && current.paymentId === submission.paymentId
+              ? {
+                  ...current,
+                  message: payload?.message || "Transaction submitted. Waiting for Sepolia confirmation.",
+                }
+              : current,
+          );
+          clearAutoVerifyTimer();
+          autoVerifyTimerRef.current = window.setTimeout(runAutoVerify, AUTO_VERIFY_INTERVAL_MS);
+          return;
+        }
+
+        if (!response.ok) {
+          clearAutoVerifyTimer();
+          setError(getResponseErrorMessage(payload, "The on-chain payment could not be verified yet."));
+          return;
+        }
+
+        clearAutoVerifyTimer();
+        setError("");
+        setSubmission((current) =>
+          current && current.paymentId === submission.paymentId
+            ? {
+                ...current,
+                verificationStatus: "paid",
+                confirmationEmailStatus: payload?.order?.confirmation_email_status || current.confirmationEmailStatus,
+                message: payload?.message || "Sepolia payment confirmed.",
+              }
+            : current,
+        );
+      } catch (autoVerifyError) {
+        clearAutoVerifyTimer();
+        setError(getErrorMessage(autoVerifyError, "Unable to verify the payment automatically right now."));
+      } finally {
+        autoVerifyInFlightRef.current = false;
+      }
+    };
+
+    autoVerifyAttemptRef.current = 0;
+    void runAutoVerify();
+
+    return () => {
+      cancelled = true;
+      clearAutoVerifyTimer();
+      autoVerifyInFlightRef.current = false;
+    };
+  }, [submission?.paymentId, submission?.txHash, submission?.verificationStatus, submission?.walletAddress]);
 
   const checkoutItems = useMemo(
     () =>
@@ -456,6 +598,8 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         orderNumber: createOrderPayload.order.order_number,
         paymentId: createOrderPayload.payment.id,
         paymentMethod: createOrderPayload.payment.payment_method,
+        txHash: null,
+        walletAddress: null,
         itemCount: pricing.itemCount,
         totalQuantity: pricing.totalQuantity,
         itemLines,
@@ -470,8 +614,6 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         confirmationEmailStatus: createOrderPayload.order.confirmation_email_status,
       };
 
-      writeBagItems([]);
-
       try {
         const walletPayment = await sendCryptoPayment({
           amount: createOrderPayload.pricing.payableEthAmount,
@@ -479,6 +621,8 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           preparedWallet,
           recipientAddress: orderSnapshot.recipientWalletAddress,
         });
+
+        writeBagItems([]);
 
         const verifyResponse = await fetch("/api/payments/verify", {
           method: "POST",
@@ -501,6 +645,8 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         if (verifyResponse.status === 202) {
           setSubmission({
             ...orderSnapshot,
+            txHash: walletPayment.txHash,
+            walletAddress: walletPayment.walletAddress,
             verificationStatus: "pending",
             message: verifyPayload?.message || "Transaction submitted. Waiting for Sepolia confirmation.",
           });
@@ -511,6 +657,8 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         if (!verifyResponse.ok) {
           setSubmission({
             ...orderSnapshot,
+            txHash: walletPayment.txHash,
+            walletAddress: walletPayment.walletAddress,
             verificationStatus: "pending",
             message: "Order created. Payment is still pending and can be rechecked from the dashboard.",
           });
@@ -523,18 +671,22 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
         setSubmission({
           ...orderSnapshot,
+          txHash: walletPayment.txHash,
+          walletAddress: walletPayment.walletAddress,
           verificationStatus: "paid",
           message: verifyPayload?.message || "Sepolia payment confirmed.",
         });
         resetForm();
       } catch (walletError) {
-        setSubmission({
-          ...orderSnapshot,
-          verificationStatus: "pending",
-          message: "Order created. Complete the Sepolia payment from your dashboard when you are ready.",
-        });
-        setError(`${getErrorMessage(walletError, "MetaMask payment was not completed.")} The order is saved as pending.`);
-        resetForm();
+        let rollbackMessage = "";
+
+        try {
+          await rollbackPendingOrder(orderSnapshot.orderId);
+        } catch (rollbackError) {
+          rollbackMessage = ` ${getErrorMessage(rollbackError, "The temporary order could not be rolled back automatically.")}`;
+        }
+
+        setError(`${getErrorMessage(walletError, "MetaMask payment was not completed.")} Your bag was kept so you can try again.${rollbackMessage}`);
       }
     } catch (submitError) {
       setError(getErrorMessage(submitError, "Unable to create the order."));

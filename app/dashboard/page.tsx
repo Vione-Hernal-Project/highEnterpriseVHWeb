@@ -5,6 +5,7 @@ import { CancelOrderButton } from "@/components/dashboard/cancel-order-button";
 import { PaymentStatusButton } from "@/components/dashboard/payment-status-button";
 import { WalletAddressForm } from "@/components/dashboard/wallet-address-form";
 import { requireUser } from "@/lib/auth";
+import type { Database } from "@/lib/database.types";
 import { buildOrderItemsByOrderId, getOrderDisplayLines } from "@/lib/order-items";
 import { formatAmountWithUnit, getPaymentMethodConfig, getPaymentMethodLabel } from "@/lib/payments/options";
 import { formatDateTime, formatWalletAddress } from "@/lib/utils";
@@ -42,6 +43,15 @@ export default async function DashboardPage() {
     supabase.from("order_items").select("*").order("created_at", { ascending: true }),
   ]);
   const orderItemsByOrderId = buildOrderItemsByOrderId(orderItems || []);
+  const paymentByOrderId = new Map<string, Database["public"]["Tables"]["payments"]["Row"]>();
+
+  (payments || []).forEach((payment) => {
+    if (!payment.order_id || paymentByOrderId.has(payment.order_id)) {
+      return;
+    }
+
+    paymentByOrderId.set(payment.order_id, payment);
+  });
 
   return (
     <section className="vh-page-shell">
@@ -109,10 +119,18 @@ export default async function DashboardPage() {
                 <article key={order.id} className="vh-history-item">
                   {(() => {
                     const lineItems = orderItemsByOrderId.get(order.id) ?? [];
+                    const relatedPayment = paymentByOrderId.get(order.id);
                     const orderLines = getOrderDisplayLines(order, lineItems);
                     const shippingSummary = [order.shipping_method, order.shipping_fee ? formatAmountWithUnit(order.shipping_fee, "PHP") : null]
                       .filter(Boolean)
                       .join(" · ");
+                    const canCancelOrder =
+                      order.status === "pending" &&
+                      (!relatedPayment || (!relatedPayment.tx_hash && relatedPayment.status !== "paid" && relatedPayment.status !== "cancelled"));
+                    const isAwaitingConfirmation = order.status === "pending" && Boolean(relatedPayment?.tx_hash) && relatedPayment?.status === "pending";
+                    const supportHref = `mailto:vionehernal@gmail.com?subject=${encodeURIComponent(
+                      `${order.status === "paid" ? "Refund / Support" : "Payment Support"} ${order.order_number || order.id}`,
+                    )}`;
 
                     return (
                       <div className="vh-history-card">
@@ -178,9 +196,18 @@ export default async function DashboardPage() {
                           </section>
                         </div>
 
-                        {order.status === "pending" ? (
+                        {canCancelOrder ? (
                           <div className="vh-history-card__action">
                             <CancelOrderButton orderId={order.id} />
+                          </div>
+                        ) : isAwaitingConfirmation ? (
+                          <div className="vh-status">
+                            Payment has already been submitted on-chain, so normal cancellation is disabled while confirmation is pending. For urgent help,{" "}
+                            <a href={supportHref}>contact support</a>.
+                          </div>
+                        ) : order.status === "paid" ? (
+                          <div className="vh-status">
+                            For refunds or post-purchase support, <a href={supportHref}>contact Vione Hernal support</a>.
                           </div>
                         ) : null}
                       </div>
@@ -306,6 +333,7 @@ export default async function DashboardPage() {
                           amountExpected={payment.amount_expected}
                           recipientAddress={payment.recipient_address}
                           txHash={payment.tx_hash}
+                          walletAddress={payment.wallet_address}
                         />
                       </div>
                     ) : payment.status === "pending" ? (
