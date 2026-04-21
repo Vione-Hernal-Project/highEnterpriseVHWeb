@@ -20,35 +20,37 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
           Skip To Footer
         </a>
         <div className="container vh-header-utility__inner">
-          <ul className="global-header__tertiary-nav-list">
-            <li className="global-header__tertiary-nav-list-item u-margin-r--xxl">
-              Philippines | EN | USD
-            </li>
-            <li className="global-header__tertiary-nav-list-item u-margin-r--xxl">
-              <a href="mailto:vionehernal@gmail.com">Need Help?</a>
-            </li>
-            <li className="global-header__tertiary-nav-list-item u-margin-r--xxl">
-              <WalletStatus />
-            </li>
-            {signedIn ? (
+          <div className="vh-header-utility__bar">
+            <ul className="global-header__tertiary-nav-list vh-header-utility__list">
               <li className="global-header__tertiary-nav-list-item">
-                <div className="vh-header-auth-links">
-                  <Link className="vh-auth-link" href="/dashboard">
-                    Account
+                Philippines | EN | USD
+              </li>
+              <li className="global-header__tertiary-nav-list-item">
+                <a href="mailto:vionehernal@gmail.com">Need Help?</a>
+              </li>
+              {signedIn ? (
+                <li className="global-header__tertiary-nav-list-item">
+                  <div className="vh-header-auth-links">
+                    <Link className="vh-auth-link" href="/dashboard">
+                      Account
+                    </Link>
+                    <LogoutButton redirectTo="/" variant="link">
+                      Log Out
+                    </LogoutButton>
+                  </div>
+                </li>
+              ) : (
+                <li className="global-header__tertiary-nav-list-item">
+                  <Link className="vh-auth-link" href="/sign-in">
+                    Sign In
                   </Link>
-                  <LogoutButton redirectTo="/" variant="link">
-                    Log Out
-                  </LogoutButton>
-                </div>
-              </li>
-            ) : (
-              <li className="global-header__tertiary-nav-list-item">
-                <Link className="vh-auth-link" href="/sign-in">
-                  Sign In
-                </Link>
-              </li>
-            )}
-          </ul>
+                </li>
+              )}
+            </ul>
+            <div className="vh-header-utility__wallet">
+              <WalletStatus />
+            </div>
+          </div>
         </div>
       </nav>
 
@@ -66,14 +68,12 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
           </nav>
 
           <Link
-            className="global-header__brand-logo vh-header-balance__brand"
+            className="vh-header-balance__brand"
             href="/"
             aria-label="Vione Hernal home"
-            style={{ position: "relative", zIndex: 4, pointerEvents: "auto" }}
+            style={{ zIndex: 4, pointerEvents: "auto" }}
           >
-            <span style={{ fontSize: "12px", letterSpacing: "0.42em", textTransform: "uppercase", fontWeight: 700 }}>
-              Vione Hernal
-            </span>
+            <span className="vh-header-balance__wordmark">Vione Hernal</span>
           </Link>
 
           <nav className="global-header__secondary-nav vh-header-balance__nav vh-header-balance__nav--right" aria-label="Shopping">

@@ -1,35 +1,56 @@
 export default function AboutPage() {
   return (
-    <section className="storefront-app-view storefront-app-editorial">
-      <div className="storefront-app-editorial__hero">
-        <p className="storefront-app-editorial__eyebrow">About Us</p>
-        <h1 className="storefront-app-editorial__title">Fashion for presence.</h1>
-        <p className="storefront-app-editorial__lead">
-          Vione Hernal is built on the belief that clothing should not seek attention. It should establish presence.
+    <section className="storefront-app-view vh-about-page">
+      <div className="vh-about-page__hero">
+        <p className="vh-about-page__eyebrow">About Us</p>
+        <h1 className="vh-about-page__title">
+          FASHION FOR
+          <br />
+          PRESENCE.
+        </h1>
+        <p className="vh-about-page__lead">
+          Vione Hernal is built on the belief that clothing should not seek attention, it should establish presence.
         </p>
       </div>
-      <div className="storefront-app-editorial__sections">
-        <article className="storefront-app-editorial__section">
-          <p className="storefront-app-editorial__section-label">The Vision</p>
+      <div className="vh-about-page__sections">
+        <article className="vh-about-page__section">
+          <p className="vh-about-page__section-label">The Vision</p>
           <p>
             Founded by Miguel Oresca, the brand explores a more intentional way of dressing where structure, restraint,
-            and clarity shape identity.
+            and clarity shape identity. Each piece is designed with precision, balancing modern form with quiet
+            confidence.
+          </p>
+          <p>The vision extends beyond design.</p>
+          <p>
+            Vione Hernal integrates blockchain as a foundation for a new kind of fashion experience where authenticity
+            is verifiable, ownership is permanent, and every piece carries a digital identity. It is not about
+            technology as a statement, but as a shift in how people connect with what they wear.
           </p>
           <p>
-            This MVP phase focuses on the operational foundation: auth, protected customer areas, order storage, and a
-            clean path to future crypto-enabled commerce.
+            The mission is to change not only how clothing looks, but how it is valued, owned, and experienced.
           </p>
         </article>
-        <article className="storefront-app-editorial__section">
-          <p className="storefront-app-editorial__section-label">The Direction</p>
+        <article className="vh-about-page__section">
+          <p className="vh-about-page__section-label">Background</p>
           <p>
-            Vione Hernal will later expand into Base-native commerce. For now, the priority is proving that the backend
-            and customer flow are working properly without changing the brand language of the site.
+            Vione Hernal began with a simple observation: most clothing is made to be seen, but rarely to be felt.
           </p>
-          <p>This is fashion shaped not only by how it looks, but by how it exists, how it moves, and how it stays.</p>
+          <p>
+            There was a gap between appearance and meaning. Between what people wear and what it represents.
+          </p>
+          <p>The brand was created to close that gap.</p>
+          <p>
+            Drawing from personal experience in both fashion and emerging systems, the foundation of Vione Hernal was
+            built on control: of silhouette, of presence, and of purpose. Not louder pieces, but sharper ones. Not
+            more options, but more intention.
+          </p>
+          <p>Each design reflects that discipline. Each release carries that direction.</p>
+          <p>
+            This is fashion shaped not only by how it looks, but by how it exists, how it moves, and how it stays.
+          </p>
         </article>
       </div>
-      <div className="storefront-app-editorial__closing">
+      <div className="vh-about-page__closing">
         <p>This is not fashion for attention.</p>
         <p>This is fashion for presence.</p>
       </div>

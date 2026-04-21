@@ -6,7 +6,17 @@ type Props = {
 
 export function SiteFooter({ signedIn = false }: Props) {
   return (
-    <footer className="site-footer site-footer--t-margin">
+    <footer className="site-footer site-footer--t-margin vh-site-footer">
+      <div className="vh-footer-survey" aria-label="Survey banner">
+        <div className="container vh-footer-survey__inner">
+          <p className="vh-footer-survey__headline">Help Us Improve</p>
+          <p className="vh-footer-survey__copy">Take a brief survey about today&apos;s visit</p>
+          <Link className="vh-footer-survey__link" href="/coming-soon?feature=survey">
+            Begin Survey
+          </Link>
+        </div>
+      </div>
+
       <div className="site-footer__container" id="global-site__footer">
         <div className="container">
           <div className="grid">
@@ -48,31 +58,49 @@ export function SiteFooter({ signedIn = false }: Props) {
             </div>
 
             <div className="grid__col n-4-of-12">
-              <div role="heading" aria-level={2} className="h5 u-margin-t--none u-margin-b--sm">
-                MVP Checkout
+              <div className="vh-footer-access">
+                <div role="heading" aria-level={2} className="h5 u-margin-t--none u-margin-b--sm">
+                  Private Access
+                </div>
+                <p className="vh-footer-access__copy">
+                  Receive select updates on new arrivals and curated releases.
+                  <br />
+                  Unsubscribe at any time.
+                </p>
+                <div className="vh-footer-access__field" role="group" aria-label="Private access email entry">
+                  <label className="u-screen-reader" htmlFor="footer-private-access-email">
+                    Enter your email
+                  </label>
+                  <input
+                    id="footer-private-access-email"
+                    className="vh-footer-access__input"
+                    type="email"
+                    placeholder="Enter your email"
+                  />
+                  <button className="vh-footer-access__button" type="button" aria-label="Enter your email">
+                    <span aria-hidden="true">&rsaquo;</span>
+                  </button>
+                </div>
               </div>
-              <p className="u-margin-t--sm">
-                This MVP proves the Vione Hernal frontend and Supabase backend are working together. Users can sign in,
-                place a Sepolia order, submit token payments through MetaMask, and track the result from their
-                dashboard.
-              </p>
             </div>
 
             <div className="grid__col n-4-of-12">
-              <div role="heading" aria-level={2} className="h5 u-margin-t--none u-margin-b--sm">
-                Contact
+              <div className="vh-footer-contact">
+                <div role="heading" aria-level={2} className="h5 u-margin-t--none u-margin-b--sm">
+                  Contact
+                </div>
+                <ul className="ui-list">
+                  <li className="ui-list__item">
+                    <a href="mailto:vionehernal@gmail.com">vionehernal@gmail.com</a>
+                  </li>
+                  <li className="ui-list__item">
+                    <a href="tel:+639356625936">+63 (935) 662-5936</a>
+                  </li>
+                  <li className="ui-list__item">
+                    <Link href="/coming-soon?feature=instagram">Instagram</Link>
+                  </li>
+                </ul>
               </div>
-              <ul className="ui-list">
-                <li className="ui-list__item">
-                  <a href="mailto:vionehernal@gmail.com">vionehernal@gmail.com</a>
-                </li>
-                <li className="ui-list__item">
-                  <a href="tel:+639356625936">+63 (935) 662-5936</a>
-                </li>
-                <li className="ui-list__item">
-                  <Link href="/coming-soon?feature=instagram">Instagram</Link>
-                </li>
-              </ul>
             </div>
           </div>
         </div>

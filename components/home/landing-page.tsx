@@ -1,13 +1,16 @@
 import Link from "next/link";
 
 import { FeaturedProducts } from "@/components/home/featured-products";
+import { getCurrentUserContext } from "@/lib/auth";
 import { getCatalogProductPageHref } from "@/lib/catalog";
 import { loadFeaturedCatalogProducts } from "@/lib/products";
 
 export async function LandingPage() {
+  const { user } = await getCurrentUserContext();
   const featuredProducts = await loadFeaturedCatalogProducts(3);
   const heroBackgroundSrc: string | null = null;
   const heroProductHref = featuredProducts[0] ? getCatalogProductPageHref(featuredProducts[0].id) : "/shop";
+  const accountCtaHref = user ? "/dashboard" : "/sign-up";
 
   return (
     <div className="storefront-app-view">
@@ -34,14 +37,20 @@ export async function LandingPage() {
             <h2 className="story-hero__copy-title">
               MODERN SILHOUETTES
               <br />
-              YOU DEFINE
+              DEFINED BY YOU
             </h2>
             <p className="story-hero__copy-description">
-              The Vione Hernal MVP keeps the current fashion storefront feel intact while adding real sign in,
-              protected dashboards, PHP-priced product checkout, and Supabase-backed order storage.
+              Refined forms shaped by intention.
+              <br />
+              Designed to move with you, effortless, precise, and unmistakably yours.
+              <br />
+              <br />
+              Each piece carries a quiet assurance of authenticity,
+              <br />
+              seamlessly integrated without disrupting the experience of luxury.
             </p>
             <Link className="story-hero__copy-link" href={heroProductHref}>
-              Shop the featured edit
+              Shop
             </Link>
           </div>
           <div className="story-hero__secondary-pane" aria-hidden="true">
@@ -61,26 +70,32 @@ export async function LandingPage() {
             <img className="story-hero__relocated-image" src="/assets/images/model-3.jpg" alt="" role="presentation" width="640" height="806" />
           </div>
           <div className="story-hero__relocated-copy">
-            <h2 className="story-hero__relocated-title">WORKING BACKEND, FIRST</h2>
+            <h2 className="story-hero__relocated-title">NEW IN, MOST WANTED</h2>
             <p className="story-hero__relocated-description">
-              Sign up, sign in, place a Sepolia order, and see orders and payment attempts stored properly with the
-              wallet flow now connected.
+              The spring equinox arrives with a bold celebration of maximalism: bright colors and
+              <br />
+              flowing silhouettes define the season&apos;s must-haves.
             </p>
-            <Link className="story-hero__relocated-link" href="/sign-up">
-              Create account
+            <Link className="story-hero__relocated-link" href={accountCtaHref}>
+              Create Account
             </Link>
           </div>
           <div className="story-hero__spring-pane" aria-hidden="true">
             <img className="story-hero__spring-image" src="/assets/images/model-6.png" alt="" role="presentation" width="1040" height="1401" />
           </div>
           <div className="story-hero__spring-copy">
-            <h2 className="story-hero__spring-title">SEPOLIA PAYMENT MVP</h2>
+            <h2 className="story-hero__spring-title">
+              ELEVATED TRANSACTIONS
+              <br />
+              MADE EFFORTLESS
+            </h2>
             <p className="story-hero__spring-description">
-              Orders and payment attempts now live in Supabase, with live ETH conversion from PHP totals, MetaMask
-              handoff, and Sepolia payment verification layered into the flow.
+              From selection to confirmation,
+              <br />
+              every step is designed with clarity, security, and intention.
             </p>
             <Link className="story-hero__spring-link" href="/dashboard">
-              View dashboard
+              View Dashboard
             </Link>
           </div>
         </li>
