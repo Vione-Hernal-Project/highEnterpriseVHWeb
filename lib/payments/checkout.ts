@@ -13,6 +13,9 @@ type CheckoutPricingLike = {
   subtotalPhpCents: number;
   subtotalPhp: string;
   subtotalPhpLabel: string;
+  totalPhpCents?: number;
+  totalPhp?: string;
+  totalPhpLabel?: string;
   phpPerEth: number;
   requiredEth: string;
 };
@@ -32,7 +35,7 @@ export type CheckoutInputResolution =
     };
 
 export function getDefaultCheckoutInput(mode: CheckoutAmountMode, pricing: CheckoutPricingLike) {
-  return mode === "php" ? pricing.subtotalPhp : pricing.requiredEth;
+  return mode === "php" ? pricing.totalPhp || pricing.subtotalPhp : pricing.requiredEth;
 }
 
 export function resolveCheckoutInput(params: {
@@ -41,14 +44,16 @@ export function resolveCheckoutInput(params: {
   pricing: CheckoutPricingLike;
 }): CheckoutInputResolution {
   const normalizedAmount = normalizePaymentAmount(params.enteredAmount);
+  const payablePhpCents = params.pricing.totalPhpCents ?? params.pricing.subtotalPhpCents;
+  const payablePhpLabel = params.pricing.totalPhpLabel ?? params.pricing.subtotalPhpLabel;
 
   if (params.amountMode === "php") {
     const enteredPhpCents = parsePhpInputToCents(normalizedAmount);
 
-    if (enteredPhpCents < params.pricing.subtotalPhpCents) {
+    if (enteredPhpCents < payablePhpCents) {
       return {
         ok: false,
-        error: `Insufficient payment amount. Please send at least ${params.pricing.subtotalPhpLabel} or ${params.pricing.requiredEth} ETH.`,
+        error: `Insufficient payment amount. Please send at least ${payablePhpLabel} or ${params.pricing.requiredEth} ETH.`,
       };
     }
 

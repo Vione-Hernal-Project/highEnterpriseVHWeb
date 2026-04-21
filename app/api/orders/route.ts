@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getProductAvailableSizes } from "@/lib/catalog";
-import { sendOrderConfirmationEmail } from "@/lib/email";
 import { getSepoliaRpcEnvError } from "@/lib/env/server";
+import { sendOrderConfirmationEmail } from "@/lib/email";
 import { getErrorMessage } from "@/lib/http";
 import { generateOrderNumber } from "@/lib/orders";
 import { phpCentsToDecimalString } from "@/lib/payments/amounts";
@@ -11,8 +10,8 @@ import { resolveCheckoutInput } from "@/lib/payments/checkout";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { getPaymentMethodSetupError } from "@/lib/payments/options";
-import { getCheckoutPricing } from "@/lib/payments/quotes";
-import { loadPublishedCatalogProduct } from "@/lib/products";
+import { getBagCheckoutPricing } from "@/lib/payments/quotes";
+import { buildNormalizedShippingAddress } from "@/lib/shipping";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseTableErrorMessage } from "@/lib/supabase/errors";
 import { orderSchema } from "@/lib/validations/order";
@@ -72,17 +71,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: rpcSetupError }, { status: 400 });
     }
 
-    const product = await loadPublishedCatalogProduct(parsed.data.productId);
+    const requestedItems =
+      parsed.data.items?.length
+        ? parsed.data.items
+        : [
+            {
+              productId: parsed.data.productId?.trim() || "",
+              selectedSize: parsed.data.selectedSize?.trim() || "",
+              quantity: parsed.data.quantity ?? 1,
+            },
+          ];
+    const shippingAddressInput = {
+      address1: parsed.data.shippingAddressLine1,
+      city: parsed.data.shippingCity,
+      province: parsed.data.shippingProvince,
+      postalCode: parsed.data.shippingPostalCode,
+      country: parsed.data.shippingCountry,
+    };
 
-    if (!product) {
-      return NextResponse.json({ error: "Selected product was not found." }, { status: 404 });
+    const pricing = await getBagCheckoutPricing(requestedItems, {
+      shippingAddress: shippingAddressInput,
+      shippingMethodCode: parsed.data.shippingMethodCode,
+    });
+
+    if (!pricing.isShippingResolved || !pricing.shippingMethodCode || pricing.shippingFeePhpCents === null) {
+      return NextResponse.json({ error: pricing.shippingMessage || "Shipping is unavailable for this address yet." }, { status: 400 });
     }
 
-    if (!getProductAvailableSizes(product).includes(parsed.data.selectedSize)) {
-      return NextResponse.json({ error: "Selected size is unavailable for this product." }, { status: 400 });
-    }
-
-    const pricing = await getCheckoutPricing(product.id, parsed.data.quantity);
     const resolvedInput = resolveCheckoutInput({
       amountMode: parsed.data.amountMode,
       enteredAmount: parsed.data.enteredAmount,
@@ -96,16 +111,25 @@ export async function POST(request: Request) {
     const merchantWallet = await resolveMerchantWalletAddress();
     const admin = createSupabaseAdminClient();
     const orderNumber = generateOrderNumber();
+    const primaryItem = pricing.items[0];
+    const orderProductId = pricing.itemCount === 1 ? primaryItem?.product.id || null : null;
+    const orderProductName = pricing.itemCount === 1 ? primaryItem?.product.name || null : `${pricing.itemCount} items`;
+    const orderSelectedSize = pricing.itemCount === 1 ? primaryItem?.selectedSize || null : null;
+    const orderUnitPrice = pricing.itemCount === 1 ? primaryItem?.product.pricePhpCents || 0 : 0;
 
     logPaymentDebug("order-create", {
       orderNumber,
       userId: user.id,
       payerProfileEmail: user.email ?? null,
-      productId: product.id,
-      productName: product.name,
-      quantity: pricing.quantity,
+      itemCount: pricing.itemCount,
+      totalQuantity: pricing.totalQuantity,
+      productIds: pricing.items.map((item) => item.product.id),
       paymentMethod: parsed.data.paymentMethod,
       subtotalPhp: pricing.subtotalPhp,
+      shippingFeePhp: pricing.shippingFeePhp,
+      shippingMethodCode: pricing.shippingMethodCode,
+      shippingZone: pricing.shippingZone,
+      totalPhp: pricing.totalPhp,
       requiredEth: pricing.requiredEth,
       enteredAmount: parsed.data.enteredAmount,
       amountMode: parsed.data.amountMode,
@@ -124,15 +148,24 @@ export async function POST(request: Request) {
         order_number: orderNumber,
         user_id: user.id,
         email: user.email ?? null,
-        product_id: product.id,
-        product_name: product.name,
-        selected_size: parsed.data.selectedSize,
-        quantity: pricing.quantity,
-        unit_price: phpCentsToDecimalString(product.pricePhpCents),
+        product_id: orderProductId,
+        product_name: orderProductName,
+        selected_size: orderSelectedSize,
+        quantity: pricing.totalQuantity,
+        unit_price: phpCentsToDecimalString(orderUnitPrice),
         customer_name: parsed.data.customerName,
         phone: parsed.data.phone,
-        shipping_address: parsed.data.shippingAddress,
-        amount: pricing.subtotalPhp,
+        shipping_address: buildNormalizedShippingAddress(shippingAddressInput),
+        shipping_address_line1: pricing.normalizedShippingAddress.address1,
+        shipping_city: pricing.normalizedShippingAddress.city,
+        shipping_province: pricing.normalizedShippingAddress.province,
+        shipping_postal_code: pricing.normalizedShippingAddress.postalCode,
+        shipping_country: pricing.normalizedShippingAddress.country,
+        shipping_zone: pricing.shippingZone,
+        shipping_method: pricing.shippingMethodCode,
+        shipping_fee: pricing.shippingFeePhp,
+        subtotal_amount: pricing.subtotalPhp,
+        amount: pricing.totalPhp,
         currency: "PHP",
         status: "pending",
         notes: parsed.data.notes,
@@ -148,6 +181,28 @@ export async function POST(request: Request) {
       );
     }
 
+    const { error: orderItemsError } = await admin.from("order_items").insert(
+      pricing.items.map((item) => ({
+        order_id: order.id,
+        product_id: item.product.id,
+        product_name: item.product.name,
+        product_brand: item.product.brand,
+        selected_size: item.selectedSize,
+        quantity: item.quantity,
+        unit_price: phpCentsToDecimalString(item.product.pricePhpCents),
+        line_total: item.lineTotalPhp,
+      })),
+    );
+
+    if (orderItemsError) {
+      await admin.from("orders").delete().eq("id", order.id);
+
+      return NextResponse.json(
+        { error: getSupabaseTableErrorMessage(orderItemsError.message, "Unable to save order items.") },
+        { status: 500 },
+      );
+    }
+
     const { data: payment, error: paymentError } = await admin
       .from("payments")
       .insert({
@@ -158,7 +213,7 @@ export async function POST(request: Request) {
         recipient_address: merchantWallet.address,
         chain_id: SEPOLIA_CHAIN_ID,
         amount_expected: pricing.requiredEth,
-        amount_expected_fiat: pricing.subtotalPhp,
+        amount_expected_fiat: pricing.totalPhp,
         fiat_currency: "PHP",
         conversion_rate: pricing.phpPerEth.toFixed(6),
         quote_source: pricing.quoteSource,
@@ -178,37 +233,52 @@ export async function POST(request: Request) {
       );
     }
 
-    const emailResult = await sendOrderConfirmationEmail({
-      to: user.email,
-      customerName: order.customer_name,
+    const orderEmailResult = await sendOrderConfirmationEmail({
+      to: user.email ?? null,
+      customerName: parsed.data.customerName,
       orderNumber: order.order_number,
-      amount: order.amount,
-      currency: order.currency,
-      paymentMethod: payment.payment_method,
-      notes: order.notes,
-      shippingAddress: order.shipping_address,
+      amount: pricing.totalPhp,
+      currency: "PHP",
+      paymentMethod: parsed.data.paymentMethod,
+      itemLines: pricing.items.map((item) =>
+        [item.product.brand, item.product.name, item.selectedSize ? `Size ${item.selectedSize}` : null, `Qty ${item.quantity}`]
+          .filter(Boolean)
+          .join(" · "),
+      ),
+      notes: parsed.data.notes || null,
+      shippingAddress: buildNormalizedShippingAddress(pricing.normalizedShippingAddress),
+      shippingMethodLabel: pricing.shippingMethodLabel,
+      shippingFee: pricing.shippingFeePhp,
     });
 
-    const { data: updatedOrder } = await admin
+    const { data: orderWithConfirmation } = await admin
       .from("orders")
       .update({
-        confirmation_email_status: emailResult.status,
-        confirmation_email_sent_at: emailResult.sentAt ?? null,
+        confirmation_email_status: orderEmailResult.status,
+        confirmation_email_sent_at: orderEmailResult.sentAt ?? null,
       })
       .eq("id", order.id)
       .select("*")
       .single();
 
     return NextResponse.json({
-      order: updatedOrder ?? {
+      order: orderWithConfirmation ?? {
         ...order,
-        confirmation_email_status: emailResult.status,
-        confirmation_email_sent_at: emailResult.sentAt ?? null,
+        confirmation_email_status: orderEmailResult.status,
+        confirmation_email_sent_at: orderEmailResult.sentAt ?? null,
       },
       payment,
       pricing: {
         subtotalPhp: pricing.subtotalPhp,
         subtotalPhpLabel: pricing.subtotalPhpLabel,
+        shippingFeePhp: pricing.shippingFeePhp,
+        shippingFeeLabel: pricing.shippingFeeLabel,
+        shippingMethodCode: pricing.shippingMethodCode,
+        shippingMethodLabel: pricing.shippingMethodLabel,
+        shippingZone: pricing.shippingZone,
+        shippingZoneLabel: pricing.shippingZoneLabel,
+        totalPhp: pricing.totalPhp,
+        totalPhpLabel: pricing.totalPhpLabel,
         requiredEth: pricing.requiredEth,
         requiredEthLabel: pricing.requiredEthLabel,
         payableEthAmount: resolvedInput.payableEthAmount,

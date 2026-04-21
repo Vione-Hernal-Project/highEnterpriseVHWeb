@@ -6,7 +6,7 @@ import { PAYMENT_METHOD_VALUES } from "@/lib/payments/options";
 
 const CHECKOUT_AMOUNT_MODES = ["php", "eth"] as const satisfies readonly CheckoutAmountMode[];
 
-export const orderSchema = z.object({
+export const orderLineItemSchema = z.object({
   productId: z.string().trim().min(1, "Please select a product."),
   selectedSize: z
     .string()
@@ -14,50 +14,117 @@ export const orderSchema = z.object({
     .min(1, "Please select a size.")
     .max(60, "Selected size is too long."),
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1.").max(10, "Quantity must be 10 or less."),
-  customerName: z
-    .string()
-    .trim()
-    .min(2, "Please enter the customer name.")
-    .max(120, "Customer name must be 120 characters or less."),
-  phone: z
-    .string()
-    .trim()
-    .min(7, "Please enter a contact phone number.")
-    .max(40, "Phone number must be 40 characters or less."),
-  shippingAddress: z
-    .string()
-    .trim()
-    .min(10, "Please enter the shipping address.")
-    .max(500, "Shipping address must be 500 characters or less."),
-  enteredAmount: z
-    .union([z.string(), z.number()])
-    .transform((value) => (typeof value === "number" ? value.toString() : value.trim()))
-    .refine((value) => /^\d+(\.\d+)?$/.test(value), "Please enter a valid payment amount.")
-    .refine((value) => Number(value) > 0, "Amount must be greater than zero.")
-    .refine((value) => Number(value) <= 100000, "Amount is too large.")
-    .transform((value) => normalizePaymentAmount(value)),
-  amountMode: z.enum(CHECKOUT_AMOUNT_MODES, {
-    errorMap: () => ({
-      message: "Please choose whether you are reviewing the amount in PHP or ETH.",
-    }),
-  }),
-  paymentMethod: z.enum(PAYMENT_METHOD_VALUES, {
-    errorMap: () => ({
-      message: "Please select a payment method.",
-    }),
-  }),
-  notes: z
-    .string()
-    .trim()
-    .max(500, "Notes must be 500 characters or less.")
-    .optional()
-    .transform((value) => value || null),
-  confirmed: z.literal(true, {
-    errorMap: () => ({
-      message: "Please review and confirm the order before placing it.",
-    }),
-  }),
 });
+
+export const orderSchema = z
+  .object({
+    items: z.array(orderLineItemSchema).min(1, "Add at least one item to checkout.").max(50, "Too many bag items.").optional(),
+    productId: z.string().trim().optional(),
+    selectedSize: z.string().trim().max(60, "Selected size is too long.").optional(),
+    quantity: z.coerce.number().int().min(1, "Quantity must be at least 1.").max(10, "Quantity must be 10 or less.").optional(),
+    customerName: z
+      .string()
+      .trim()
+      .min(2, "Please enter the customer name.")
+      .max(120, "Customer name must be 120 characters or less."),
+    phone: z
+      .string()
+      .trim()
+      .min(7, "Please enter a contact phone number.")
+      .max(40, "Phone number must be 40 characters or less."),
+    shippingAddressLine1: z
+      .string()
+      .trim()
+      .min(4, "Please enter the street address.")
+      .max(240, "Street address must be 240 characters or less."),
+    shippingCity: z
+      .string()
+      .trim()
+      .min(2, "Please enter the city or municipality.")
+      .max(120, "City must be 120 characters or less."),
+    shippingProvince: z
+      .string()
+      .trim()
+      .min(2, "Please enter the province or region.")
+      .max(120, "Province must be 120 characters or less."),
+    shippingPostalCode: z
+      .string()
+      .trim()
+      .min(4, "Please enter the postal code.")
+      .max(12, "Postal code must be 12 characters or less."),
+    shippingCountry: z
+      .string()
+      .trim()
+      .min(2, "Please enter the country.")
+      .max(120, "Country must be 120 characters or less."),
+    shippingMethodCode: z.enum(["standard", "express"], {
+      errorMap: () => ({
+        message: "Please choose a shipping option.",
+      }),
+    }),
+    shippingAddress: z
+      .string()
+      .trim()
+      .max(500, "Shipping address must be 500 characters or less.")
+      .optional(),
+    enteredAmount: z
+      .union([z.string(), z.number()])
+      .transform((value) => (typeof value === "number" ? value.toString() : value.trim()))
+      .refine((value) => /^\d+(\.\d+)?$/.test(value), "Please enter a valid payment amount.")
+      .refine((value) => Number(value) > 0, "Amount must be greater than zero.")
+      .refine((value) => Number(value) <= 100000, "Amount is too large.")
+      .transform((value) => normalizePaymentAmount(value)),
+    amountMode: z.enum(CHECKOUT_AMOUNT_MODES, {
+      errorMap: () => ({
+        message: "Please choose whether you are reviewing the amount in PHP or ETH.",
+      }),
+    }),
+    paymentMethod: z.enum(PAYMENT_METHOD_VALUES, {
+      errorMap: () => ({
+        message: "Please select a payment method.",
+      }),
+    }),
+    notes: z
+      .string()
+      .trim()
+      .max(500, "Notes must be 500 characters or less.")
+      .optional()
+      .transform((value) => value || null),
+    confirmed: z.literal(true, {
+      errorMap: () => ({
+        message: "Please review and confirm the order before placing it.",
+      }),
+    }),
+  })
+  .superRefine((value, context) => {
+    if (value.items?.length) {
+      return;
+    }
+
+    if (!value.productId?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select a product.",
+        path: ["productId"],
+      });
+    }
+
+    if (!value.selectedSize?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Please select a size.",
+        path: ["selectedSize"],
+      });
+    }
+
+    if (!value.quantity) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Quantity must be at least 1.",
+        path: ["quantity"],
+      });
+    }
+  });
 
 export const walletSchema = z.object({
   walletAddress: z

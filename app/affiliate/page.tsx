@@ -16,7 +16,7 @@ export default function AffiliatePage() {
             The affiliate experience will grow alongside the storefront, starting with a stable backend foundation and
             later expanding into digital ownership and on-chain commerce.
           </p>
-          <a className="action-button action-button--black" href="mailto:service@vionehernal.com?subject=Affiliate%20Inquiry">
+          <a className="action-button action-button--black" href="mailto:vionehernal@gmail.com?subject=Affiliate%20Inquiry">
             Apply Now
           </a>
         </div>

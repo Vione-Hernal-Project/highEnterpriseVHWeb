@@ -46,7 +46,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <main id="page-content" className="vh-main">
             <div className="container">{children}</div>
           </main>
-          <SiteFooter />
+          <SiteFooter signedIn={signedIn} />
         </div>
       </body>
     </html>

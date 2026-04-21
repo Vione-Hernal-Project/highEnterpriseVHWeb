@@ -65,6 +65,7 @@ export function BagPageView({ products }: Props) {
     (total, item) => total + getCatalogSubtotalPhpCents(item.pricePhpCents, item.quantity),
     0,
   );
+  const totalQuantity = items.reduce((total, item) => total + item.quantity, 0);
   const totalLabel = formatPhpCurrencyFromCents(subtotalPhpCents);
 
   return (
@@ -81,8 +82,6 @@ export function BagPageView({ products }: Props) {
         <div className="storefront-app-grid">
           <div className="storefront-app-list">
             {items.map((item) => {
-              const checkoutHref = `/checkout?from=bag&product=${encodeURIComponent(item.productId)}&size=${encodeURIComponent(item.size)}&quantity=${item.quantity}`;
-
               return (
                 <article key={item.itemKey} className="storefront-app-card storefront-app-cart-item">
                   <Link href={item.productHref}>
@@ -126,11 +125,6 @@ export function BagPageView({ products }: Props) {
                       <strong>{formatPhpCurrencyFromCents(getCatalogSubtotalPhpCents(item.pricePhpCents, item.quantity))}</strong>
                     </div>
 
-                    <div className="vh-actions">
-                      <Link className="vh-button" href={checkoutHref}>
-                        Proceed To Checkout
-                      </Link>
-                    </div>
                   </div>
                 </article>
               );
@@ -140,6 +134,10 @@ export function BagPageView({ products }: Props) {
           <aside className="storefront-app-card">
             <h2 className="h4 u-margin-b--lg">Order Summary</h2>
             <div className="storefront-app-summary">
+              <div className="storefront-app-summary-row">
+                <span>Total Items</span>
+                <strong>{totalQuantity}</strong>
+              </div>
               <div className="storefront-app-summary-row">
                 <span>Subtotal</span>
                 <strong>{totalLabel}</strong>
@@ -153,8 +151,13 @@ export function BagPageView({ products }: Props) {
                 <strong>{totalLabel}</strong>
               </div>
             </div>
+            <div className="vh-actions">
+              <Link className="vh-button" href="/checkout">
+                Proceed To Checkout
+              </Link>
+            </div>
             <p className="vh-payment-note" style={{ marginTop: "1rem" }}>
-              Checkout continues from the selected bag item so the current live order flow stays intact.
+              Checkout now carries your full bag into one order summary, one address form, and one payment.
             </p>
           </aside>
         </div>

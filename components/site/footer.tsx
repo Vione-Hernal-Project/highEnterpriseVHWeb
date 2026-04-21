@@ -1,6 +1,10 @@
 import Link from "next/link";
 
-export function SiteFooter() {
+type Props = {
+  signedIn?: boolean;
+};
+
+export function SiteFooter({ signedIn = false }: Props) {
   return (
     <footer className="site-footer site-footer--t-margin">
       <div className="site-footer__container" id="global-site__footer">
@@ -36,7 +40,7 @@ export function SiteFooter() {
                       <Link href="/bag">My Bag</Link>
                     </li>
                     <li className="ui-list__item">
-                      <Link href="/sign-in">Sign In</Link>
+                      <Link href={signedIn ? "/dashboard" : "/sign-in"}>{signedIn ? "Account" : "Sign In"}</Link>
                     </li>
                   </ul>
                 </div>
@@ -60,7 +64,7 @@ export function SiteFooter() {
               </div>
               <ul className="ui-list">
                 <li className="ui-list__item">
-                  <a href="mailto:service@vionehernal.com">service@vionehernal.com</a>
+                  <a href="mailto:vionehernal@gmail.com">vionehernal@gmail.com</a>
                 </li>
                 <li className="ui-list__item">
                   <a href="tel:+639356625936">+63 (935) 662-5936</a>

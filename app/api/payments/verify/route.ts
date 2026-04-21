@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { ensureConfirmedOnChainPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
+import { serverEnv } from "@/lib/env/server";
 import { getErrorMessage } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
@@ -9,6 +10,135 @@ import { verifySepoliaPayment } from "@/lib/payments/verify";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyPaymentSchema } from "@/lib/validations/order";
 import { SEPOLIA_CHAIN_ID } from "@/lib/web3/config";
+
+const ORDER_CONFIRMATION_FUNCTION_URL =
+  "https://uibyqlonafqhaxeuslpj.supabase.co/functions/v1/send-order-confirmation";
+
+type OrderEmailRecord = {
+  id: string;
+  order_number: string | null;
+  email: string | null;
+  amount: string | number | null;
+  status: string;
+  confirmation_email_status: string;
+  confirmation_email_sent_at: string | null;
+};
+
+async function sendPaidOrderConfirmationEmail(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  order: OrderEmailRecord,
+  paymentId: string,
+) {
+  if (order.status !== "paid") {
+    return order;
+  }
+
+  if (order.confirmation_email_status === "sent" || order.confirmation_email_sent_at) {
+    logPaymentDebug("order-confirmation-skip", {
+      orderId: order.id,
+      paymentId,
+      reason: "already_sent",
+      confirmationEmailStatus: order.confirmation_email_status,
+    });
+
+    return order;
+  }
+
+  if (!order.email) {
+    logPaymentDebug("order-confirmation-failed", {
+      orderId: order.id,
+      paymentId,
+      reason: "missing_customer_email",
+    });
+
+    const { data: failedOrder } = await admin
+      .from("orders")
+      .update({
+        confirmation_email_status: "failed",
+      })
+      .eq("id", order.id)
+      .select("*")
+      .single();
+
+    return (failedOrder as OrderEmailRecord | null) ?? { ...order, confirmation_email_status: "failed" };
+  }
+
+  try {
+    const total = typeof order.amount === "string" ? Number(order.amount) : order.amount;
+    const response = await fetch(ORDER_CONFIRMATION_FUNCTION_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: serverEnv.supabaseAnonKey,
+        Authorization: `Bearer ${serverEnv.supabaseAnonKey}`,
+      },
+      body: JSON.stringify({
+        customerEmail: order.email,
+        orderNumber: order.order_number || order.id,
+        total: Number.isFinite(total) ? total : 0,
+      }),
+    });
+
+    const rawBody = await response.text().catch(() => "");
+    let parsedBody: { statusCode?: number; name?: string; message?: string } | null = null;
+
+    try {
+      parsedBody = rawBody ? (JSON.parse(rawBody) as { statusCode?: number; name?: string; message?: string }) : null;
+    } catch {
+      parsedBody = null;
+    }
+
+    if (!response.ok || (parsedBody?.statusCode && parsedBody.statusCode >= 400)) {
+      throw new Error(
+        parsedBody?.message ||
+          `Edge Function returned ${response.status}${rawBody ? `: ${rawBody.slice(0, 240)}` : ""}`,
+      );
+    }
+
+    const sentAt = new Date().toISOString();
+    const { data: sentOrder } = await admin
+      .from("orders")
+      .update({
+        confirmation_email_status: "sent",
+        confirmation_email_sent_at: sentAt,
+      })
+      .eq("id", order.id)
+      .select("*")
+      .single();
+
+    logPaymentDebug("order-confirmation-sent", {
+      orderId: order.id,
+      paymentId,
+      customerEmail: order.email,
+      orderNumber: order.order_number || order.id,
+    });
+
+    return (sentOrder as OrderEmailRecord | null) ?? {
+      ...order,
+      confirmation_email_status: "sent",
+      confirmation_email_sent_at: sentAt,
+    };
+  } catch (error) {
+    const message = getErrorMessage(error, "Unable to send the paid order confirmation email.");
+
+    logPaymentDebug("order-confirmation-failed", {
+      orderId: order.id,
+      paymentId,
+      error: message,
+    });
+
+    const { data: failedOrder } = await admin
+      .from("orders")
+      .update({
+        confirmation_email_status: "failed",
+      })
+      .eq("id", order.id)
+      .select("*")
+      .single();
+
+    return (failedOrder as OrderEmailRecord | null) ?? { ...order, confirmation_email_status: "failed" };
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -45,6 +175,24 @@ export async function POST(request: Request) {
     }
 
     if (payment.status === "paid") {
+      if (!payment.order_id) {
+        return NextResponse.json({ error: "Payment is not attached to an order." }, { status: 400 });
+      }
+
+      const { data: existingOrder, error: existingOrderError } = await admin
+        .from("orders")
+        .select("*")
+        .eq("id", payment.order_id)
+        .maybeSingle();
+
+      if (existingOrderError) {
+        return NextResponse.json({ error: existingOrderError.message }, { status: 500 });
+      }
+
+      if (existingOrder) {
+        await sendPaidOrderConfirmationEmail(admin, existingOrder as OrderEmailRecord, payment.id);
+      }
+
       await ensureConfirmedOnChainPaymentAllocations(payment.id);
 
       return NextResponse.json({
@@ -215,13 +363,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: updateOrderError?.message || "Unable to update order." }, { status: 500 });
     }
 
+    const orderWithConfirmation = await sendPaidOrderConfirmationEmail(
+      admin,
+      updatedOrder as OrderEmailRecord,
+      updatedPayment.id,
+    );
+
     await ensureConfirmedOnChainPaymentAllocations(updatedPayment.id);
 
     return NextResponse.json({
       verificationStatus: "paid",
       message: verification.message,
       payment: updatedPayment,
-      order: updatedOrder,
+      order: orderWithConfirmation,
     });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error, "Unable to verify this payment right now.") }, { status: 500 });

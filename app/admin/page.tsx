@@ -7,7 +7,31 @@ import { requireManagementUser } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { formatDateTime, formatTransactionHash, formatWalletAddress } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
+
+function getHistoryBadgeClass(status: string) {
+  if (status === "paid") {
+    return "vh-badge--paid";
+  }
+
+  if (status === "cancelled") {
+    return "vh-badge--cancelled";
+  }
+
+  return "vh-badge--pending";
+}
+
+function getHistoryStatusLabel(status: string) {
+  if (status === "paid") {
+    return "Paid / Confirmed";
+  }
+
+  if (status === "cancelled") {
+    return "Cancelled";
+  }
+
+  return "Pending";
+}
 
 export default async function AdminPage() {
   const { role, isOwner } = await requireManagementUser();
@@ -97,24 +121,77 @@ export default async function AdminPage() {
             {orders?.length ? (
               orders.map((order) => (
                 <article key={order.id} className="vh-history-item">
-                  <strong>{order.order_number || order.id}</strong>
-                  <p className="u-margin-b--none">{order.email || "No email recorded"}</p>
-                  {order.product_name ? (
-                    <p className="u-margin-b--none">
-                      {order.product_name}
-                      {order.quantity ? ` · Qty ${order.quantity}` : ""}
-                    </p>
-                  ) : null}
-                  <p className="u-margin-b--none">{order.customer_name}</p>
-                  <p className="u-margin-b--none">{order.phone}</p>
-                  <p className="u-margin-b--none">{order.shipping_address}</p>
-                  <p className="u-margin-b--none">{formatAmountWithUnit(order.amount, order.currency)}</p>
-                  <p className="u-margin-b--none">Status: {order.status}</p>
-                  <p className="u-margin-b--none">Confirmation Email: {order.confirmation_email_status}</p>
-                  <p className="u-margin-b--none" style={{ color: "#6c6c6c" }}>
-                    {formatDateTime(order.created_at)}
-                  </p>
-                  <AdminOrderStatusForm orderId={order.id} initialStatus={order.status} />
+                  <div className="vh-history-card">
+                    <div className="vh-history-card__header">
+                      <div className="vh-history-card__identity">
+                        <p className="vh-history-card__label">Order</p>
+                        <p className="vh-history-card__id">{order.order_number || order.id}</p>
+                        <p className="vh-history-card__timestamp">{formatDateTime(order.created_at)}</p>
+                      </div>
+                      <div className="vh-history-card__status">
+                        <span className={`vh-badge ${getHistoryBadgeClass(order.status)}`}>
+                          {getHistoryStatusLabel(order.status)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="vh-history-card__metrics">
+                      <div className="vh-history-metric vh-history-metric--focus">
+                        <span className="vh-history-metric__label">Checkout Total</span>
+                        <strong className="vh-history-metric__value">
+                          {formatAmountWithUnit(order.amount, order.currency)}
+                        </strong>
+                      </div>
+                      <div className="vh-history-metric">
+                        <span className="vh-history-metric__label">Shipping</span>
+                        <strong className="vh-history-metric__value">
+                          {[order.shipping_method, order.shipping_fee ? formatAmountWithUnit(order.shipping_fee, "PHP") : null]
+                            .filter(Boolean)
+                            .join(" · ") || "Not set"}
+                        </strong>
+                      </div>
+                      <div className="vh-history-metric">
+                        <span className="vh-history-metric__label">Confirmation Email</span>
+                        <strong className="vh-history-metric__value">{order.confirmation_email_status}</strong>
+                      </div>
+                    </div>
+
+                    <div className="vh-history-card__sections">
+                      <section className="vh-history-card__section">
+                        <p className="vh-history-card__section-title">Customer / Order Summary</p>
+                        <div className="vh-history-card__detail-grid">
+                          <div className="vh-history-card__detail">
+                            <span className="vh-history-card__detail-label">Customer</span>
+                            <p className="vh-history-card__detail-value">{order.customer_name || "Not set"}</p>
+                          </div>
+                          <div className="vh-history-card__detail">
+                            <span className="vh-history-card__detail-label">Email</span>
+                            <p className="vh-history-card__detail-value">{order.email || "No email recorded"}</p>
+                          </div>
+                          <div className="vh-history-card__detail">
+                            <span className="vh-history-card__detail-label">Phone</span>
+                            <p className="vh-history-card__detail-value">{order.phone || "Not set"}</p>
+                          </div>
+                          <div className="vh-history-card__detail">
+                            <span className="vh-history-card__detail-label">Item Summary</span>
+                            <p className="vh-history-card__detail-value">
+                              {order.product_name
+                                ? `${order.product_name}${order.quantity ? ` · Qty ${order.quantity}` : ""}`
+                                : "No product summary recorded"}
+                            </p>
+                          </div>
+                          <div className="vh-history-card__detail vh-history-card__detail--full">
+                            <span className="vh-history-card__detail-label">Shipping Address</span>
+                            <p className="vh-history-card__detail-value">{order.shipping_address || "Not set"}</p>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+
+                    <div className="vh-history-card__action">
+                      <AdminOrderStatusForm orderId={order.id} initialStatus={order.status} />
+                    </div>
+                  </div>
                 </article>
               ))
             ) : (
@@ -127,38 +204,108 @@ export default async function AdminPage() {
           <h2 className="h3 u-margin-b--lg">All Payments</h2>
           <div className="vh-list">
             {payments?.length ? (
-              payments.map((payment) => (
-                <article key={payment.id} className="vh-history-item">
-                  <strong>{payment.id}</strong>
-                  <p className="u-margin-b--none">Order: {payment.order_id}</p>
-                  <p className="u-margin-b--none">
-                    Expected: {formatAmountWithUnit(payment.amount_expected, getPaymentMethodLabel(payment.payment_method))}
+              <>
+                <div className="vh-history-helper">
+                  <strong>Manual On-Chain Check</strong>
+                  <p>
+                    Compare expected vs received amount, confirm the recipient wallet matches the merchant wallet, then
+                    use the tx hash in a block explorer to inspect the transfer externally.
                   </p>
-                  {payment.amount_expected_fiat && payment.fiat_currency ? (
-                    <p className="u-margin-b--none">
-                      Checkout total: {formatAmountWithUnit(payment.amount_expected_fiat, payment.fiat_currency)}
-                    </p>
-                  ) : null}
-                  {payment.conversion_rate ? (
-                    <p className="u-margin-b--none">
-                      Locked rate: {formatAmountWithUnit(payment.conversion_rate, "PHP")} / ETH
-                    </p>
-                  ) : null}
-                  {payment.amount_received ? (
-                    <p className="u-margin-b--none">
-                      Received: {formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))}
-                    </p>
-                  ) : null}
-                  <p className="u-margin-b--none">Method: {getPaymentMethodLabel(payment.payment_method)}</p>
-                  <p className="u-margin-b--none">Payer Wallet: {formatWalletAddress(payment.wallet_address)}</p>
-                  <p className="u-margin-b--none">Recipient: {formatWalletAddress(payment.recipient_address)}</p>
-                  <p className="u-margin-b--none">Tx Hash: {formatTransactionHash(payment.tx_hash)}</p>
-                  <p className="u-margin-b--none">Status: {payment.status}</p>
-                  <p className="u-margin-b--none" style={{ color: "#6c6c6c" }}>
-                    {formatDateTime(payment.created_at)}
-                  </p>
-                </article>
-              ))
+                </div>
+                {payments.map((payment) => (
+                  <article key={payment.id} className="vh-history-item">
+                    <div className="vh-history-card">
+                      <div className="vh-history-card__header">
+                        <div className="vh-history-card__identity">
+                          <p className="vh-history-card__label">Payment</p>
+                          <p className="vh-history-card__id">{payment.id}</p>
+                          <p className="vh-history-card__timestamp">{formatDateTime(payment.created_at)}</p>
+                        </div>
+                        <div className="vh-history-card__status">
+                          <span className={`vh-badge ${getHistoryBadgeClass(payment.status)}`}>
+                            {getHistoryStatusLabel(payment.status)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="vh-history-card__metrics">
+                        <div className="vh-history-metric vh-history-metric--focus">
+                          <span className="vh-history-metric__label">Expected Amount</span>
+                          <strong className="vh-history-metric__value">
+                            {formatAmountWithUnit(payment.amount_expected, getPaymentMethodLabel(payment.payment_method))}
+                          </strong>
+                        </div>
+                        <div className="vh-history-metric vh-history-metric--focus">
+                          <span className="vh-history-metric__label">Received Amount</span>
+                          <strong className="vh-history-metric__value">
+                            {payment.amount_received
+                              ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
+                              : "Awaiting confirmation"}
+                          </strong>
+                        </div>
+                        <div className="vh-history-metric">
+                          <span className="vh-history-metric__label">Checkout Total</span>
+                          <strong className="vh-history-metric__value">
+                            {payment.amount_expected_fiat && payment.fiat_currency
+                              ? formatAmountWithUnit(payment.amount_expected_fiat, payment.fiat_currency)
+                              : "Not set"}
+                          </strong>
+                        </div>
+                        <div className="vh-history-metric">
+                          <span className="vh-history-metric__label">Payment Method</span>
+                          <strong className="vh-history-metric__value">
+                            {getPaymentMethodLabel(payment.payment_method)}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="vh-history-card__sections">
+                        <section className="vh-history-card__section">
+                          <p className="vh-history-card__section-title">Payment Details</p>
+                          <div className="vh-history-card__detail-grid">
+                            <div className="vh-history-card__detail">
+                              <span className="vh-history-card__detail-label">Order ID</span>
+                              <p className="vh-history-card__detail-value">{payment.order_id || "Not linked"}</p>
+                            </div>
+                            <div className="vh-history-card__detail">
+                              <span className="vh-history-card__detail-label">Locked Rate</span>
+                              <p className="vh-history-card__detail-value">
+                                {payment.conversion_rate
+                                  ? `${formatAmountWithUnit(payment.conversion_rate, "PHP")} / ETH`
+                                  : "Not set"}
+                              </p>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="vh-history-card__section">
+                          <p className="vh-history-card__section-title">Wallet / On-Chain Details</p>
+                          <div className="vh-history-card__detail-grid">
+                            <div className="vh-history-card__detail vh-history-card__detail--full">
+                              <span className="vh-history-card__detail-label">Recipient Wallet</span>
+                              <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
+                                {payment.recipient_address || "Not submitted"}
+                              </p>
+                            </div>
+                            <div className="vh-history-card__detail vh-history-card__detail--full">
+                              <span className="vh-history-card__detail-label">Tx Hash</span>
+                              <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
+                                {payment.tx_hash || "Not submitted"}
+                              </p>
+                            </div>
+                            <div className="vh-history-card__detail vh-history-card__detail--full">
+                              <span className="vh-history-card__detail-label">Payer Wallet</span>
+                              <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
+                                {payment.wallet_address || "Not submitted"}
+                              </p>
+                            </div>
+                          </div>
+                        </section>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </>
             ) : (
               <div className="vh-empty">No payments yet.</div>
             )}

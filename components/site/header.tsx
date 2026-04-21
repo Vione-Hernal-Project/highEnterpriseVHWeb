@@ -11,21 +11,21 @@ type Props = {
 
 export function SiteHeader({ signedIn, isManagementUser }: Props) {
   return (
-    <header className="global-header">
-      <nav className="global-header__tertiary-nav" aria-label="Tertiary">
+    <header className="global-header vh-site-header">
+      <nav className="global-header__tertiary-nav vh-header-utility" aria-label="Tertiary">
         <a href="#page-content" className="btn btn--xs skip-link js-focus-to u-capitalize">
           Skip To Main Content
         </a>
         <a href="#global-site__footer" className="btn btn--xs skip-link js-focus-to u-capitalize">
           Skip To Footer
         </a>
-        <div className="container">
+        <div className="container vh-header-utility__inner">
           <ul className="global-header__tertiary-nav-list">
             <li className="global-header__tertiary-nav-list-item u-margin-r--xxl">
               Philippines | EN | USD
             </li>
             <li className="global-header__tertiary-nav-list-item u-margin-r--xxl">
-              <a href="mailto:service@vionehernal.com">Need Help?</a>
+              <a href="mailto:vionehernal@gmail.com">Need Help?</a>
             </li>
             <li className="global-header__tertiary-nav-list-item u-margin-r--xxl">
               <WalletStatus />
@@ -52,10 +52,21 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
         </div>
       </nav>
 
-      <div className="container">
-        <div className="global-header__wrap">
+      <div className="container vh-header-shell">
+        <div className="global-header__wrap vh-header-balance">
+          <nav className="global-header__secondary-nav vh-header-balance__nav vh-header-balance__nav--left" aria-label="Store">
+            <ul className="global-header__secondary-nav-list vh-header-balance__list vh-header-balance__list--left">
+              <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
+                <Link href="/shop">Womens</Link>
+              </li>
+              <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
+                <Link href="/dashboard">Dashboard</Link>
+              </li>
+            </ul>
+          </nav>
+
           <Link
-            className="global-header__brand-logo"
+            className="global-header__brand-logo vh-header-balance__brand"
             href="/"
             aria-label="Vione Hernal home"
             style={{ position: "relative", zIndex: 4, pointerEvents: "auto" }}
@@ -65,15 +76,9 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
             </span>
           </Link>
 
-          <nav className="global-header__secondary-nav" aria-label="Secondary">
-            <ul className="global-header__secondary-nav-list">
-              <li className="global-header__secondary-nav-list-item u-margin-r--xxl">
-                <Link href="/shop">Womens</Link>
-              </li>
+          <nav className="global-header__secondary-nav vh-header-balance__nav vh-header-balance__nav--right" aria-label="Shopping">
+            <ul className="global-header__secondary-nav-list vh-header-balance__list vh-header-balance__list--right">
               <HeaderStoreLinks />
-              <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
-                <Link href="/dashboard">Dashboard</Link>
-              </li>
               {isManagementUser ? (
                 <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
                   <Link href="/admin/ledger">Ledger</Link>
@@ -88,8 +93,8 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
           </nav>
         </div>
 
-        <nav className="nav-primary" aria-label="Primary">
-          <ul className="nav-primary__list u-static">
+        <nav className="nav-primary vh-header-primary" aria-label="Primary">
+          <ul className="nav-primary__list u-static vh-header-primary__list">
             <li className="nav-primary__item first">
               <Link className="nav-primary__link" href="/new">
                 new

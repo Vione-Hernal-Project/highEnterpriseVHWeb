@@ -115,7 +115,7 @@ export default async function ShopPage({ searchParams }: Props) {
             </div>
           </div>
 
-          <ProductGrid products={products} />
+          <ProductGrid products={products} showCta={false} />
         </>
       ) : (
         <div className="storefront-app-empty">

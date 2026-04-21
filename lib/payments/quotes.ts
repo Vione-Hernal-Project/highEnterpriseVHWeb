@@ -3,7 +3,7 @@ import "server-only";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { getCatalogSubtotalPhpCents, type CatalogProduct } from "@/lib/catalog";
+import { getCatalogSubtotalPhpCents, getProductAvailableSizes, type CatalogProduct } from "@/lib/catalog";
 import { getErrorMessage } from "@/lib/http";
 import { loadPublishedCatalogProduct } from "@/lib/products";
 import {
@@ -14,6 +14,7 @@ import {
   phpCentsToDecimalString,
 } from "@/lib/payments/amounts";
 import { logPaymentDebug } from "@/lib/payments/debug";
+import { getCheckoutShippingQuote, type ShippingAddressInput, type ShippingMethodCode } from "@/lib/shipping";
 
 const COINGECKO_SIMPLE_PRICE_ENDPOINT =
   process.env.COINGECKO_SIMPLE_PRICE_ENDPOINT?.trim() || "https://api.coingecko.com/api/v3/simple/price";
@@ -36,6 +37,58 @@ export type CheckoutPricing = {
   subtotalPhpCents: number;
   subtotalPhp: string;
   subtotalPhpLabel: string;
+  phpPerEth: number;
+  phpPerEthLabel: string;
+  requiredEth: string;
+  requiredEthLabel: string;
+  quoteSource: string;
+  quoteUpdatedAt: string | null;
+};
+
+export type CheckoutLineItemInput = {
+  productId: string;
+  selectedSize: string;
+  quantity: number;
+};
+
+export type CheckoutBagPricingItem = {
+  product: CatalogProduct;
+  selectedSize: string;
+  quantity: number;
+  lineTotalPhpCents: number;
+  lineTotalPhp: string;
+  lineTotalPhpLabel: string;
+};
+
+export type CheckoutBagPricing = {
+  items: CheckoutBagPricingItem[];
+  itemCount: number;
+  totalQuantity: number;
+  subtotalPhpCents: number;
+  subtotalPhp: string;
+  subtotalPhpLabel: string;
+  shippingFeePhpCents: number | null;
+  shippingFeePhp: string | null;
+  shippingFeeLabel: string;
+  shippingMethodCode: ShippingMethodCode | null;
+  shippingMethodLabel: string | null;
+  shippingZone: string | null;
+  shippingZoneLabel: string | null;
+  shippingMessage: string;
+  freeShippingApplied: boolean;
+  totalPhpCents: number;
+  totalPhp: string;
+  totalPhpLabel: string;
+  normalizedShippingAddress: {
+    address1: string;
+    city: string;
+    province: string;
+    postalCode: string;
+    country: string;
+    zone: string | null;
+    zoneLabel: string | null;
+  };
+  isShippingResolved: boolean;
   phpPerEth: number;
   phpPerEthLabel: string;
   requiredEth: string;
@@ -343,6 +396,99 @@ export async function getCheckoutPricing(productId: string, quantity: number): P
     subtotalPhpCents,
     subtotalPhp: phpCentsToDecimalString(subtotalPhpCents),
     subtotalPhpLabel: formatPhpCurrencyFromCents(subtotalPhpCents),
+    phpPerEth: quote.phpPerEth,
+    phpPerEthLabel: `${formatPhpCurrency(quote.phpPerEth)} / ETH`,
+    requiredEth,
+    requiredEthLabel: `${normalizePaymentAmount(requiredEth)} ETH`,
+    quoteSource: quote.quoteSource,
+    quoteUpdatedAt: quote.quoteUpdatedAt,
+  };
+}
+
+export async function getBagCheckoutPricing(
+  lineItems: CheckoutLineItemInput[],
+  options?: {
+    shippingAddress?: ShippingAddressInput | null;
+    shippingMethodCode?: ShippingMethodCode | null;
+  },
+): Promise<CheckoutBagPricing> {
+  if (!lineItems.length) {
+    throw new Error("Add at least one bag item before checkout.");
+  }
+
+  const pricingItems = await Promise.all(
+    lineItems.map(async (lineItem) => {
+      const productId = lineItem.productId.trim();
+      const selectedSize = lineItem.selectedSize.trim();
+      const quantity = Math.floor(lineItem.quantity);
+
+      if (!productId) {
+        throw new Error("A bag item is missing its product.");
+      }
+
+      if (!selectedSize) {
+        throw new Error("A bag item is missing its size.");
+      }
+
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
+        throw new Error("Each bag item quantity must be between 1 and 10.");
+      }
+
+      const product = await loadPublishedCatalogProduct(productId);
+
+      if (!product) {
+        throw new Error("One of the selected bag items is no longer available.");
+      }
+
+      if (!getProductAvailableSizes(product).includes(selectedSize)) {
+        throw new Error(`Selected size ${selectedSize} is unavailable for ${product.name}.`);
+      }
+
+      const lineTotalPhpCents = getCatalogSubtotalPhpCents(product.pricePhpCents, quantity);
+
+      return {
+        product,
+        selectedSize,
+        quantity,
+        lineTotalPhpCents,
+        lineTotalPhp: phpCentsToDecimalString(lineTotalPhpCents),
+        lineTotalPhpLabel: formatPhpCurrencyFromCents(lineTotalPhpCents),
+      } satisfies CheckoutBagPricingItem;
+    }),
+  );
+
+  const subtotalPhpCents = pricingItems.reduce((total, item) => total + item.lineTotalPhpCents, 0);
+  const shippingQuote = getCheckoutShippingQuote({
+    merchandiseSubtotalPhpCents: subtotalPhpCents,
+    address: options?.shippingAddress || {},
+    selectedMethodCode: options?.shippingMethodCode || null,
+  });
+  const shippingFeePhpCents = shippingQuote.shippingFeePhpCents || 0;
+  const totalPhpCents = subtotalPhpCents + shippingFeePhpCents;
+  const quote = await fetchEthPhpQuote();
+  const requiredEth = convertPhpCentsToEthAmount(totalPhpCents, quote.phpPerEth);
+
+  return {
+    items: pricingItems,
+    itemCount: pricingItems.length,
+    totalQuantity: pricingItems.reduce((total, item) => total + item.quantity, 0),
+    subtotalPhpCents,
+    subtotalPhp: phpCentsToDecimalString(subtotalPhpCents),
+    subtotalPhpLabel: formatPhpCurrencyFromCents(subtotalPhpCents),
+    shippingFeePhpCents: shippingQuote.shippingFeePhpCents,
+    shippingFeePhp: shippingQuote.shippingFeePhp,
+    shippingFeeLabel: shippingQuote.shippingFeeLabel,
+    shippingMethodCode: shippingQuote.shippingMethodCode,
+    shippingMethodLabel: shippingQuote.shippingMethodLabel,
+    shippingZone: shippingQuote.shippingZone,
+    shippingZoneLabel: shippingQuote.shippingZoneLabel,
+    shippingMessage: shippingQuote.message,
+    freeShippingApplied: shippingQuote.freeShippingApplied,
+    totalPhpCents,
+    totalPhp: phpCentsToDecimalString(totalPhpCents),
+    totalPhpLabel: formatPhpCurrencyFromCents(totalPhpCents),
+    normalizedShippingAddress: shippingQuote.normalizedAddress,
+    isShippingResolved: shippingQuote.isResolved,
     phpPerEth: quote.phpPerEth,
     phpPerEthLabel: `${formatPhpCurrency(quote.phpPerEth)} / ETH`,
     requiredEth,

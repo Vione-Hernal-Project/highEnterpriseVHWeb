@@ -125,6 +125,15 @@ create table if not exists public.orders (
   customer_name text not null default '',
   phone text not null default '',
   shipping_address text not null default '',
+  shipping_address_line1 text null,
+  shipping_city text null,
+  shipping_province text null,
+  shipping_postal_code text null,
+  shipping_country text null,
+  shipping_zone text null,
+  shipping_method text null,
+  shipping_fee numeric null,
+  subtotal_amount numeric null,
   amount numeric not null,
   currency text not null default 'USD',
   status text not null default 'pending',
@@ -135,6 +144,7 @@ create table if not exists public.orders (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
   constraint orders_status_check check (status in ('pending', 'paid', 'cancelled')),
+  constraint orders_shipping_method_check check (shipping_method is null or shipping_method in ('standard', 'express')),
   constraint orders_confirmation_email_status_check check (
     confirmation_email_status in ('pending', 'sent', 'failed', 'not_configured')
   )
@@ -151,6 +161,15 @@ alter table public.orders add column if not exists unit_price numeric not null d
 alter table public.orders add column if not exists customer_name text not null default '';
 alter table public.orders add column if not exists phone text not null default '';
 alter table public.orders add column if not exists shipping_address text not null default '';
+alter table public.orders add column if not exists shipping_address_line1 text null;
+alter table public.orders add column if not exists shipping_city text null;
+alter table public.orders add column if not exists shipping_province text null;
+alter table public.orders add column if not exists shipping_postal_code text null;
+alter table public.orders add column if not exists shipping_country text null;
+alter table public.orders add column if not exists shipping_zone text null;
+alter table public.orders add column if not exists shipping_method text null;
+alter table public.orders add column if not exists shipping_fee numeric null;
+alter table public.orders add column if not exists subtotal_amount numeric null;
 alter table public.orders add column if not exists amount numeric not null default 0;
 alter table public.orders add column if not exists currency text not null default 'USD';
 alter table public.orders add column if not exists status text not null default 'pending';
@@ -164,6 +183,10 @@ alter table public.orders add column if not exists updated_at timestamptz not nu
 alter table public.orders drop constraint if exists orders_status_check;
 alter table public.orders
 add constraint orders_status_check check (status in ('pending', 'paid', 'cancelled'));
+
+alter table public.orders drop constraint if exists orders_shipping_method_check;
+alter table public.orders
+add constraint orders_shipping_method_check check (shipping_method is null or shipping_method in ('standard', 'express'));
 
 alter table public.orders drop constraint if exists orders_confirmation_email_status_check;
 alter table public.orders
@@ -182,6 +205,53 @@ begin
     alter table public.orders add constraint orders_order_number_key unique (order_number);
   end if;
 end $$;
+
+create table if not exists public.order_items (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  product_id text null,
+  product_name text not null default '',
+  product_brand text null,
+  selected_size text null,
+  quantity integer not null default 1,
+  unit_price numeric not null default 0,
+  line_total numeric not null default 0,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint order_items_quantity_check check (quantity > 0),
+  constraint order_items_unit_price_check check (unit_price >= 0),
+  constraint order_items_line_total_check check (line_total >= 0)
+);
+
+alter table public.order_items add column if not exists order_id uuid references public.orders(id) on delete cascade;
+alter table public.order_items add column if not exists product_id text null;
+alter table public.order_items add column if not exists product_name text not null default '';
+alter table public.order_items add column if not exists product_brand text null;
+alter table public.order_items add column if not exists selected_size text null;
+alter table public.order_items add column if not exists quantity integer not null default 1;
+alter table public.order_items add column if not exists unit_price numeric not null default 0;
+alter table public.order_items add column if not exists line_total numeric not null default 0;
+alter table public.order_items add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.order_items add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.order_items
+  alter column order_id set not null,
+  alter column product_name set not null,
+  alter column quantity set not null,
+  alter column unit_price set not null,
+  alter column line_total set not null;
+
+alter table public.order_items drop constraint if exists order_items_quantity_check;
+alter table public.order_items
+add constraint order_items_quantity_check check (quantity > 0);
+
+alter table public.order_items drop constraint if exists order_items_unit_price_check;
+alter table public.order_items
+add constraint order_items_unit_price_check check (unit_price >= 0);
+
+alter table public.order_items drop constraint if exists order_items_line_total_check;
+alter table public.order_items
+add constraint order_items_line_total_check check (line_total >= 0);
 
 create table if not exists public.fund_allocation_rules (
   id uuid primary key default gen_random_uuid(),
@@ -470,6 +540,8 @@ create index if not exists products_new_arrivals_idx on public.products (show_in
 create index if not exists orders_order_number_idx on public.orders (order_number);
 create index if not exists orders_user_created_idx on public.orders (user_id, created_at desc);
 create index if not exists orders_status_idx on public.orders (status);
+create index if not exists order_items_order_id_idx on public.order_items (order_id, created_at asc);
+create index if not exists order_items_product_id_idx on public.order_items (product_id);
 create index if not exists fund_allocation_rules_active_order_idx on public.fund_allocation_rules (is_active, display_order);
 create index if not exists payments_user_created_idx on public.payments (user_id, created_at desc);
 create index if not exists payments_order_id_idx on public.payments (order_id);
@@ -572,6 +644,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists orders_set_updated_at on public.orders;
 create trigger orders_set_updated_at
 before update on public.orders
+for each row execute function public.set_updated_at();
+
+drop trigger if exists order_items_set_updated_at on public.order_items;
+create trigger order_items_set_updated_at
+before update on public.order_items
 for each row execute function public.set_updated_at();
 
 drop trigger if exists payments_set_updated_at on public.payments;
@@ -1349,6 +1426,7 @@ end $$;
 alter table public.profiles enable row level security;
 alter table public.products enable row level security;
 alter table public.orders enable row level security;
+alter table public.order_items enable row level security;
 alter table public.payments enable row level security;
 alter table public.fund_allocation_rules enable row level security;
 alter table public.payment_allocations enable row level security;
@@ -1417,6 +1495,25 @@ on public.orders
 for select
 using (public.is_management_user());
 
+drop policy if exists "order_items_select_own" on public.order_items;
+create policy "order_items_select_own"
+on public.order_items
+for select
+using (
+  exists (
+    select 1
+    from public.orders
+    where orders.id = order_items.order_id
+      and orders.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "order_items_select_management" on public.order_items;
+create policy "order_items_select_management"
+on public.order_items
+for select
+using (public.is_management_user());
+
 drop policy if exists "payments_select_own" on public.payments;
 create policy "payments_select_own"
 on public.payments
@@ -1457,6 +1554,7 @@ grant select on public.fund_allocation_rules to authenticated;
 grant select on public.payment_allocations to authenticated;
 grant select on public.admin_cash_outs to authenticated;
 grant select on public.admin_cash_out_breakdowns to authenticated;
+grant select on public.order_items to authenticated;
 grant select on public.products to anon;
 grant select on public.products to authenticated;
 grant execute on function public.record_admin_cash_out_transfer(numeric, text, uuid, uuid, bigint, text, text, text, numeric, numeric, text, timestamptz, text, text, text) to authenticated;

@@ -87,6 +87,7 @@ cp .env.example .env.local
 
 Fill in:
 
+- `PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -153,6 +154,7 @@ where email = 'your-admin@email.com';
 10. MetaMask opens and submits the Sepolia payment transfer to the single merchant wallet configured in `NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS`.
 11. Backend verifies the transaction hash on Sepolia before marking the order paid.
 12. If SMTP is configured, the backend sends an order confirmation email.
+    If `PUBLIC_SITE_URL` is set, the email includes a direct dashboard link for order tracking.
 13. Go to `/dashboard`.
 14. Use `Recheck On-Chain Payment` if the transaction was broadcast but still waiting for confirmation, or `Cancel Order` while the order is still pending.
 
