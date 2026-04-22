@@ -86,7 +86,7 @@ export function PaymentStatusButton({
 
       if (autoVerifyAttemptRef.current >= AUTO_VERIFY_MAX_ATTEMPTS) {
         clearAutoVerifyTimer();
-        setMessage((current) => current || `${paymentLabel} payment is still pending. Use Re-check On-Chain Payment as a fallback.`);
+        setMessage((current) => current || `Still waiting for on-chain confirmation. Use Check On-Chain Status as a fallback.`);
         return;
       }
 
@@ -105,7 +105,7 @@ export function PaymentStatusButton({
 
         if (response.status === 202) {
           setError("");
-          setMessage(payload?.message || `${paymentLabel} payment sent. Waiting for Sepolia confirmation.`);
+          setMessage(payload?.message || "Submitted on-chain. Waiting for on-chain confirmation.");
           clearAutoVerifyTimer();
           autoVerifyTimerRef.current = window.setTimeout(runAutoVerify, AUTO_VERIFY_INTERVAL_MS);
           return;
@@ -119,7 +119,7 @@ export function PaymentStatusButton({
 
         clearAutoVerifyTimer();
         setError("");
-        setMessage(payload?.message || `${paymentLabel} payment confirmed.`);
+        setMessage(payload?.message || "Confirmed on-chain.");
         router.refresh();
       } catch (verifyError) {
         clearAutoVerifyTimer();
@@ -173,7 +173,7 @@ export function PaymentStatusButton({
             });
 
             if (response.status === 202) {
-              setMessage(payload?.message || `${paymentLabel} payment sent. Waiting for Sepolia confirmation.`);
+              setMessage(payload?.message || "Submitted on-chain. Waiting for on-chain confirmation.");
               router.refresh();
               return;
             }
@@ -183,7 +183,7 @@ export function PaymentStatusButton({
               return;
             }
 
-            setMessage(payload?.message || `${paymentLabel} payment confirmed.`);
+            setMessage(payload?.message || "Confirmed on-chain.");
             router.refresh();
           } catch (error) {
             setError(getErrorMessage(error, `Unable to submit the ${paymentLabel} payment.`));
@@ -192,7 +192,7 @@ export function PaymentStatusButton({
           }
         }}
       >
-        {loading ? "Processing..." : hasSubmittedTx ? "Recheck On-Chain Payment" : `Complete ${paymentLabel} Payment`}
+        {loading ? (hasSubmittedTx ? "Confirming On-Chain..." : "Processing...") : hasSubmittedTx ? "Check On-Chain Status" : `Complete ${paymentLabel} Payment`}
       </button>
       {error ? <div className="vh-status vh-status--error" style={{ marginTop: "0.75rem" }}>{error}</div> : null}
       {message ? <div className="vh-status" style={{ marginTop: "0.75rem" }}>{message}</div> : null}

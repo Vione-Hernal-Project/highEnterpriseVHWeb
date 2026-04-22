@@ -32,6 +32,30 @@ function getHistoryStatusLabel(status: string) {
   return "Pending";
 }
 
+function getConfirmationEmailLabel(status: string | null) {
+  if (!status) {
+    return "Not available";
+  }
+
+  if (status === "sent") {
+    return "Sent";
+  }
+
+  if (status === "pending") {
+    return "Queued";
+  }
+
+  if (status === "failed") {
+    return "Needs attention";
+  }
+
+  if (status === "not_configured") {
+    return "Not configured";
+  }
+
+  return status.replace(/_/g, " ");
+}
+
 export default async function AdminOrdersPage() {
   const { role, isManagementUser } = await requireOrderOperationsUser();
   let orders: Array<Record<string, any>> = [];
@@ -80,9 +104,15 @@ export default async function AdminOrdersPage() {
         {loadError ? <div className="vh-status vh-status--error">{loadError}</div> : null}
       </div>
 
-      <section className="vh-data-card" style={{ marginTop: "2rem" }}>
-        <h2 className="h3 u-margin-b--lg">All Orders</h2>
-        <div className="vh-list">
+      <section className="vh-data-card vh-dashboard-history__column" style={{ marginTop: "2rem" }}>
+        <div className="vh-dashboard-history__heading">
+          <div>
+            <h2 className="h3 u-margin-b--sm">All Orders</h2>
+            <p className="vh-dashboard-history__meta">Review live and cancelled orders in a contained, easier-to-scan queue.</p>
+          </div>
+          {orders.length ? <span className="vh-dashboard-history__count">{orders.length} item{orders.length === 1 ? "" : "s"}</span> : null}
+        </div>
+        <div className="vh-list vh-dashboard-history__list">
           {orders.length ? (
             orders.map((order) => (
               <article key={order.id} className="vh-history-item">
@@ -121,7 +151,7 @@ export default async function AdminOrdersPage() {
                         </div>
                         <div className="vh-history-metric">
                           <span className="vh-history-metric__label">Confirmation Email</span>
-                          <strong className="vh-history-metric__value">{order.confirmation_email_status}</strong>
+                          <strong className="vh-history-metric__value">{getConfirmationEmailLabel(order.confirmation_email_status)}</strong>
                         </div>
                       </div>
 

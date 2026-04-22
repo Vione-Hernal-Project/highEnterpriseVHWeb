@@ -33,6 +33,30 @@ function getHistoryStatusLabel(status: string) {
   return "Pending";
 }
 
+function getConfirmationEmailLabel(status: string | null) {
+  if (!status) {
+    return "Not available";
+  }
+
+  if (status === "sent") {
+    return "Sent";
+  }
+
+  if (status === "pending") {
+    return "Queued";
+  }
+
+  if (status === "failed") {
+    return "Needs attention";
+  }
+
+  if (status === "not_configured") {
+    return "Not configured";
+  }
+
+  return status.replace(/_/g, " ");
+}
+
 export default async function AdminPage() {
   const { role, isOwner } = await requireManagementUser();
   let orders: Array<Record<string, any>> = [];
@@ -114,10 +138,16 @@ export default async function AdminPage() {
         </div>
       </section>
 
-      <div className="vh-admin-columns" style={{ marginTop: "2rem" }}>
-        <section className="vh-data-card">
-          <h2 className="h3 u-margin-b--lg">All Orders</h2>
-          <div className="vh-list">
+      <div className="vh-admin-columns vh-dashboard-history" style={{ marginTop: "2rem" }}>
+        <section className="vh-data-card vh-dashboard-history__column">
+          <div className="vh-dashboard-history__heading">
+            <div>
+              <h2 className="h3 u-margin-b--sm">All Orders</h2>
+              <p className="vh-dashboard-history__meta">Keep order status, customer details, and totals aligned in one view.</p>
+            </div>
+            {orders?.length ? <span className="vh-dashboard-history__count">{orders.length} item{orders.length === 1 ? "" : "s"}</span> : null}
+          </div>
+          <div className="vh-list vh-dashboard-history__list">
             {orders?.length ? (
               orders.map((order) => (
                 <article key={order.id} className="vh-history-item">
@@ -152,7 +182,7 @@ export default async function AdminPage() {
                       </div>
                       <div className="vh-history-metric">
                         <span className="vh-history-metric__label">Confirmation Email</span>
-                        <strong className="vh-history-metric__value">{order.confirmation_email_status}</strong>
+                        <strong className="vh-history-metric__value">{getConfirmationEmailLabel(order.confirmation_email_status)}</strong>
                       </div>
                     </div>
 
@@ -200,9 +230,15 @@ export default async function AdminPage() {
           </div>
         </section>
 
-        <section className="vh-data-card">
-          <h2 className="h3 u-margin-b--lg">All Payments</h2>
-          <div className="vh-list">
+        <section className="vh-data-card vh-dashboard-history__column">
+          <div className="vh-dashboard-history__heading">
+            <div>
+              <h2 className="h3 u-margin-b--sm">All Payments</h2>
+              <p className="vh-dashboard-history__meta">Review payment amount, status, and on-chain details without the list taking over the page.</p>
+            </div>
+            {payments?.length ? <span className="vh-dashboard-history__count">{payments.length} item{payments.length === 1 ? "" : "s"}</span> : null}
+          </div>
+          <div className="vh-list vh-dashboard-history__list">
             {payments?.length ? (
               <>
                 <div className="vh-history-helper">
@@ -240,7 +276,7 @@ export default async function AdminPage() {
                           <strong className="vh-history-metric__value">
                             {payment.amount_received
                               ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
-                              : "Awaiting confirmation"}
+                              : "Waiting for on-chain confirmation"}
                           </strong>
                         </div>
                         <div className="vh-history-metric">

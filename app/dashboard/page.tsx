@@ -34,6 +34,30 @@ function getHistoryStatusLabel(status: string) {
   return "Pending";
 }
 
+function getConfirmationEmailLabel(status: string | null) {
+  if (!status) {
+    return "Not available";
+  }
+
+  if (status === "sent") {
+    return "Sent";
+  }
+
+  if (status === "pending") {
+    return "Queued";
+  }
+
+  if (status === "failed") {
+    return "Needs attention";
+  }
+
+  if (status === "not_configured") {
+    return "Not configured";
+  }
+
+  return status.replace(/_/g, " ");
+}
+
 export default async function DashboardPage() {
   const { supabase, user, profile, role, canManageOrders, isManagementUser } = await requireUser();
 
@@ -110,11 +134,19 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="vh-admin-columns" style={{ marginTop: "2rem" }}>
-        <section className="vh-data-card">
-          <h2 className="h3 u-margin-b--lg">Order History</h2>
+      <div className="vh-admin-columns vh-dashboard-history" style={{ marginTop: "2rem" }}>
+        <section className="vh-data-card vh-dashboard-history__column">
+          <div className="vh-dashboard-history__heading">
+            <div>
+              <h2 className="h3 u-margin-b--sm">Order History</h2>
+              <p className="vh-dashboard-history__meta">
+                Review status, totals, and delivery details at a glance.
+              </p>
+            </div>
+            {orders?.length ? <span className="vh-dashboard-history__count">{orders.length} item{orders.length === 1 ? "" : "s"}</span> : null}
+          </div>
           {orders?.length ? (
-            <div className="vh-list">
+            <div className="vh-list vh-dashboard-history__list">
               {orders.map((order) => (
                 <article key={order.id} className="vh-history-item">
                   {(() => {
@@ -128,6 +160,7 @@ export default async function DashboardPage() {
                       order.status === "pending" &&
                       (!relatedPayment || (!relatedPayment.tx_hash && relatedPayment.status !== "paid" && relatedPayment.status !== "cancelled"));
                     const isAwaitingConfirmation = order.status === "pending" && Boolean(relatedPayment?.tx_hash) && relatedPayment?.status === "pending";
+                    const orderStatusLabel = isAwaitingConfirmation ? "Waiting for on-chain confirmation" : getHistoryStatusLabel(order.status);
                     const supportHref = `mailto:vionehernal@gmail.com?subject=${encodeURIComponent(
                       `${order.status === "paid" ? "Refund / Support" : "Payment Support"} ${order.order_number || order.id}`,
                     )}`;
@@ -142,7 +175,7 @@ export default async function DashboardPage() {
                           </div>
                           <div className="vh-history-card__status">
                             <span className={`vh-badge ${getHistoryBadgeClass(order.status)}`}>
-                              {getHistoryStatusLabel(order.status)}
+                              {orderStatusLabel}
                             </span>
                           </div>
                         </div>
@@ -160,7 +193,7 @@ export default async function DashboardPage() {
                           </div>
                           <div className="vh-history-metric">
                             <span className="vh-history-metric__label">Confirmation Email</span>
-                            <strong className="vh-history-metric__value">{order.confirmation_email_status}</strong>
+                            <strong className="vh-history-metric__value">{getConfirmationEmailLabel(order.confirmation_email_status)}</strong>
                           </div>
                         </div>
 
@@ -202,7 +235,7 @@ export default async function DashboardPage() {
                           </div>
                         ) : isAwaitingConfirmation ? (
                           <div className="vh-status">
-                            Payment has already been submitted on-chain, so normal cancellation is disabled while confirmation is pending. For urgent help,{" "}
+                            Submitted on-chain. Normal cancellation is disabled while confirmation is pending. For urgent help,{" "}
                             <a href={supportHref}>contact support</a>.
                           </div>
                         ) : order.status === "paid" ? (
@@ -221,10 +254,18 @@ export default async function DashboardPage() {
           )}
         </section>
 
-        <section className="vh-data-card">
-          <h2 className="h3 u-margin-b--lg">Payment History</h2>
+        <section className="vh-data-card vh-dashboard-history__column">
+          <div className="vh-dashboard-history__heading">
+            <div>
+              <h2 className="h3 u-margin-b--sm">Payment History</h2>
+              <p className="vh-dashboard-history__meta">
+                Scan expected amounts, on-chain details, and confirmation status quickly.
+              </p>
+            </div>
+            {payments?.length ? <span className="vh-dashboard-history__count">{payments.length} item{payments.length === 1 ? "" : "s"}</span> : null}
+          </div>
           {payments?.length ? (
-            <div className="vh-list">
+            <div className="vh-list vh-dashboard-history__list">
               <div className="vh-history-helper">
                 <strong>Manual On-Chain Check</strong>
                 <p>
@@ -255,14 +296,14 @@ export default async function DashboardPage() {
                           {formatAmountWithUnit(payment.amount_expected, getPaymentMethodLabel(payment.payment_method))}
                         </strong>
                       </div>
-                      <div className="vh-history-metric vh-history-metric--focus">
-                        <span className="vh-history-metric__label">Received Amount</span>
-                        <strong className="vh-history-metric__value">
-                          {payment.amount_received
-                            ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
-                            : "Awaiting confirmation"}
-                        </strong>
-                      </div>
+                          <div className="vh-history-metric vh-history-metric--focus">
+                            <span className="vh-history-metric__label">Received Amount</span>
+                            <strong className="vh-history-metric__value">
+                              {payment.amount_received
+                                ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
+                                : "Waiting for on-chain confirmation"}
+                            </strong>
+                          </div>
                       <div className="vh-history-metric">
                         <span className="vh-history-metric__label">Checkout Total</span>
                         <strong className="vh-history-metric__value">
@@ -338,7 +379,7 @@ export default async function DashboardPage() {
                       </div>
                     ) : payment.status === "pending" ? (
                       <div className="vh-status">
-                        This pending payment was created before the Sepolia wallet flow was enabled.
+                        This payment record was created before the Sepolia wallet flow was enabled.
                       </div>
                     ) : null}
                   </div>

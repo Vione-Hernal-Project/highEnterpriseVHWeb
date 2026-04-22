@@ -1091,8 +1091,8 @@ textarea {
 }
 
 .vh-history-item {
-  border: 1px solid #e7e2dc;
-  padding: 1.35rem;
+  border: 1px solid #ece6de;
+  padding: 1.15rem;
   background: linear-gradient(180deg, #fff 0%, #fdfbf8 100%);
 }
 
@@ -1152,7 +1152,7 @@ textarea {
 
 .vh-history-card {
   display: grid;
-  gap: 1rem;
+  gap: 0.95rem;
 }
 
 .vh-history-card__header {
@@ -1161,7 +1161,7 @@ textarea {
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  padding-bottom: 1rem;
+  padding-bottom: 0.85rem;
   border-bottom: 1px solid #efe9e2;
 }
 
@@ -1186,57 +1186,57 @@ textarea {
 .vh-history-card__detail-label,
 .vh-history-metric__label {
   margin: 0;
-  color: #6c6c6c;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  color: #7e7468;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 .vh-history-card__id {
   margin: 0;
   color: #111114;
-  font-size: 0.96rem;
+  font-size: 0.92rem;
   font-weight: 700;
-  line-height: 1.55;
+  line-height: 1.45;
   word-break: break-word;
 }
 
 .vh-history-card__timestamp {
   margin: 0;
-  color: #6c6c6c;
-  font-size: 0.82rem;
+  color: #5c5a57;
+  font-size: 0.78rem;
   line-height: 1.5;
 }
 
 .vh-history-card__metrics,
 .vh-history-card__detail-grid {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.65rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .vh-history-metric,
 .vh-history-card__section,
 .vh-history-helper {
-  border: 1px solid #efe9e2;
+  border: 1px solid #eee8df;
   background: #fcfaf7;
 }
 
 .vh-history-metric {
   display: grid;
   gap: 0.45rem;
-  padding: 0.9rem 1rem;
+  padding: 0.8rem 0.95rem;
 }
 
 .vh-history-metric--focus {
-  border-color: #ddd3c7;
-  background: #f7f1ea;
+  border-color: #ddd2c4;
+  background: #f8f2ea;
 }
 
 .vh-history-metric__value {
   color: #111114;
-  font-size: 1rem;
+  font-size: 0.96rem;
   font-weight: 700;
   line-height: 1.4;
 }
@@ -1294,13 +1294,13 @@ textarea {
 
 .vh-history-card__sections {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
 .vh-history-card__section {
   display: grid;
-  gap: 0.85rem;
-  padding: 1rem;
+  gap: 0.7rem;
+  padding: 0.9rem 0.95rem;
 }
 
 .vh-history-card__detail {
@@ -1313,19 +1313,20 @@ textarea {
 
 .vh-history-card__detail-value {
   margin: 0;
-  color: #111114;
-  line-height: 1.65;
+  color: #1b1b1f;
+  font-size: 0.84rem;
+  line-height: 1.7;
   word-break: break-word;
   white-space: pre-wrap;
 }
 
 .vh-history-card__detail-value--mono {
-  padding: 0.75rem 0.85rem;
-  border: 1px solid #e7e2dc;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #ebe4db;
   background: #fff;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.76rem;
-  line-height: 1.7;
+  font-size: 0.72rem;
+  line-height: 1.65;
   word-break: break-all;
   white-space: normal;
 }
@@ -1336,8 +1337,8 @@ textarea {
 }
 
 .vh-history-helper {
-  margin-bottom: 1rem;
-  padding: 1rem 1.1rem;
+  margin-bottom: 0.9rem;
+  padding: 0.95rem 1rem;
 }
 
 .vh-history-helper strong {
@@ -1354,6 +1355,66 @@ textarea {
   color: #5c5a57;
   font-size: 0.84rem;
   line-height: 1.7;
+}
+
+.vh-dashboard-history {
+  gap: 1.6rem;
+  align-items: start;
+}
+
+.vh-dashboard-history__column {
+  display: grid;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.vh-dashboard-history__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.15rem;
+}
+
+.vh-dashboard-history__meta {
+  margin: 0;
+  color: #5c5a57;
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.vh-dashboard-history__count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 0.7rem;
+  border: 1px solid #ebe4db;
+  background: #fbf8f5;
+  color: #5c5a57;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vh-dashboard-history__list {
+  gap: 0.85rem;
+}
+
+.vh-dashboard-history__list:has(.vh-history-item:nth-child(5)) {
+  max-height: min(68vh, 54rem);
+  overflow-y: auto;
+  padding-right: 0.3rem;
+}
+
+.vh-dashboard-history__list:has(.vh-history-item:nth-child(5))::-webkit-scrollbar {
+  width: 6px;
+}
+
+.vh-dashboard-history__list:has(.vh-history-item:nth-child(5))::-webkit-scrollbar-thumb {
+  background: rgba(17, 17, 20, 0.12);
 }
 
 .vh-site-header {
@@ -2002,6 +2063,19 @@ textarea {
   display: grid;
   gap: 0.75rem;
   align-self: start;
+  align-content: start;
+  max-height: min(72vh, 58rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.3rem;
+}
+
+.vh-ledger-history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.vh-ledger-history-list::-webkit-scrollbar-thumb {
+  background: rgba(17, 17, 20, 0.14);
 }
 
 .vh-ledger-history-item {
@@ -2085,6 +2159,9 @@ textarea {
   border: 1px solid #e7e2dc;
   background: linear-gradient(180deg, #fff 0%, #fbf8f5 100%);
   padding: 1rem;
+  position: sticky;
+  top: 1rem;
+  align-self: start;
 }
 
 .vh-ledger-history-detail__hero {
@@ -2584,6 +2661,17 @@ textarea {
 
   .vh-checkout-summary-card {
     position: static;
+  }
+
+  .vh-ledger-history-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .vh-ledger-history-detail {
+    position: static;
+    top: auto;
   }
 
   .vh-header-utility__inner,
