@@ -1,6 +1,7 @@
 export default function AboutPage() {
   return (
     <section className="storefront-app-view vh-about-page">
+      <p className="vh-about-page__breadcrumb">HOME/ ABOUT US</p>
       <div className="vh-about-page__hero">
         <p className="vh-about-page__eyebrow">About Us</p>
         <h1 className="vh-about-page__title">

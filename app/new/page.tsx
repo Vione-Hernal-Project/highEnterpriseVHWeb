@@ -7,7 +7,7 @@ export default async function NewArrivalsPage() {
   const products = await loadNewArrivalCatalogProducts();
 
   return (
-    <section className="storefront-app-view">
+    <section className="storefront-app-view vh-new-arrivals-page">
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
@@ -21,7 +21,7 @@ export default async function NewArrivalsPage() {
             <h1 className="h2 u-margin-b--md">New Arrivals</h1>
             <p className="u-margin-b--none">Sorted by newest published items first.</p>
           </div>
-          <ProductGrid products={products} />
+          <ProductGrid products={products} showCta={false} />
         </>
       ) : (
         <div className="storefront-app-empty">

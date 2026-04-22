@@ -53,7 +53,7 @@ export default async function ShopPage({ searchParams }: Props) {
   const activeFilterLabel = [activeDepartment, activeCategory].filter(Boolean).join(" / ");
 
   return (
-    <section className="storefront-app-view">
+    <section className="storefront-app-view vh-shop-page">
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
