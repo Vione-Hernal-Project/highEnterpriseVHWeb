@@ -42,8 +42,8 @@ export default async function SignInPage({ searchParams }: Props) {
           <p className="vh-mvp-eyebrow">Vione Hernal Access</p>
           <h2 className="vh-mvp-title">Sign in to place an order.</h2>
           <p className="vh-mvp-copy">
-            This MVP uses Supabase Auth for working email and password login, protected routes, and order history tied
-            to the signed-in account.
+            Create your Vione Hernal account to place orders, follow your pieces, and access a refined experience
+            shaped by your style.
           </p>
           {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}
           {resetSuccessMessage ? <div className="vh-status vh-status--success">{resetSuccessMessage}</div> : null}
