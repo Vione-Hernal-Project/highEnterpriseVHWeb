@@ -40,7 +40,7 @@ export default async function SignInPage({ searchParams }: Props) {
       <div className="vh-grid-two">
         <div className="vh-data-card">
           <p className="vh-mvp-eyebrow">Vione Hernal Access</p>
-          <h2 className="vh-mvp-title">Sign in to place an order.</h2>
+          <h2 className="vh-mvp-title">Sign up to place an order.</h2>
           <p className="vh-mvp-copy">
             Create your Vione Hernal account to place orders, follow your pieces, and access a refined experience
             shaped by your style.

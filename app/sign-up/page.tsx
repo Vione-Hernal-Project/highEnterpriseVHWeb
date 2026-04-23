@@ -13,10 +13,9 @@ export default async function SignUpPage() {
       <div className="vh-grid-two">
         <div className="vh-data-card">
           <p className="vh-mvp-eyebrow">Supabase Auth MVP</p>
-          <h2 className="vh-mvp-title">Create your account and test the full flow.</h2>
+          <h2 className="vh-mvp-title">Create your account.</h2>
           <p className="vh-mvp-copy">
-            Once signed up, you can place a mock order, track payment attempts, and view your history from a protected
-            dashboard.
+            Once signed in, your account becomes your space to manage orders, revisit your selections, and move seamlessly through the Vione Hernal experience.
           </p>
           {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}
           <div className="vh-actions">
