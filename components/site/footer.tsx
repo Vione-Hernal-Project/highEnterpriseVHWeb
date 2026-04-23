@@ -94,7 +94,10 @@ export function SiteFooter({ signedIn = false }: Props) {
                     <a href="mailto:vionehernal@gmail.com">vionehernal@gmail.com</a>
                   </li>
                   <li className="ui-list__item">
-                    <a href="tel:+639356625936">+63 (935) 662-5936</a>
+                    <a href="https://t.me/nothingisloud">
+                      Telegram <br />
+                      @nothingisloud
+                    </a>
                   </li>
                   <li className="ui-list__item">
                     <Link href="/coming-soon?feature=instagram">Instagram</Link>
