@@ -1126,10 +1126,26 @@ textarea {
   background: #fff9ef;
 }
 
+.vh-badge--failed {
+  border-color: #e6bcbc;
+  color: #8c3535;
+  background: #fff7f7;
+}
+
 .vh-badge--cancelled {
   border-color: #e6bcbc;
   color: #8c3535;
   background: #fff4f4;
+}
+
+.vh-inline-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.vh-inline-link:hover {
+  opacity: 0.7;
 }
 
 .vh-empty {

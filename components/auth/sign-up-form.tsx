@@ -5,7 +5,6 @@ import { useState, type FormEvent } from "react";
 
 import { PasswordField } from "@/components/auth/password-field";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 
 type Props = {
   configError?: string | null;
@@ -16,6 +15,13 @@ export function SignUpForm({ configError = null }: Props) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
+
+  function setGenericSignUpMessage() {
+    setSuccess(true);
+    setMessage(
+      "If this email can be used, the sign-up request was accepted. Check your inbox if email confirmation is enabled, or try signing in.",
+    );
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,18 +38,6 @@ export function SignUpForm({ configError = null }: Props) {
       const email = String(formData.get("email") || "").trim();
       const password = String(formData.get("password") || "");
       const supabase = createSupabaseBrowserClient();
-      const duplicateCheckResponse = await fetch("/api/auth/check-email", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      });
-      const duplicateCheckPayload = await readJsonSafely<{ error?: string }>(duplicateCheckResponse);
-
-      if (!duplicateCheckResponse.ok) {
-        throw new Error(getResponseErrorMessage(duplicateCheckPayload, "Unable to validate email right now."));
-      }
 
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -58,7 +52,8 @@ export function SignUpForm({ configError = null }: Props) {
       }
 
       if (!data.session && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-        throw new Error("Email already registered");
+        setGenericSignUpMessage();
+        return;
       }
 
       setSuccess(true);
@@ -73,8 +68,16 @@ export function SignUpForm({ configError = null }: Props) {
         router.refresh();
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unable to create the account right now.";
+      const normalizedMessage = errorMessage.toLowerCase();
+
+      if (normalizedMessage.includes("already registered")) {
+        setGenericSignUpMessage();
+        return;
+      }
+
       setSuccess(false);
-      setMessage(error instanceof Error ? error.message : "Unable to create the account right now.");
+      setMessage(errorMessage);
     } finally {
       setLoading(false);
     }

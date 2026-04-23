@@ -14,10 +14,11 @@ import {
   parsePhpInputToCents,
 } from "@/lib/payments/amounts";
 import { sendCryptoPayment, prepareWalletForPayment } from "@/lib/web3/payments";
+import { getWeb3ErrorMessage } from "@/lib/web3/errors";
 import { useVhlWallet } from "@/lib/web3/use-vhl-wallet";
-import { SEPOLIA_CHAIN_ID } from "@/lib/web3/config";
 import { formatLedgerCurrency, type AllocationLedgerSnapshot } from "@/lib/fund-allocation";
 import { formatDateTime, formatTransactionHash, formatWalletAddress } from "@/lib/utils";
+import { ETHEREUM_MAINNET_CHAIN_ID, ETHEREUM_MAINNET_NETWORK_NAME } from "@/lib/web3/network";
 
 type Props = {
   snapshot: AllocationLedgerSnapshot;
@@ -243,7 +244,9 @@ export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
     Boolean(normalizedConnectedWalletAddress && normalizedMerchantWalletAddress) &&
     normalizedConnectedWalletAddress !== normalizedMerchantWalletAddress;
   const merchantWalletReady = Boolean(
-    normalizedMerchantWalletAddress && normalizedConnectedWalletAddress === normalizedMerchantWalletAddress && wallet.isSepolia,
+    normalizedMerchantWalletAddress &&
+      normalizedConnectedWalletAddress === normalizedMerchantWalletAddress &&
+      wallet.isSupportedChain,
   );
   const formLocked = cashOutLoading || Boolean(pendingTransfer) || rebuildLoading;
   const submitDisabled =
@@ -306,7 +309,7 @@ export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
       }>(response);
 
       if (response.status === 202) {
-        setCashOutMessage(payload?.message || "Transfer submitted. Waiting for Sepolia confirmation.");
+        setCashOutMessage(payload?.message || "Transfer submitted. Waiting for Ethereum Mainnet confirmation.");
         setCashOutPhase("pending");
         return;
       }
@@ -396,7 +399,7 @@ export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
       const transfer: PendingTransfer = {
         requestId: cashOutRequestId,
         paymentMethod: selectedAsset.paymentMethod,
-        chainId: SEPOLIA_CHAIN_ID,
+        chainId: ETHEREUM_MAINNET_CHAIN_ID,
         sourceMode: selectedSourceMode,
         sourceAllocationCode: selectedSource?.code || null,
         amount: assetAmountForTransfer,
@@ -413,12 +416,14 @@ export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
 
       setPendingTransfer(transfer);
       setCashOutPhase("verifying");
-      setCashOutMessage(`Transfer submitted: ${formatTransactionHash(walletPayment.txHash)}. Verifying on Sepolia...`);
+      setCashOutMessage(
+        `Transfer submitted: ${formatTransactionHash(walletPayment.txHash)}. Verifying on Ethereum Mainnet...`,
+      );
       setCashOutLoading(false);
       void verifyPendingTransfer(transfer);
     } catch (error) {
       setCashOutPhase("idle");
-      setCashOutError(getErrorMessage(error, "Unable to start the cash-out transfer."));
+      setCashOutError(getWeb3ErrorMessage(error, "Unable to start the cash-out transfer."));
       setCashOutLoading(false);
     }
   });
@@ -507,9 +512,9 @@ export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
               ? wallet.isConnected
                 ? merchantWalletMismatch
                   ? `Connected wallet ${formatWalletAddress(normalizedConnectedWalletAddress)} does not match the configured merchant wallet.`
-                  : wallet.isSepolia
-                    ? "MetaMask is connected on Sepolia."
-                    : "Switch MetaMask to Sepolia before confirming this transfer."
+                  : wallet.isSupportedChain
+                    ? `MetaMask is connected on ${ETHEREUM_MAINNET_NETWORK_NAME}.`
+                    : `Switch MetaMask to ${ETHEREUM_MAINNET_NETWORK_NAME} before confirming this transfer.`
                 : "Connect the merchant wallet in MetaMask before cashing out."
               : "MetaMask is required to sign the merchant-wallet transfer."}
           </p>

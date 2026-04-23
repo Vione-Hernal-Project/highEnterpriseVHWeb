@@ -1,12 +1,17 @@
-import { BrowserProvider, Contract, formatUnits, type Eip1193Provider } from "ethers";
+import { BrowserProvider, Contract, formatUnits, isAddress, type Eip1193Provider } from "ethers";
 
 import {
-  SEPOLIA_CHAIN_ID,
-  SEPOLIA_NETWORK_NAME,
   VHL_ERC20_ABI,
   VHL_TOKEN_ADDRESS,
   VHL_TOKEN_DECIMALS,
 } from "@/lib/web3/config";
+import {
+  ETHEREUM_MAINNET_CHAIN_HEX,
+  ETHEREUM_MAINNET_CHAIN_ID,
+  ETHEREUM_MAINNET_NETWORK_NAME,
+  getEthereumMainnetRequirementMessage,
+  isEthereumMainnetChain,
+} from "@/lib/web3/network";
 
 type InjectedEthereum = Eip1193Provider & {
   isMetaMask?: boolean;
@@ -21,7 +26,7 @@ type InjectedEthereum = Eip1193Provider & {
 type WalletSnapshot = {
   account: string | null;
   chainId: number | null;
-  isSepolia: boolean;
+  isSupportedChain: boolean;
   vhlBalance: string | null;
   hasProvider: boolean;
 };
@@ -116,7 +121,7 @@ export async function checkChain(provider?: BrowserProvider | null) {
   if (!ethereum) {
     return {
       chainId: null,
-      isSepolia: false,
+      isSupportedChain: false,
     };
   }
 
@@ -131,32 +136,30 @@ export async function checkChain(provider?: BrowserProvider | null) {
 
   return {
     chainId,
-    isSepolia: chainId === SEPOLIA_CHAIN_ID,
+    isSupportedChain: isEthereumMainnetChain(chainId),
   };
 }
 
-export async function ensureSepoliaChain() {
+export async function ensureEthereumMainnetChain() {
   const ethereum = getInjectedEthereum();
 
   if (!ethereum) {
     throw new Error("MetaMask is not available in this browser.");
   }
 
-  const { isSepolia } = await checkChain();
+  const { isSupportedChain } = await checkChain();
 
-  if (isSepolia) {
+  if (isSupportedChain) {
     return {
-      chainId: SEPOLIA_CHAIN_ID,
-      isSepolia: true,
+      chainId: ETHEREUM_MAINNET_CHAIN_ID,
+      isSupportedChain: true,
     };
   }
-
-  const chainIdHex = `0x${SEPOLIA_CHAIN_ID.toString(16)}`;
 
   try {
     await ethereum.request({
       method: "wallet_switchEthereumChain",
-      params: [{ chainId: chainIdHex }],
+      params: [{ chainId: ETHEREUM_MAINNET_CHAIN_HEX }],
     });
   } catch (error) {
     const providerError =
@@ -164,32 +167,21 @@ export async function ensureSepoliaChain() {
         ? (error as { code?: number; message?: string })
         : null;
 
+    if (providerError?.code === 4001) {
+      throw new Error(getEthereumMainnetRequirementMessage("continuing"));
+    }
+
     if (providerError?.code === 4902) {
-      await ethereum.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId: chainIdHex,
-            chainName: SEPOLIA_NETWORK_NAME,
-            nativeCurrency: {
-              name: "Sepolia ETH",
-              symbol: "ETH",
-              decimals: 18,
-            },
-            rpcUrls: ["https://rpc.sepolia.org"],
-            blockExplorerUrls: ["https://sepolia.etherscan.io"],
-          },
-        ],
-      });
+      throw new Error(`Ethereum Mainnet is not available in this MetaMask instance. Add ${ETHEREUM_MAINNET_NETWORK_NAME} and try again.`);
     } else {
-      throw new Error(`Switch MetaMask to ${SEPOLIA_NETWORK_NAME} before submitting this payment.`);
+      throw new Error(getEthereumMainnetRequirementMessage("continuing"));
     }
   }
 
   const refreshedChain = await checkChain();
 
-  if (!refreshedChain.isSepolia) {
-    throw new Error(`Switch MetaMask to ${SEPOLIA_NETWORK_NAME} before submitting this payment.`);
+  if (!refreshedChain.isSupportedChain) {
+    throw new Error(getEthereumMainnetRequirementMessage("continuing"));
   }
 
   return refreshedChain;
@@ -198,7 +190,7 @@ export async function ensureSepoliaChain() {
 export async function getVhlBalance(address: string, provider?: BrowserProvider | null) {
   const activeProvider = provider ?? (await getBrowserProvider());
 
-  if (!address || !activeProvider) {
+  if (!address || !activeProvider || !isAddress(VHL_TOKEN_ADDRESS)) {
     return null;
   }
 
@@ -228,13 +220,13 @@ export function formatVhlBalance(balance: string | null) {
 export async function getWalletSnapshot(): Promise<WalletSnapshot> {
   const provider = await getBrowserProvider();
   const account = await getCurrentAccount();
-  const { chainId, isSepolia } = await checkChain(provider);
-  const vhlBalance = account && isSepolia ? await getVhlBalance(account, provider) : null;
+  const { chainId, isSupportedChain } = await checkChain(provider);
+  const vhlBalance = account && isSupportedChain ? await getVhlBalance(account, provider) : null;
 
   return {
     account,
     chainId,
-    isSepolia,
+    isSupportedChain,
     vhlBalance,
     hasProvider: Boolean(provider),
   };

@@ -7,7 +7,7 @@ Working MVP for the existing Vione Hernal website with:
 - reviewed checkout form
 - product-based PHP pricing
 - order storage in Supabase
-- Sepolia MetaMask payment flow for ETH, USDC, USDT, and VHL
+- Ethereum Mainnet MetaMask payment flow for ETH, USDC, USDT, and VHL
 - payment-attempt storage in Supabase
 - logout in the shared header and dashboard
 - admin and owner management access
@@ -27,7 +27,6 @@ app/
     orders/route.ts
     orders/cancel/route.ts
     payments/route.ts
-    payments/mock-paid/route.ts
     profile/route.ts
   admin/page.tsx
   auth/callback/route.ts
@@ -91,7 +90,7 @@ Fill in:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `SEPOLIA_RPC_URL`
+- `ETHEREUM_MAINNET_RPC_URL`
 - `COINGECKO_SIMPLE_PRICE_ENDPOINT`
 - `COINGECKO_DEMO_API_KEY` (optional)
 - `NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS`
@@ -109,7 +108,7 @@ Fill in:
 
 ## Supabase Setup
 
-1. Open the Supabase dashboard for project `uibyqlonafqhaxeuslpj`.
+1. Open the Supabase dashboard for your production project.
 2. Enable Email auth.
 3. Set your site URL and add the auth callback URL:
    `http://localhost:3000/auth/callback`
@@ -142,7 +141,7 @@ where email = 'your-admin@email.com';
 
 1. Sign in.
 2. Open `/checkout`.
-3. Connect MetaMask on Sepolia in the header or let checkout prompt you.
+3. Connect MetaMask on Ethereum Mainnet in the header or let checkout prompt you.
 4. Select a product and quantity. The storefront price is shown in PHP by default.
 5. Review the live ETH equivalent pulled at checkout time.
 6. Switch the amount view between `PHP` and `ETH` if you want, then enter an amount.
@@ -151,8 +150,8 @@ where email = 'your-admin@email.com';
 9. Backend creates:
    - one `orders` row with the product snapshot and PHP total
    - one `payments` row with the locked ETH requirement, PHP total, and conversion rate used
-10. MetaMask opens and submits the Sepolia payment transfer to the single merchant wallet configured in `NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS`.
-11. Backend verifies the transaction hash on Sepolia before marking the order paid.
+10. MetaMask opens and submits the Ethereum Mainnet payment transfer to the single merchant wallet configured in `NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS`.
+11. Backend verifies the transaction hash on Ethereum Mainnet before marking the order paid.
 12. If SMTP is configured, the backend sends an order confirmation email.
     If `PUBLIC_SITE_URL` is set, the email includes a direct dashboard link for order tracking.
 13. Go to `/dashboard`.
@@ -203,9 +202,9 @@ The SQL schema enables row level security with these MVP rules:
 - protected admin and owner management page
 - reviewed checkout flow with customer details, product-based PHP totals, live ETH conversion, underpayment blocking, and MetaMask handoff
 - order creation stored in Supabase
-- Sepolia crypto payment record creation stored in Supabase
-- Sepolia MetaMask transfer flow for ETH and configured USDC, USDT, and VHL token contracts
-- server-side Sepolia transaction verification before marking payments and orders paid
+- Ethereum Mainnet crypto payment record creation stored in Supabase
+- Ethereum Mainnet MetaMask transfer flow for ETH and configured USDC, USDT, and VHL token contracts
+- server-side Ethereum Mainnet transaction verification before marking payments and orders paid
 - order confirmation email sending when SMTP is configured
 - cancel order flow for pending orders
 - order history for signed-in users
@@ -215,9 +214,9 @@ The SQL schema enables row level security with these MVP rules:
 
 ## WHAT COMES NEXT FOR CRYPTO
 
-The next phase builds on the Sepolia payment MVP and expands it into the full storefront flow:
+The next phase builds on the Ethereum Mainnet payment MVP and expands it into the full storefront flow:
 
-- Base and Base Sepolia network support
+- Base and Base network support
 - production USDC and VHL token addresses
 - optional smart-contract-based checkout instead of direct wallet-to-wallet transfers
 - richer payment recovery and retry UX

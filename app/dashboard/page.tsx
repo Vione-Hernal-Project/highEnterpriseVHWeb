@@ -9,10 +9,15 @@ import type { Database } from "@/lib/database.types";
 import { buildOrderItemsByOrderId, getOrderDisplayLines } from "@/lib/order-items";
 import { formatAmountWithUnit, getPaymentMethodConfig, getPaymentMethodLabel } from "@/lib/payments/options";
 import { formatDateTime, formatWalletAddress } from "@/lib/utils";
+import { getAddressExplorerUrl, getTransactionExplorerUrl } from "@/lib/web3/network";
 
 function getHistoryBadgeClass(status: string) {
   if (status === "paid") {
     return "vh-badge--paid";
+  }
+
+  if (status === "failed") {
+    return "vh-badge--failed";
   }
 
   if (status === "cancelled") {
@@ -25,6 +30,10 @@ function getHistoryBadgeClass(status: string) {
 function getHistoryStatusLabel(status: string) {
   if (status === "paid") {
     return "Paid / Confirmed";
+  }
+
+  if (status === "failed") {
+    return "Failed / Needs Action";
   }
 
   if (status === "cancelled") {
@@ -85,7 +94,7 @@ export default async function DashboardPage() {
           <h1 className="vh-mvp-title">Your account, orders, and payment attempts.</h1>
           <p className="vh-mvp-copy">
             This is the protected customer area for the Vione Hernal MVP. It is backed by Supabase Auth and row-level
-            security, and it now tracks your Sepolia payment attempts and order history.
+            security, and it now tracks your live payment attempts and order history.
           </p>
           <div className="vh-actions">
             <Link className="vh-button" href="/shop">
@@ -160,7 +169,13 @@ export default async function DashboardPage() {
                       order.status === "pending" &&
                       (!relatedPayment || (!relatedPayment.tx_hash && relatedPayment.status !== "paid" && relatedPayment.status !== "cancelled"));
                     const isAwaitingConfirmation = order.status === "pending" && Boolean(relatedPayment?.tx_hash) && relatedPayment?.status === "pending";
-                    const orderStatusLabel = isAwaitingConfirmation ? "Waiting for on-chain confirmation" : getHistoryStatusLabel(order.status);
+                    const paymentNeedsAttention = order.status === "pending" && relatedPayment?.status === "failed";
+                    const orderStatusLabel = paymentNeedsAttention
+                      ? "Payment needs attention"
+                      : isAwaitingConfirmation
+                        ? "Waiting for on-chain confirmation"
+                        : getHistoryStatusLabel(order.status);
+                    const orderBadgeClass = paymentNeedsAttention ? "vh-badge--failed" : getHistoryBadgeClass(order.status);
                     const supportHref = `mailto:vionehernal@gmail.com?subject=${encodeURIComponent(
                       `${order.status === "paid" ? "Refund / Support" : "Payment Support"} ${order.order_number || order.id}`,
                     )}`;
@@ -174,7 +189,7 @@ export default async function DashboardPage() {
                             <p className="vh-history-card__timestamp">{formatDateTime(order.created_at)}</p>
                           </div>
                           <div className="vh-history-card__status">
-                            <span className={`vh-badge ${getHistoryBadgeClass(order.status)}`}>
+                            <span className={`vh-badge ${orderBadgeClass}`}>
                               {orderStatusLabel}
                             </span>
                           </div>
@@ -270,7 +285,7 @@ export default async function DashboardPage() {
                 <strong>Manual On-Chain Check</strong>
                 <p>
                   Compare expected vs received amount, confirm the recipient wallet matches the merchant wallet, then
-                  use the tx hash in a block explorer to inspect the transfer externally.
+                  use the tx hash in Etherscan to inspect the transfer externally.
                 </p>
               </div>
               {payments.map((payment) => (
@@ -301,7 +316,9 @@ export default async function DashboardPage() {
                             <strong className="vh-history-metric__value">
                               {payment.amount_received
                                 ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
-                                : "Waiting for on-chain confirmation"}
+                                : payment.status === "failed"
+                                  ? "Payment attempt failed"
+                                  : "Waiting for on-chain confirmation"}
                             </strong>
                           </div>
                       <div className="vh-history-metric">
@@ -347,29 +364,63 @@ export default async function DashboardPage() {
                           <div className="vh-history-card__detail vh-history-card__detail--full">
                             <span className="vh-history-card__detail-label">Recipient Wallet</span>
                             <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                              {payment.recipient_address || "Not submitted"}
+                              {payment.recipient_address ? (
+                                <a
+                                  className="vh-inline-link"
+                                  href={getAddressExplorerUrl(payment.recipient_address) || undefined}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {payment.recipient_address}
+                                </a>
+                              ) : (
+                                "Not submitted"
+                              )}
                             </p>
                           </div>
                           <div className="vh-history-card__detail vh-history-card__detail--full">
                             <span className="vh-history-card__detail-label">Tx Hash</span>
                             <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                              {payment.tx_hash || "Not submitted"}
+                              {payment.tx_hash ? (
+                                <a
+                                  className="vh-inline-link"
+                                  href={getTransactionExplorerUrl(payment.tx_hash) || undefined}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {payment.tx_hash}
+                                </a>
+                              ) : (
+                                "Not submitted"
+                              )}
                             </p>
                           </div>
                           <div className="vh-history-card__detail vh-history-card__detail--full">
                             <span className="vh-history-card__detail-label">Payer Wallet</span>
                             <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                              {payment.wallet_address || "Not submitted"}
+                              {payment.wallet_address ? (
+                                <a
+                                  className="vh-inline-link"
+                                  href={getAddressExplorerUrl(payment.wallet_address) || undefined}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {payment.wallet_address}
+                                </a>
+                              ) : (
+                                "Not submitted"
+                              )}
                             </p>
                           </div>
                         </div>
                       </section>
                     </div>
 
-                    {payment.status === "pending" && getPaymentMethodConfig(payment.payment_method) ? (
+                    {payment.status !== "paid" && payment.status !== "cancelled" && getPaymentMethodConfig(payment.payment_method) ? (
                       <div className="vh-history-card__action">
                         <PaymentStatusButton
                           paymentId={payment.id}
+                          paymentStatus={payment.status}
                           paymentMethod={payment.payment_method}
                           amountExpected={payment.amount_expected}
                           recipientAddress={payment.recipient_address}
@@ -377,9 +428,9 @@ export default async function DashboardPage() {
                           walletAddress={payment.wallet_address}
                         />
                       </div>
-                    ) : payment.status === "pending" ? (
+                    ) : payment.status !== "paid" && payment.status !== "cancelled" ? (
                       <div className="vh-status">
-                        This payment record was created before the Sepolia wallet flow was enabled.
+                        This payment record uses a payment method that is not configured in the current wallet flow.
                       </div>
                     ) : null}
                   </div>

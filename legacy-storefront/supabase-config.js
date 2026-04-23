@@ -21,8 +21,8 @@ function readEnvValue(keys) {
   return "";
 }
 
-const defaultSupabaseUrl = "https://uibyqlonafqhaxeuslpj.supabase.co";
-const defaultSupabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpYnlxbG9uYWZxaGF4ZXVzbHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzODAyOTgsImV4cCI6MjA5MDk1NjI5OH0.f8l-UTIRB-lX-pEgITpejFa6Gyv3Y6XfcinACk9qTcg";
+const defaultSupabaseUrl = "";
+const defaultSupabaseAnonKey = "";
 const defaultPublicSiteUrl = "";
 
 export const supabaseConfig = {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { getAddress } from "ethers";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getSepoliaRpcEnvError } from "@/lib/env/server";
+import { getEthereumMainnetRpcEnvError } from "@/lib/env/server";
 import { sendOrderConfirmationEmail } from "@/lib/email";
 import { getErrorMessage } from "@/lib/http";
 import { generateOrderNumber } from "@/lib/orders";
@@ -11,11 +12,55 @@ import { logPaymentDebug } from "@/lib/payments/debug";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { getPaymentMethodSetupError } from "@/lib/payments/options";
 import { getBagCheckoutPricing } from "@/lib/payments/quotes";
+import { applyRateLimit, getClientIp } from "@/lib/security/rate-limit";
 import { buildNormalizedShippingAddress } from "@/lib/shipping";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseTableErrorMessage } from "@/lib/supabase/errors";
 import { orderSchema } from "@/lib/validations/order";
-import { SEPOLIA_CHAIN_ID } from "@/lib/web3/config";
+import { ETHEREUM_MAINNET_CHAIN_ID } from "@/lib/web3/network";
+
+const ORDER_CREATION_WINDOW_MS = 10 * 60_000;
+const ORDER_CREATION_USER_LIMIT = 6;
+const ORDER_CREATION_IP_LIMIT = 20;
+const MAX_PENDING_ORDERS_PER_USER = 3;
+const MAX_RECENT_ORDERS_PER_USER = 12;
+
+function buildRateLimitHeaders(resetAt: number) {
+  const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
+
+  return {
+    "Retry-After": String(retryAfterSeconds),
+  };
+}
+
+async function loadOrderAbuseWindow(admin: ReturnType<typeof createSupabaseAdminClient>, userId: string) {
+  const recentWindowStart = new Date(Date.now() - ORDER_CREATION_WINDOW_MS).toISOString();
+
+  const [{ count: pendingOrdersCount, error: pendingOrdersError }, { count: recentOrdersCount, error: recentOrdersError }] =
+    await Promise.all([
+      admin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("status", "pending"),
+      admin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .gte("created_at", recentWindowStart),
+    ]);
+
+  if (pendingOrdersError || recentOrdersError) {
+    throw new Error(
+      pendingOrdersError?.message || recentOrdersError?.message || "Unable to validate the order safety window.",
+    );
+  }
+
+  return {
+    pendingOrdersCount: pendingOrdersCount || 0,
+    recentOrdersCount: recentOrdersCount || 0,
+  };
+}
 
 export async function GET() {
   const { supabase, user } = await getCurrentUserContext();
@@ -52,6 +97,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid order payload." }, { status: 400 });
     }
 
+    const ipAddress = getClientIp(request);
+    const ipRateLimit = applyRateLimit({
+      key: `orders:ip:${ipAddress}`,
+      limit: ORDER_CREATION_IP_LIMIT,
+      windowMs: ORDER_CREATION_WINDOW_MS,
+    });
+
+    if (!ipRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many checkout attempts from this connection. Please wait a few minutes before trying again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(ipRateLimit.resetAt),
+        },
+      );
+    }
+
+    const userRateLimit = applyRateLimit({
+      key: `orders:user:${user.id}`,
+      limit: ORDER_CREATION_USER_LIMIT,
+      windowMs: ORDER_CREATION_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many order attempts were created for this account. Please wait a few minutes before trying again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
+    }
+
     if (parsed.data.paymentMethod !== "eth") {
       return NextResponse.json(
         { error: "PHP-priced live checkout is currently available for ETH payments only." },
@@ -65,7 +143,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: paymentSetupError }, { status: 400 });
     }
 
-    const rpcSetupError = getSepoliaRpcEnvError();
+    const rpcSetupError = getEthereumMainnetRpcEnvError();
 
     if (rpcSetupError) {
       return NextResponse.json({ error: rpcSetupError }, { status: 400 });
@@ -110,6 +188,28 @@ export async function POST(request: Request) {
 
     const merchantWallet = await resolveMerchantWalletAddress();
     const admin = createSupabaseAdminClient();
+    const payerWalletAddress = getAddress(parsed.data.payerWalletAddress);
+    const abuseWindow = await loadOrderAbuseWindow(admin, user.id);
+
+    if (abuseWindow.pendingOrdersCount >= MAX_PENDING_ORDERS_PER_USER) {
+      return NextResponse.json(
+        {
+          error:
+            "This account already has too many unresolved pending orders. Cancel an older pending order or finish its payment before creating another one.",
+        },
+        { status: 429 },
+      );
+    }
+
+    if (abuseWindow.recentOrdersCount >= MAX_RECENT_ORDERS_PER_USER) {
+      return NextResponse.json(
+        {
+          error: "Order creation is temporarily limited for this account. Please wait a few minutes before trying again.",
+        },
+        { status: 429 },
+      );
+    }
+
     const orderNumber = generateOrderNumber();
     const primaryItem = pricing.items[0];
     const orderProductId = pricing.itemCount === 1 ? primaryItem?.product.id || null : null;
@@ -134,9 +234,10 @@ export async function POST(request: Request) {
       enteredAmount: parsed.data.enteredAmount,
       amountMode: parsed.data.amountMode,
       payableEthAmount: resolvedInput.payableEthAmount,
+      payerWalletAddress,
       recipientAddress: merchantWallet.address,
       recipientSource: merchantWallet.source,
-      chainId: SEPOLIA_CHAIN_ID,
+      chainId: ETHEREUM_MAINNET_CHAIN_ID,
     });
 
     // Order creation stays server-side so the browser never gets direct write
@@ -209,9 +310,9 @@ export async function POST(request: Request) {
         order_id: order.id,
         user_id: user.id,
         payment_method: parsed.data.paymentMethod,
-        wallet_address: null,
+        wallet_address: payerWalletAddress,
         recipient_address: merchantWallet.address,
-        chain_id: SEPOLIA_CHAIN_ID,
+        chain_id: ETHEREUM_MAINNET_CHAIN_ID,
         amount_expected: pricing.requiredEth,
         amount_expected_fiat: pricing.totalPhp,
         fiat_currency: "PHP",
@@ -292,7 +393,7 @@ export async function POST(request: Request) {
         quoteUpdatedAt: pricing.quoteUpdatedAt,
       },
       recipientWalletAddress: merchantWallet.address,
-      chainId: SEPOLIA_CHAIN_ID,
+      chainId: ETHEREUM_MAINNET_CHAIN_ID,
     });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error, "Unable to create the order right now.") }, { status: 500 });

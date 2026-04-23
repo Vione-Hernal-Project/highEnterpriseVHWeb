@@ -6,9 +6,10 @@ import { loadAllocationLedgerSnapshot } from "@/lib/admin/allocation-ledger";
 import { getErrorMessage } from "@/lib/http";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { getPaymentMethodLabel } from "@/lib/payments/options";
-import { verifySepoliaTransfer } from "@/lib/payments/verify";
+import { verifyEthereumMainnetTransfer } from "@/lib/payments/verify";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adminCashOutSchema } from "@/lib/validations/order";
+import { ETHEREUM_MAINNET_CHAIN_ID, isEthereumMainnetChain } from "@/lib/web3/network";
 
 function resolveCashOutStatus(message: string) {
   const normalizedMessage = message.toLowerCase();
@@ -234,6 +235,15 @@ export async function POST(request: Request) {
     const destinationWalletAddress = getAddress(parsed.data.destinationWalletAddress);
     const txHash = parsed.data.txHash.trim().toLowerCase();
 
+    if (!isEthereumMainnetChain(parsed.data.chainId)) {
+      return NextResponse.json(
+        {
+          error: `Cash-out chain ID must be Ethereum Mainnet (${ETHEREUM_MAINNET_CHAIN_ID}).`,
+        },
+        { status: 400 },
+      );
+    }
+
     if (senderWalletAddress !== merchantWallet.address) {
       return NextResponse.json(
         { error: "Connect the configured merchant wallet before confirming this cash-out." },
@@ -241,7 +251,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const verification = await verifySepoliaTransfer({
+    const verification = await verifyEthereumMainnetTransfer({
       paymentMethod: parsed.data.paymentMethod,
       txHash,
       walletAddress: senderWalletAddress,

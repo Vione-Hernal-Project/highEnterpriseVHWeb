@@ -84,6 +84,10 @@ export const orderSchema = z
         message: "Please select a payment method.",
       }),
     }),
+    payerWalletAddress: z
+      .string()
+      .trim()
+      .regex(/^0x[a-fA-F0-9]{40}$/, "Connect a valid MetaMask wallet before placing the order."),
     notes: z
       .string()
       .trim()

@@ -1,15 +1,22 @@
 "use client";
 
-import { SEPOLIA_NETWORK_NAME, VHL_TOKEN_SYMBOL } from "@/lib/web3/config";
+import { VHL_TOKEN_SYMBOL } from "@/lib/web3/config";
 import { formatVhlBalance } from "@/lib/web3/metamask";
 import { useVhlWallet } from "@/lib/web3/use-vhl-wallet";
 import { formatWalletAddress } from "@/lib/utils";
+import { ETHEREUM_MAINNET_NETWORK_NAME } from "@/lib/web3/network";
 
 export function WalletStatus() {
-  const { account, error, hasProvider, isConnecting, isLoading, isSepolia, vhlBalance, connectWallet } = useVhlWallet();
+  const { account, error, hasProvider, isConnecting, isLoading, isSupportedChain, vhlBalance, connectWallet } = useVhlWallet();
 
   const connectedLabel = account
-    ? `${formatWalletAddress(account)} · ${isSepolia ? `${formatVhlBalance(vhlBalance)} ${VHL_TOKEN_SYMBOL}` : `${SEPOLIA_NETWORK_NAME} required`}`
+    ? `${formatWalletAddress(account)} · ${
+        isSupportedChain
+          ? vhlBalance !== null
+            ? `${formatVhlBalance(vhlBalance)} ${VHL_TOKEN_SYMBOL}`
+            : `${ETHEREUM_MAINNET_NETWORK_NAME} connected`
+          : `${ETHEREUM_MAINNET_NETWORK_NAME} required`
+      }`
     : "";
 
   return (
@@ -22,13 +29,13 @@ export function WalletStatus() {
         </button>
       )}
 
-      {account && !isSepolia ? (
-        <span className="vh-wallet-note vh-wallet-note--error">Please switch MetaMask to Sepolia.</span>
+      {account && !isSupportedChain ? (
+        <span className="vh-wallet-note vh-wallet-note--error">Please switch MetaMask to Ethereum Mainnet.</span>
       ) : null}
 
       {!account && !error ? (
         <span className="vh-wallet-note">
-          {hasProvider ? `${SEPOLIA_NETWORK_NAME} testnet` : "MetaMask required"}
+          {hasProvider ? ETHEREUM_MAINNET_NETWORK_NAME : "MetaMask required"}
           {isLoading ? " · checking wallet" : ""}
         </span>
       ) : null}

@@ -367,7 +367,7 @@ create table if not exists public.admin_cash_outs (
   request_id uuid not null,
   created_by uuid not null references auth.users(id) on delete restrict,
   payment_method text not null,
-  chain_id bigint not null default 11155111,
+  chain_id bigint not null default 1,
   source_mode text not null default 'proportional',
   source_allocation_code text null,
   source_allocation_name text null,
@@ -426,7 +426,7 @@ alter table public.payment_allocations add column if not exists updated_at times
 alter table public.admin_cash_outs add column if not exists request_id uuid;
 alter table public.admin_cash_outs add column if not exists created_by uuid references auth.users(id) on delete restrict;
 alter table public.admin_cash_outs add column if not exists payment_method text not null default 'eth';
-alter table public.admin_cash_outs add column if not exists chain_id bigint not null default 11155111;
+alter table public.admin_cash_outs add column if not exists chain_id bigint not null default 1;
 alter table public.admin_cash_outs add column if not exists source_mode text not null default 'proportional';
 alter table public.admin_cash_outs add column if not exists source_allocation_code text null;
 alter table public.admin_cash_outs add column if not exists source_allocation_name text null;
@@ -1446,17 +1446,7 @@ for select
 using (public.is_management_user());
 
 drop policy if exists "profiles_insert_own" on public.profiles;
-create policy "profiles_insert_own"
-on public.profiles
-for insert
-with check (auth.uid() = id);
-
 drop policy if exists "profiles_update_own" on public.profiles;
-create policy "profiles_update_own"
-on public.profiles
-for update
-using (auth.uid() = id)
-with check (auth.uid() = id);
 
 drop policy if exists "products_select_published" on public.products;
 create policy "products_select_published"
@@ -1558,6 +1548,7 @@ grant select on public.order_items to authenticated;
 grant select on public.products to anon;
 grant select on public.products to authenticated;
 grant execute on function public.record_admin_cash_out_transfer(numeric, text, uuid, uuid, bigint, text, text, text, numeric, numeric, text, timestamptz, text, text, text) to authenticated;
+revoke insert, update, delete on public.profiles from anon, authenticated;
 
 -- Service-role operations from the Next.js backend bypass RLS, which keeps
 -- client reads restricted while still allowing secure server-side writes.

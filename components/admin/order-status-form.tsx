@@ -17,12 +17,19 @@ export function AdminOrderStatusForm({ orderId, initialStatus, allowedStatuses }
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const statusOptions = Array.from(new Set([initialStatus, ...(allowedStatuses || ["pending", "paid", "cancelled"])]));
+  const statusLocked = initialStatus === "paid";
+  const defaultStatuses = statusLocked ? [initialStatus] : initialStatus === "cancelled" ? ["cancelled", "pending"] : ["pending", "cancelled"];
+  const statusOptions = Array.from(new Set([initialStatus, ...(allowedStatuses || defaultStatuses)]));
 
   return (
     <div style={{ marginTop: "1rem" }}>
       <div className="vh-actions" style={{ marginTop: 0 }}>
-        <select className="vh-input" value={status} onChange={(event) => setStatus(event.target.value)} disabled={loading}>
+        <select
+          className="vh-input"
+          value={status}
+          onChange={(event) => setStatus(event.target.value)}
+          disabled={loading || statusLocked}
+        >
           {statusOptions.map((option) => (
             <option key={option} value={option}>
               {option.charAt(0).toUpperCase() + option.slice(1)}
@@ -32,7 +39,7 @@ export function AdminOrderStatusForm({ orderId, initialStatus, allowedStatuses }
         <button
           type="button"
           className="vh-button vh-button--ghost"
-          disabled={loading}
+          disabled={loading || statusLocked || status === initialStatus}
           onClick={async () => {
             setLoading(true);
             setMessage("");
@@ -66,6 +73,11 @@ export function AdminOrderStatusForm({ orderId, initialStatus, allowedStatuses }
           {loading ? "Saving..." : "Update"}
         </button>
       </div>
+      {statusLocked ? (
+        <div className="vh-status" style={{ marginTop: "0.75rem" }}>
+          Paid orders are read-only here and can only be set by verified on-chain payment confirmation.
+        </div>
+      ) : null}
       {error ? <div className="vh-status vh-status--error" style={{ marginTop: "0.75rem" }}>{error}</div> : null}
       {message ? <div className="vh-status vh-status--success" style={{ marginTop: "0.75rem" }}>{message}</div> : null}
     </div>

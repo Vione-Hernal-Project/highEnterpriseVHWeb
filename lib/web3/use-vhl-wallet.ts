@@ -7,7 +7,7 @@ import { connectWallet, getInjectedEthereum, getWalletSnapshot } from "@/lib/web
 type WalletState = {
   account: string | null;
   chainId: number | null;
-  isSepolia: boolean;
+  isSupportedChain: boolean;
   vhlBalance: string | null;
   hasProvider: boolean;
   isConnecting: boolean;
@@ -18,7 +18,7 @@ type WalletState = {
 const initialState: WalletState = {
   account: null,
   chainId: null,
-  isSepolia: false,
+  isSupportedChain: false,
   vhlBalance: null,
   hasProvider: false,
   isConnecting: false,

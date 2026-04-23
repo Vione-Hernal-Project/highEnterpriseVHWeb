@@ -68,13 +68,33 @@ export async function PATCH(request: Request) {
     }
 
     const nextStatus = parsed.data.status;
+    const hasSubmittedOnChainPayment = (relatedPayments || []).some(
+      (payment) => payment.status === "paid" || Boolean(payment.tx_hash),
+    );
+
+    if (nextStatus === "paid") {
+      return NextResponse.json(
+        { error: "Orders can only become paid through verified on-chain payment confirmation." },
+        { status: 403 },
+      );
+    }
+
+    if (order.status === "paid" || hasSubmittedOnChainPayment) {
+      return NextResponse.json(
+        {
+          error:
+            "Orders with a submitted or confirmed on-chain payment are read-only here. Use the verified payment flow instead.",
+        },
+        { status: 403 },
+      );
+    }
+
+    if (nextStatus === order.status) {
+      return NextResponse.json({ order });
+    }
 
     if (role === "staff" && order.status === "paid") {
       return NextResponse.json({ error: "Paid orders are view-only for staff." }, { status: 403 });
-    }
-
-    if (role === "staff" && nextStatus === "paid") {
-      return NextResponse.json({ error: "Staff cannot mark orders as paid." }, { status: 403 });
     }
 
     const { data: updatedOrder, error: updateError } = await admin
@@ -93,9 +113,7 @@ export async function PATCH(request: Request) {
 
     for (const payment of relatedPayments || []) {
       const paymentUpdate =
-        nextStatus === "paid"
-          ? { status: "paid", amount_received: payment.amount_received ?? payment.amount_expected }
-          : nextStatus === "cancelled"
+        nextStatus === "cancelled"
             ? { status: "cancelled", amount_received: payment.amount_received }
             : { status: "pending", amount_received: null };
 

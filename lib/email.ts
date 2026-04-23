@@ -45,6 +45,29 @@ function normalizeSiteUrl(value: string) {
   return value.replace(/\/+$/, "");
 }
 
+function resolveTrackOrderHref() {
+  const normalizedSiteUrl = normalizeSiteUrl(serverEnv.publicSiteUrl);
+
+  if (!normalizedSiteUrl) {
+    return "";
+  }
+
+  try {
+    const siteUrl = new URL(normalizedSiteUrl);
+
+    if (
+      process.env.NODE_ENV === "production" &&
+      (siteUrl.hostname === "localhost" || siteUrl.hostname === "127.0.0.1")
+    ) {
+      return "";
+    }
+
+    return new URL("/dashboard", siteUrl).toString();
+  } catch {
+    return "";
+  }
+}
+
 function formatTextBlock(label: string, value: string | null | undefined) {
   if (!value) {
     return null;
@@ -283,9 +306,7 @@ export async function sendOrderConfirmationEmail(input: OrderConfirmationInput):
 
   const safeCustomerName = escapeHtml(input.customerName);
   const paymentMethodLabel = getPaymentMethodLabel(input.paymentMethod);
-  const trackOrderHref = normalizeSiteUrl(serverEnv.publicSiteUrl)
-    ? `${normalizeSiteUrl(serverEnv.publicSiteUrl)}/dashboard`
-    : "";
+  const trackOrderHref = resolveTrackOrderHref();
 
   const customerHtml = renderEmailShell({
     eyebrow: "Order Confirmation",

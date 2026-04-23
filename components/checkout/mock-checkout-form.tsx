@@ -9,6 +9,7 @@ import { formatOrderItemLine } from "@/lib/order-items";
 import { formatPhpCurrencyFromCents } from "@/lib/payments/amounts";
 import { getDefaultCheckoutInput, resolveCheckoutInput, type CheckoutAmountMode } from "@/lib/payments/checkout";
 import { getCheckoutShippingQuote, getShippingMethodLabel, resolveShippingPostalAutofill, type ShippingMethodCode } from "@/lib/shipping";
+import { getWeb3ErrorMessage } from "@/lib/web3/errors";
 import { sendCryptoPayment, validateWalletCanPay } from "@/lib/web3/payments";
 import { readBagItems, subscribeToStorefrontState, writeBagItems, type StorefrontBagItem } from "@/lib/storefront/storage";
 
@@ -98,7 +99,7 @@ type SubmissionState = {
   payableEthLabel: string;
   recipientWalletAddress: string | null;
   confirmationEmailStatus: string;
-  verificationStatus: "paid" | "pending";
+  verificationStatus: "paid" | "pending" | "failed";
   message: string;
 };
 
@@ -217,7 +218,8 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           current && current.paymentId === submission.paymentId
             ? {
                 ...current,
-                message: "Transaction submitted. Still waiting for Sepolia confirmation. You can also check the dashboard.",
+                message:
+                  "Transaction submitted. Still waiting for Ethereum Mainnet confirmation. If this takes unusually long, check MetaMask for a dropped or replaced transaction.",
               }
             : current,
         );
@@ -252,7 +254,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
             current && current.paymentId === submission.paymentId
               ? {
                   ...current,
-                  message: payload?.message || "Transaction submitted. Waiting for Sepolia confirmation.",
+                  message: payload?.message || "Transaction submitted. Waiting for Ethereum Mainnet confirmation.",
                 }
               : current,
           );
@@ -263,6 +265,19 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
         if (!response.ok) {
           clearAutoVerifyTimer();
+
+          if (payload?.verificationStatus === "invalid") {
+            setSubmission((current) =>
+              current && current.paymentId === submission.paymentId
+                ? {
+                    ...current,
+                    verificationStatus: "failed",
+                    message: payload.error || "The payment attempt needs attention before the order can be completed.",
+                  }
+                : current,
+            );
+          }
+
           setError(getResponseErrorMessage(payload, "The on-chain payment could not be verified yet."));
           return;
         }
@@ -275,7 +290,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                 ...current,
                 verificationStatus: "paid",
                 confirmationEmailStatus: payload?.order?.confirmation_email_status || current.confirmationEmailStatus,
-                message: payload?.message || "Sepolia payment confirmed.",
+                message: payload?.message || "Ethereum Mainnet payment confirmed.",
               }
             : current,
         );
@@ -556,6 +571,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           enteredAmount,
           amountMode,
           paymentMethod,
+          payerWalletAddress: preparedWallet.walletAddress,
           notes,
           confirmed,
         }),
@@ -564,7 +580,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
       const createOrderPayload = await readJsonSafely<{
         error?: string;
         order: { id: string; order_number: string | null; confirmation_email_status: string };
-        payment: { id: string; payment_method: string; recipient_address?: string | null };
+        payment: { id: string; payment_method: string; recipient_address?: string | null; wallet_address?: string | null };
         pricing: {
           subtotalPhpLabel: string;
           shippingFeeLabel: string;
@@ -599,7 +615,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         paymentId: createOrderPayload.payment.id,
         paymentMethod: createOrderPayload.payment.payment_method,
         txHash: null,
-        walletAddress: null,
+        walletAddress: createOrderPayload.payment.wallet_address || preparedWallet.walletAddress,
         itemCount: pricing.itemCount,
         totalQuantity: pricing.totalQuantity,
         itemLines,
@@ -620,6 +636,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           paymentMethod,
           preparedWallet,
           recipientAddress: orderSnapshot.recipientWalletAddress,
+          expectedWalletAddress: orderSnapshot.walletAddress,
         });
 
         writeBagItems([]);
@@ -648,19 +665,23 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
             txHash: walletPayment.txHash,
             walletAddress: walletPayment.walletAddress,
             verificationStatus: "pending",
-            message: verifyPayload?.message || "Transaction submitted. Waiting for Sepolia confirmation.",
+            message: verifyPayload?.message || "Transaction submitted. Waiting for Ethereum Mainnet confirmation.",
           });
           resetForm();
           return;
         }
 
         if (!verifyResponse.ok) {
+          const invalidVerification = verifyPayload?.verificationStatus === "invalid";
+
           setSubmission({
             ...orderSnapshot,
             txHash: walletPayment.txHash,
             walletAddress: walletPayment.walletAddress,
-            verificationStatus: "pending",
-            message: "Order created. Payment is still pending and can be rechecked from the dashboard.",
+            verificationStatus: invalidVerification ? "failed" : "pending",
+            message: invalidVerification
+              ? verifyPayload?.error || "Order created, but the payment attempt needs attention before it can be confirmed."
+              : "Order created. Payment is still pending and can be rechecked from the dashboard.",
           });
           setError(
             `${getResponseErrorMessage(verifyPayload, "The on-chain payment could not be verified yet.")} The order remains pending.`,
@@ -674,7 +695,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           txHash: walletPayment.txHash,
           walletAddress: walletPayment.walletAddress,
           verificationStatus: "paid",
-          message: verifyPayload?.message || "Sepolia payment confirmed.",
+          message: verifyPayload?.message || "Ethereum Mainnet payment confirmed.",
         });
         resetForm();
       } catch (walletError) {
@@ -686,7 +707,9 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           rollbackMessage = ` ${getErrorMessage(rollbackError, "The temporary order could not be rolled back automatically.")}`;
         }
 
-        setError(`${getErrorMessage(walletError, "MetaMask payment was not completed.")} Your bag was kept so you can try again.${rollbackMessage}`);
+        setError(
+          `${getWeb3ErrorMessage(walletError, "MetaMask payment was not completed.")} Your bag was kept so you can try again.${rollbackMessage}`,
+        );
       }
     } catch (submitError) {
       setError(getErrorMessage(submitError, "Unable to create the order."));
@@ -889,7 +912,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
               <div className="vh-field">
                 <p className="vh-field__label">Payment Method</p>
-                <p className="vh-payment-note">Sepolia ETH is the live checkout option for this order.</p>
+                <p className="vh-payment-note">ETH is the live checkout option for this order.</p>
               </div>
 
               <div className="vh-field">
@@ -993,7 +1016,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                     onChange={(event) => setConfirmed(event.target.checked)}
                     required={reviewMode}
                   />
-                  <span>I confirm these order details are correct before opening the Sepolia payment in MetaMask.</span>
+                  <span>I confirm these order details are correct before opening the payment in MetaMask.</span>
                 </label>
               ) : null}
 
@@ -1034,11 +1057,27 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           ) : (
             <>
               <h1 className="h2 u-margin-b--lg">
-                {submission.verificationStatus === "paid" ? "Payment Confirmed" : "Order Created"}
+                {submission.verificationStatus === "paid"
+                  ? "Payment Confirmed"
+                  : submission.verificationStatus === "failed"
+                    ? "Payment Needs Attention"
+                    : "Order Created"}
               </h1>
               {error ? <div className="vh-status vh-status--error">{error}</div> : null}
-              <div className={`vh-status ${submission.verificationStatus === "paid" ? "vh-status--success" : ""}`}>
-                {submission.verificationStatus === "paid" ? "Sepolia payment confirmed." : "Order created and waiting for payment confirmation."}
+              <div
+                className={`vh-status ${
+                  submission.verificationStatus === "paid"
+                    ? "vh-status--success"
+                    : submission.verificationStatus === "failed"
+                      ? "vh-status--error"
+                      : ""
+                }`}
+              >
+                {submission.verificationStatus === "paid"
+                  ? "Ethereum Mainnet payment confirmed."
+                  : submission.verificationStatus === "failed"
+                    ? "Order created, but the payment attempt still needs attention."
+                    : "Order created and waiting for payment confirmation."}
                 <br />
                 Order Number: {submission.orderNumber || submission.orderId}
                 <br />

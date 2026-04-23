@@ -1,3 +1,5 @@
+import { isAddress } from "ethers";
+
 import {
   ETH_TOKEN_DECIMALS,
   ETH_TOKEN_SYMBOL,
@@ -12,6 +14,7 @@ import {
   VHL_TOKEN_DECIMALS,
   VHL_TOKEN_SYMBOL,
 } from "@/lib/web3/config";
+import { ETHEREUM_MAINNET_NETWORK_NAME } from "@/lib/web3/network";
 import { formatPhpCurrency } from "@/lib/payments/amounts";
 
 export const PAYMENT_METHOD_VALUES = ["eth", "usdc", "usdt", "vhl"] as const;
@@ -31,14 +34,14 @@ export const PAYMENT_METHOD_OPTIONS: PaymentMethodOption[] = [
   {
     value: "eth",
     label: ETH_TOKEN_SYMBOL,
-    description: "Send Sepolia ETH directly to the configured merchant wallet.",
+    description: "Send ETH directly to the configured merchant wallet on Ethereum Mainnet.",
     decimals: ETH_TOKEN_DECIMALS,
     kind: "native",
   },
   {
     value: "usdc",
     label: USDC_TOKEN_SYMBOL,
-    description: "Send test USDC on Sepolia to the configured merchant wallet.",
+    description: "Send USDC directly to the configured merchant wallet on Ethereum Mainnet.",
     decimals: USDC_TOKEN_DECIMALS,
     kind: "token",
     tokenAddress: USDC_TOKEN_ADDRESS,
@@ -46,7 +49,7 @@ export const PAYMENT_METHOD_OPTIONS: PaymentMethodOption[] = [
   {
     value: "usdt",
     label: USDT_TOKEN_SYMBOL,
-    description: "Send test USDT on Sepolia to the configured merchant wallet.",
+    description: "Send USDT directly to the configured merchant wallet on Ethereum Mainnet.",
     decimals: USDT_TOKEN_DECIMALS,
     kind: "token",
     tokenAddress: USDT_TOKEN_ADDRESS,
@@ -54,7 +57,7 @@ export const PAYMENT_METHOD_OPTIONS: PaymentMethodOption[] = [
   {
     value: "vhl",
     label: VHL_TOKEN_SYMBOL,
-    description: "Send Vione Hernal test tokens on Sepolia to the configured merchant wallet.",
+    description: "Send Vione Hernal tokens directly to the configured merchant wallet on Ethereum Mainnet.",
     decimals: VHL_TOKEN_DECIMALS,
     kind: "token",
     tokenAddress: VHL_TOKEN_ADDRESS,
@@ -92,8 +95,16 @@ export function getPaymentMethodSetupError(value: PaymentMethod | string | null 
     return "Merchant wallet is not configured. Add NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS to .env.local and restart the dev server.";
   }
 
+  if (!isAddress(MERCHANT_WALLET_ADDRESS)) {
+    return "Merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS in .env.local and restart the dev server.";
+  }
+
   if (config.kind === "token" && !config.tokenAddress) {
-    return `The ${config.label} Sepolia token address is not configured. Add the correct NEXT_PUBLIC_${config.label}_TOKEN_ADDRESS value to .env.local and restart the dev server.`;
+    return `The ${config.label} token address is not configured for ${ETHEREUM_MAINNET_NETWORK_NAME}. Add NEXT_PUBLIC_${config.label}_TOKEN_ADDRESS to .env.local and restart the dev server.`;
+  }
+
+  if (config.kind === "token" && !isAddress(config.tokenAddress || "")) {
+    return `The ${config.label} token address is invalid. Update NEXT_PUBLIC_${config.label}_TOKEN_ADDRESS in .env.local and restart the dev server.`;
   }
 
   return null;

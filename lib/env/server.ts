@@ -1,6 +1,7 @@
 import "server-only";
 
 import { logPaymentDebug } from "@/lib/payments/debug";
+import { ETHEREUM_MAINNET_RPC_ENV_NAME } from "@/lib/web3/network";
 
 function stripWrappingQuotes(value: string) {
   return value.replace(/^['"]|['"]$/g, "").trim();
@@ -41,10 +42,10 @@ export const serverEnv = {
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "",
   merchantWalletAddress: process.env.NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS?.trim() ?? "",
-  sepoliaRpcUrl: normalizeRpcUrl(process.env.SEPOLIA_RPC_URL?.trim() ?? ""),
+  ethereumMainnetRpcUrl: normalizeRpcUrl(process.env.ETHEREUM_MAINNET_RPC_URL?.trim() ?? ""),
   usdcTokenAddress: process.env.NEXT_PUBLIC_USDC_TOKEN_ADDRESS?.trim() ?? "",
   usdtTokenAddress: process.env.NEXT_PUBLIC_USDT_TOKEN_ADDRESS?.trim() ?? "",
-  vhlTokenAddress: process.env.NEXT_PUBLIC_VHL_TOKEN_ADDRESS?.trim() || "0xCC0C7233d9e6B592198FEB01adf6Cc762e578AAe",
+  vhlTokenAddress: process.env.NEXT_PUBLIC_VHL_TOKEN_ADDRESS?.trim() ?? "",
   storeOwnerEmails: process.env.STORE_OWNER_EMAILS?.trim() ?? "",
   smtpHost: process.env.SMTP_HOST?.trim() ?? "",
   smtpPort: Number(process.env.SMTP_PORT?.trim() ?? "0"),
@@ -73,16 +74,16 @@ export function getSupabaseAdminEnvError() {
   return "Supabase service role credentials are missing. Add SUPABASE_SERVICE_ROLE_KEY to .env.local and restart the Next.js dev server.";
 }
 
-export function hasSepoliaRpcEnv() {
-  return Boolean(serverEnv.sepoliaRpcUrl);
+export function hasEthereumMainnetRpcEnv() {
+  return Boolean(serverEnv.ethereumMainnetRpcUrl);
 }
 
-export function getSepoliaRpcEnvError() {
-  if (hasSepoliaRpcEnv()) {
+export function getEthereumMainnetRpcEnvError() {
+  if (hasEthereumMainnetRpcEnv()) {
     return null;
   }
 
-  return "Sepolia RPC is not configured. Add SEPOLIA_RPC_URL to .env.local and restart the Next.js dev server.";
+  return `Ethereum Mainnet RPC is not configured. Add ${ETHEREUM_MAINNET_RPC_ENV_NAME} to .env.local and restart the Next.js dev server.`;
 }
 
 export function getConfiguredOwnerEmails() {

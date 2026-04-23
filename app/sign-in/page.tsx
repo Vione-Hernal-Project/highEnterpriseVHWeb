@@ -12,6 +12,16 @@ type Props = {
   }>;
 };
 
+function resolveNextPath(value: string | undefined) {
+  const requestedPath = (value || "").trim();
+
+  if (!requestedPath.startsWith("/") || requestedPath.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return requestedPath;
+}
+
 export default async function SignInPage({ searchParams }: Props) {
   logPublicSupabaseEnvStatus("sign-in-page");
 
@@ -30,7 +40,7 @@ export default async function SignInPage({ searchParams }: Props) {
       <div className="vh-grid-two">
         <div className="vh-data-card">
           <p className="vh-mvp-eyebrow">Vione Hernal Access</p>
-          <h2 className="vh-mvp-title">Sign in to place a Sepolia order.</h2>
+          <h2 className="vh-mvp-title">Sign in to place an order.</h2>
           <p className="vh-mvp-copy">
             This MVP uses Supabase Auth for working email and password login, protected routes, and order history tied
             to the signed-in account.
@@ -44,7 +54,7 @@ export default async function SignInPage({ searchParams }: Props) {
             </Link>
           </div>
         </div>
-        <SignInForm nextPath={next || "/dashboard"} configError={configError} />
+        <SignInForm nextPath={resolveNextPath(next)} configError={configError} />
       </div>
     </section>
   );

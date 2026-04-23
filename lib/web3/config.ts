@@ -1,11 +1,8 @@
-export const SEPOLIA_CHAIN_ID = 11155111;
-export const SEPOLIA_NETWORK_NAME = "Sepolia";
-
 export const MERCHANT_WALLET_ADDRESS = process.env.NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS?.trim() ?? "";
 
-// If you deploy a new VHL contract later, update the env value or fallback here.
-export const VHL_TOKEN_ADDRESS =
-  process.env.NEXT_PUBLIC_VHL_TOKEN_ADDRESS?.trim() || "0xCC0C7233d9e6B592198FEB01adf6Cc762e578AAe";
+// TODO(mainnet-launch): paste the deployed Ethereum Mainnet VHL contract
+// address into NEXT_PUBLIC_VHL_TOKEN_ADDRESS in .env.local.
+export const VHL_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_VHL_TOKEN_ADDRESS?.trim() ?? "";
 export const USDC_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_USDC_TOKEN_ADDRESS?.trim() ?? "";
 export const USDT_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_USDT_TOKEN_ADDRESS?.trim() ?? "";
 

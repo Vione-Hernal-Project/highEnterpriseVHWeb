@@ -46,8 +46,13 @@ async function syncOwnerRole(profile: ProfileRow | null, email: string | null | 
   return data ?? { ...profile, role: "owner" };
 }
 
-async function ensureProfileRow(supabase: SupabaseServerClient, user: NonNullable<Awaited<ReturnType<typeof getCurrentSession>>["user"]>) {
-  const { data } = await supabase
+async function ensureProfileRow(user: NonNullable<Awaited<ReturnType<typeof getCurrentSession>>["user"]>) {
+  if (!hasSupabaseAdminEnv()) {
+    return null;
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
     .from("profiles")
     .upsert(
       {
@@ -97,7 +102,7 @@ export async function getCurrentUserContext() {
   }
 
   const { data: rawProfile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
-  const ensuredProfile = rawProfile ?? (await ensureProfileRow(supabase, user));
+  const ensuredProfile = rawProfile ?? (await ensureProfileRow(user));
   const profile = await syncOwnerRole(ensuredProfile ?? null, user.email);
   const role = resolveRole(profile?.role, user.email);
 

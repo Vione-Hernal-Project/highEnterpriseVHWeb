@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 import { getPaymentMethodConfig, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
+import { getWeb3ErrorMessage } from "@/lib/web3/errors";
 import { sendCryptoPayment } from "@/lib/web3/payments";
 
 const AUTO_VERIFY_INTERVAL_MS = 8000;
@@ -12,6 +13,7 @@ const AUTO_VERIFY_MAX_ATTEMPTS = 10;
 
 type Props = {
   paymentId: string;
+  paymentStatus: string;
   paymentMethod: string;
   amountExpected: string;
   recipientAddress?: string | null;
@@ -27,6 +29,7 @@ type VerifyPayload = {
 
 export function PaymentStatusButton({
   paymentId,
+  paymentStatus,
   paymentMethod,
   amountExpected,
   recipientAddress,
@@ -37,7 +40,8 @@ export function PaymentStatusButton({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const hasSubmittedTx = Boolean(txHash);
+  const hasSubmittedTx = Boolean(txHash) && paymentStatus === "pending";
+  const canSubmitFreshPayment = !txHash || paymentStatus === "failed";
   const paymentLabel = getPaymentMethodLabel(paymentMethod);
   const autoVerifyTimerRef = useRef<number | null>(null);
   const autoVerifyAttemptRef = useRef(0);
@@ -86,7 +90,11 @@ export function PaymentStatusButton({
 
       if (autoVerifyAttemptRef.current >= AUTO_VERIFY_MAX_ATTEMPTS) {
         clearAutoVerifyTimer();
-        setMessage((current) => current || `Still waiting for on-chain confirmation. Use Check On-Chain Status as a fallback.`);
+        setMessage(
+          (current) =>
+            current ||
+            "Still waiting for on-chain confirmation. If this takes unusually long, check MetaMask for a dropped or replaced transaction.",
+        );
         return;
       }
 
@@ -105,7 +113,7 @@ export function PaymentStatusButton({
 
         if (response.status === 202) {
           setError("");
-          setMessage(payload?.message || "Submitted on-chain. Waiting for on-chain confirmation.");
+          setMessage(payload?.message || "Submitted on-chain. Waiting for Ethereum Mainnet confirmation.");
           clearAutoVerifyTimer();
           autoVerifyTimerRef.current = window.setTimeout(runAutoVerify, AUTO_VERIFY_INTERVAL_MS);
           return;
@@ -113,6 +121,13 @@ export function PaymentStatusButton({
 
         if (!response.ok) {
           clearAutoVerifyTimer();
+
+          if (payload?.verificationStatus === "invalid") {
+            setMessage(payload.error || "This payment attempt needs attention before the order can be completed.");
+            router.refresh();
+            return;
+          }
+
           setError(getResponseErrorMessage(payload, `Unable to verify the ${paymentLabel} payment.`));
           return;
         }
@@ -161,10 +176,11 @@ export function PaymentStatusButton({
 
             const walletPayment = hasSubmittedTx
               ? null
-              : await sendCryptoPayment({
+                : await sendCryptoPayment({
                   amount: amountExpected,
                   paymentMethod: paymentMethod as PaymentMethod,
                   recipientAddress,
+                  expectedWalletAddress: walletAddress,
                 });
 
             const { response, payload } = await requestVerification({
@@ -173,12 +189,18 @@ export function PaymentStatusButton({
             });
 
             if (response.status === 202) {
-              setMessage(payload?.message || "Submitted on-chain. Waiting for on-chain confirmation.");
+              setMessage(payload?.message || "Submitted on-chain. Waiting for Ethereum Mainnet confirmation.");
               router.refresh();
               return;
             }
 
             if (!response.ok) {
+              if (payload?.verificationStatus === "invalid") {
+                setMessage(payload.error || "This payment attempt needs attention before the order can be completed.");
+                router.refresh();
+                return;
+              }
+
               setError(getResponseErrorMessage(payload, `Unable to verify the ${paymentLabel} payment.`));
               return;
             }
@@ -186,13 +208,23 @@ export function PaymentStatusButton({
             setMessage(payload?.message || "Confirmed on-chain.");
             router.refresh();
           } catch (error) {
-            setError(getErrorMessage(error, `Unable to submit the ${paymentLabel} payment.`));
+            setError(getWeb3ErrorMessage(error, `Unable to submit the ${paymentLabel} payment.`));
           } finally {
             setLoading(false);
           }
         }}
       >
-        {loading ? (hasSubmittedTx ? "Confirming On-Chain..." : "Processing...") : hasSubmittedTx ? "Check On-Chain Status" : `Complete ${paymentLabel} Payment`}
+        {loading
+          ? hasSubmittedTx
+            ? "Confirming On-Chain..."
+            : "Processing..."
+          : hasSubmittedTx
+            ? "Check On-Chain Status"
+            : canSubmitFreshPayment
+              ? paymentStatus === "failed"
+                ? `Retry ${paymentLabel} Payment`
+                : `Complete ${paymentLabel} Payment`
+              : "Check On-Chain Status"}
       </button>
       {error ? <div className="vh-status vh-status--error" style={{ marginTop: "0.75rem" }}>{error}</div> : null}
       {message ? <div className="vh-status" style={{ marginTop: "0.75rem" }}>{message}</div> : null}

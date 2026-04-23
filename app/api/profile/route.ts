@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { walletSchema } from "@/lib/validations/order";
 
 export async function GET() {
@@ -23,7 +24,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const { supabase, user } = await getCurrentUserContext();
+    const { user } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
@@ -36,11 +37,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid wallet address." }, { status: 400 });
     }
 
-    // Wallet storage is handled server-side so we can validate and keep the
-    // future crypto integration path clean without trusting raw client writes.
-    // Profiles can use the signed-in server client because RLS already limits
-    // updates to the current authenticated user.
-    const { data, error } = await supabase
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin
       .from("profiles")
       .upsert(
         {

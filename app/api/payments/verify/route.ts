@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
+import { getAddress, isAddress } from "ethers";
 
 import { ensureConfirmedOnChainPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
-import { serverEnv } from "@/lib/env/server";
+import { getEthereumMainnetRpcEnvError, serverEnv } from "@/lib/env/server";
+import type { Database } from "@/lib/database.types";
 import { getErrorMessage } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
-import { verifySepoliaPayment } from "@/lib/payments/verify";
+import { verifyEthereumMainnetPayment } from "@/lib/payments/verify";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyPaymentSchema } from "@/lib/validations/order";
-import { SEPOLIA_CHAIN_ID } from "@/lib/web3/config";
-
-const ORDER_CONFIRMATION_FUNCTION_URL =
-  "https://uibyqlonafqhaxeuslpj.supabase.co/functions/v1/send-order-confirmation";
+import { ETHEREUM_MAINNET_CHAIN_ID, isEthereumMainnetChain } from "@/lib/web3/network";
 
 type OrderEmailRecord = {
   id: string;
@@ -23,6 +22,104 @@ type OrderEmailRecord = {
   confirmation_email_status: string;
   confirmation_email_sent_at: string | null;
 };
+
+type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
+type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
+
+function getOrderConfirmationFunctionUrl() {
+  const baseUrl = serverEnv.supabaseUrl.trim().replace(/\/+$/, "");
+
+  return baseUrl ? `${baseUrl}/functions/v1/send-order-confirmation` : "";
+}
+
+function normalizeWalletAddress(address: string | null | undefined, fallbackMessage: string) {
+  const value = (address || "").trim();
+
+  if (!value || !isAddress(value)) {
+    throw new Error(fallbackMessage);
+  }
+
+  return getAddress(value);
+}
+
+function resolveBoundWalletAddress(storedWalletAddress: string | null | undefined, requestedWalletAddress: string | null | undefined) {
+  const normalizedStoredWallet = storedWalletAddress?.trim() ? normalizeWalletAddress(storedWalletAddress, "Saved payer wallet is invalid.") : null;
+  const normalizedRequestedWallet = requestedWalletAddress?.trim()
+    ? normalizeWalletAddress(requestedWalletAddress, "Submitted payer wallet is invalid.")
+    : null;
+
+  if (normalizedStoredWallet && normalizedRequestedWallet && normalizedStoredWallet !== normalizedRequestedWallet) {
+    throw new Error("Reconnect the MetaMask wallet that was originally bound to this order before verifying the payment.");
+  }
+
+  return normalizedStoredWallet || normalizedRequestedWallet || null;
+}
+
+async function loadEarlierMatchingPendingPayment(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  payment: PaymentRow,
+  walletAddress: string,
+  recipientAddress: string,
+  chainId: number,
+) {
+  const { data, error } = await admin
+    .from("payments")
+    .select("id, created_at")
+    .neq("id", payment.id)
+    .eq("payment_method", payment.payment_method)
+    .eq("wallet_address", walletAddress)
+    .eq("recipient_address", recipientAddress)
+    .eq("chain_id", chainId)
+    .eq("amount_expected", payment.amount_expected)
+    .in("status", ["pending", "failed"])
+    .lt("created_at", payment.created_at)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Unable to validate earlier matching payments.");
+  }
+
+  return data;
+}
+
+async function resolvePaymentBindingError(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  params: {
+    payment: PaymentRow;
+    order: OrderRow;
+    walletAddress: string;
+    recipientAddress: string;
+    chainId: number;
+    observedBlockAt: string;
+  },
+) {
+  const orderCreatedAt = Date.parse(params.order.created_at || "");
+  const observedBlockAt = Date.parse(params.observedBlockAt || "");
+
+  if (!Number.isFinite(orderCreatedAt) || !Number.isFinite(observedBlockAt)) {
+    return "Unable to confirm when this on-chain payment was mined for the order.";
+  }
+
+  if (observedBlockAt < orderCreatedAt) {
+    return "This transaction was mined before the order was created, so it cannot be attached to this payment.";
+  }
+
+  const earlierMatchingPayment = await loadEarlierMatchingPendingPayment(
+    admin,
+    params.payment,
+    params.walletAddress,
+    params.recipientAddress,
+    params.chainId,
+  );
+
+  if (earlierMatchingPayment?.id) {
+    return "This transaction matches an earlier unresolved order from the same wallet and exact payment amount. Complete or cancel the earlier order before using this payment.";
+  }
+
+  return null;
+}
 
 async function sendPaidOrderConfirmationEmail(
   admin: ReturnType<typeof createSupabaseAdminClient>,
@@ -65,7 +162,13 @@ async function sendPaidOrderConfirmationEmail(
 
   try {
     const total = typeof order.amount === "string" ? Number(order.amount) : order.amount;
-    const response = await fetch(ORDER_CONFIRMATION_FUNCTION_URL, {
+    const orderConfirmationFunctionUrl = getOrderConfirmationFunctionUrl();
+
+    if (!orderConfirmationFunctionUrl || !serverEnv.supabaseAnonKey) {
+      throw new Error("Supabase order confirmation function is not configured.");
+    }
+
+    const response = await fetch(orderConfirmationFunctionUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -155,6 +258,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid payment verification request." }, { status: 400 });
     }
 
+    const rpcSetupError = getEthereumMainnetRpcEnvError();
+
+    if (rpcSetupError) {
+      return NextResponse.json({ error: rpcSetupError }, { status: 400 });
+    }
+
     const admin = createSupabaseAdminClient();
     const { data: payment, error: paymentError } = await admin
       .from("payments")
@@ -207,13 +316,42 @@ export async function POST(request: Request) {
     }
 
     const txHash = parsed.data.txHash || payment.tx_hash;
-    const walletAddress = parsed.data.walletAddress || payment.wallet_address;
+    const walletAddress = resolveBoundWalletAddress(payment.wallet_address, parsed.data.walletAddress);
     const merchantWallet = await resolveMerchantWalletAddress();
     const recipientAddress = payment.recipient_address || merchantWallet.address;
-    const chainId = payment.chain_id || SEPOLIA_CHAIN_ID;
+    const chainId = payment.chain_id || ETHEREUM_MAINNET_CHAIN_ID;
 
     if (!txHash) {
       return NextResponse.json({ error: "No transaction hash was submitted for this payment yet." }, { status: 400 });
+    }
+
+    if (!walletAddress) {
+      return NextResponse.json(
+        {
+          error:
+            "This payment does not have a bound payer wallet. Cancel the order and create a new payment from the wallet you plan to use.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (payment.tx_hash && parsed.data.txHash && payment.tx_hash !== parsed.data.txHash && payment.status !== "failed") {
+      return NextResponse.json(
+        {
+          error:
+            "This payment already has a submitted transaction hash. Wait for that transaction to resolve before trying a different one.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (!isEthereumMainnetChain(chainId)) {
+      return NextResponse.json(
+        {
+          error: `This payment is configured for chain ID ${chainId}, but only Ethereum Mainnet (${ETHEREUM_MAINNET_CHAIN_ID}) is supported.`,
+        },
+        { status: 400 },
+      );
     }
 
     logPaymentDebug("verify-request", {
@@ -252,21 +390,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Cancelled orders cannot be paid." }, { status: 400 });
     }
 
-    await admin
+    const { error: bindPaymentError } = await admin
       .from("payments")
       .update({
         tx_hash: txHash,
-        wallet_address: walletAddress ?? null,
+        wallet_address: walletAddress,
         recipient_address: recipientAddress,
         chain_id: chainId,
       })
       .eq("id", payment.id);
 
-    const verification = await verifySepoliaPayment({
+    if (bindPaymentError) {
+      return NextResponse.json({ error: bindPaymentError.message || "Unable to bind the payment wallet." }, { status: 500 });
+    }
+
+    const verification = await verifyEthereumMainnetPayment({
       payment: {
         ...payment,
         tx_hash: txHash,
-        wallet_address: walletAddress ?? payment.wallet_address,
+        wallet_address: walletAddress,
         recipient_address: recipientAddress,
         chain_id: chainId,
       },
@@ -312,7 +454,7 @@ export async function POST(request: Request) {
           wallet_address: verification.walletAddress,
           recipient_address: recipientAddress,
           chain_id: chainId,
-          status: "pending",
+          status: "failed",
         })
         .eq("id", payment.id)
         .select("*")
@@ -326,6 +468,45 @@ export async function POST(request: Request) {
             ...payment,
             tx_hash: verification.txHash,
             wallet_address: verification.walletAddress,
+            status: "failed",
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    const bindingError = await resolvePaymentBindingError(admin, {
+      payment,
+      order,
+      walletAddress: verification.walletAddress,
+      recipientAddress,
+      chainId,
+      observedBlockAt: verification.observedBlockAt,
+    });
+
+    if (bindingError) {
+      const { data: updatedPayment } = await admin
+        .from("payments")
+        .update({
+          tx_hash: verification.txHash,
+          wallet_address: verification.walletAddress,
+          recipient_address: recipientAddress,
+          chain_id: chainId,
+          status: "failed",
+        })
+        .eq("id", payment.id)
+        .select("*")
+        .single();
+
+      return NextResponse.json(
+        {
+          verificationStatus: "invalid",
+          error: bindingError,
+          payment: updatedPayment ?? {
+            ...payment,
+            tx_hash: verification.txHash,
+            wallet_address: verification.walletAddress,
+            status: "failed",
           },
         },
         { status: 400 },

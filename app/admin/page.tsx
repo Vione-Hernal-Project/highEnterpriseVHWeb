@@ -8,10 +8,15 @@ import { getErrorMessage } from "@/lib/http";
 import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
+import { getAddressExplorerUrl, getTransactionExplorerUrl } from "@/lib/web3/network";
 
 function getHistoryBadgeClass(status: string) {
   if (status === "paid") {
     return "vh-badge--paid";
+  }
+
+  if (status === "failed") {
+    return "vh-badge--failed";
   }
 
   if (status === "cancelled") {
@@ -24,6 +29,10 @@ function getHistoryBadgeClass(status: string) {
 function getHistoryStatusLabel(status: string) {
   if (status === "paid") {
     return "Paid / Confirmed";
+  }
+
+  if (status === "failed") {
+    return "Failed / Needs Action";
   }
 
   if (status === "cancelled") {
@@ -88,9 +97,8 @@ export default async function AdminPage() {
         <p className="vh-mvp-eyebrow">Store Management</p>
         <h1 className="vh-mvp-title">Orders, payments, and customer access controls.</h1>
         <p className="vh-mvp-copy">
-          This area is protected on the server. Effective role: {role}. Use it to review orders, inspect Sepolia
-          payment records, inspect the live allocation ledger, adjust order status when needed, manage product launches,
-          and manage admin access.
+          This area is protected on the server. Effective role: {role}. Use it to review live payment records, inspect
+          the allocation ledger, adjust order status when needed, manage product launches, and manage admin access.
         </p>
         {adminError ? <div className="vh-status vh-status--error">{adminError}</div> : null}
         <div className="vh-actions">
@@ -245,7 +253,7 @@ export default async function AdminPage() {
                   <strong>Manual On-Chain Check</strong>
                   <p>
                     Compare expected vs received amount, confirm the recipient wallet matches the merchant wallet, then
-                    use the tx hash in a block explorer to inspect the transfer externally.
+                    use the tx hash in Etherscan to inspect the transfer externally.
                   </p>
                 </div>
                 {payments.map((payment) => (
@@ -276,7 +284,9 @@ export default async function AdminPage() {
                           <strong className="vh-history-metric__value">
                             {payment.amount_received
                               ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
-                              : "Waiting for on-chain confirmation"}
+                              : payment.status === "failed"
+                                ? "Payment attempt failed"
+                                : "Waiting for on-chain confirmation"}
                           </strong>
                         </div>
                         <div className="vh-history-metric">
@@ -320,19 +330,52 @@ export default async function AdminPage() {
                             <div className="vh-history-card__detail vh-history-card__detail--full">
                               <span className="vh-history-card__detail-label">Recipient Wallet</span>
                               <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                                {payment.recipient_address || "Not submitted"}
+                                {payment.recipient_address ? (
+                                  <a
+                                    className="vh-inline-link"
+                                    href={getAddressExplorerUrl(payment.recipient_address) || undefined}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {payment.recipient_address}
+                                  </a>
+                                ) : (
+                                  "Not submitted"
+                                )}
                               </p>
                             </div>
                             <div className="vh-history-card__detail vh-history-card__detail--full">
                               <span className="vh-history-card__detail-label">Tx Hash</span>
                               <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                                {payment.tx_hash || "Not submitted"}
+                                {payment.tx_hash ? (
+                                  <a
+                                    className="vh-inline-link"
+                                    href={getTransactionExplorerUrl(payment.tx_hash) || undefined}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {payment.tx_hash}
+                                  </a>
+                                ) : (
+                                  "Not submitted"
+                                )}
                               </p>
                             </div>
                             <div className="vh-history-card__detail vh-history-card__detail--full">
                               <span className="vh-history-card__detail-label">Payer Wallet</span>
                               <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                                {payment.wallet_address || "Not submitted"}
+                                {payment.wallet_address ? (
+                                  <a
+                                    className="vh-inline-link"
+                                    href={getAddressExplorerUrl(payment.wallet_address) || undefined}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {payment.wallet_address}
+                                  </a>
+                                ) : (
+                                  "Not submitted"
+                                )}
                               </p>
                             </div>
                           </div>
