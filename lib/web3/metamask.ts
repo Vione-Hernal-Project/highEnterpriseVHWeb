@@ -1,3 +1,4 @@
+import { createEVMClient, type MetamaskConnectEVM } from "@metamask/connect-evm";
 import { BrowserProvider, Contract, formatUnits, isAddress, type Eip1193Provider } from "ethers";
 
 import {
@@ -31,10 +32,101 @@ type WalletSnapshot = {
   hasProvider: boolean;
 };
 
+type WalletEventSource = Eip1193Provider & {
+  on?: (...args: unknown[]) => void;
+  removeListener?: (...args: unknown[]) => void;
+};
+
+const METAMASK_CONNECT_PUBLIC_RPC_URL =
+  process.env.NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL?.trim() ||
+  process.env.NEXT_PUBLIC_ETHEREUM_MAINNET_RPC_URL?.trim() ||
+  "";
+const METAMASK_MOBILE_INSTALL_URL = "https://metamask.io/download/";
+
+let metaMaskConnectClientPromise: Promise<MetamaskConnectEVM> | null = null;
+
 function getEthereumWindow() {
   return window as Window & {
     ethereum?: InjectedEthereum;
   };
+}
+
+function isLikelyMobileBrowser() {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const userAgent = navigator.userAgent || "";
+  const touchMac = /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1;
+
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) || touchMac;
+}
+
+function canUseMetaMaskConnectMobile() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return !getInjectedEthereum() && isLikelyMobileBrowser() && Boolean(METAMASK_CONNECT_PUBLIC_RPC_URL);
+}
+
+async function getMetaMaskConnectClient() {
+  if (!canUseMetaMaskConnectMobile()) {
+    return null;
+  }
+
+  if (!metaMaskConnectClientPromise) {
+    metaMaskConnectClientPromise = createEVMClient({
+      dapp: {
+        name: "Vione Hernal",
+        url: window.location.origin,
+      },
+      api: {
+        supportedNetworks: {
+          [ETHEREUM_MAINNET_CHAIN_HEX]: METAMASK_CONNECT_PUBLIC_RPC_URL,
+        },
+      },
+      ui: {
+        preferExtension: false,
+        showInstallModal: false,
+      },
+      mobile: {
+        // Mobile-only: let MetaMask Connect open the wallet app with its official deeplink flow.
+        preferredOpenLink: (deeplink: string) => {
+          window.location.assign(deeplink);
+        },
+      },
+    }).catch((error) => {
+      metaMaskConnectClientPromise = null;
+      throw error;
+    });
+  }
+
+  return metaMaskConnectClientPromise;
+}
+
+async function getWalletEventSource(): Promise<WalletEventSource | null> {
+  const injectedProvider = getInjectedEthereum();
+
+  if (injectedProvider) {
+    return injectedProvider as WalletEventSource;
+  }
+
+  const connectClient = await getMetaMaskConnectClient();
+
+  return (connectClient?.getProvider() as WalletEventSource | null) ?? null;
+}
+
+async function getActiveEip1193Provider() {
+  const injectedProvider = getInjectedEthereum();
+
+  if (injectedProvider) {
+    return injectedProvider;
+  }
+
+  const connectClient = await getMetaMaskConnectClient();
+
+  return connectClient?.getProvider() ?? null;
 }
 
 function selectMetaMaskProvider(ethereum: InjectedEthereum) {
@@ -74,7 +166,7 @@ export function getInjectedEthereum() {
 }
 
 export async function getBrowserProvider() {
-  const ethereum = getInjectedEthereum();
+  const ethereum = await getActiveEip1193Provider();
 
   if (!ethereum) {
     return null;
@@ -86,7 +178,7 @@ export async function getBrowserProvider() {
 // Uses the quiet account check so the page can restore a previous connection
 // without prompting MetaMask every time the user loads the site.
 export async function getCurrentAccount() {
-  const ethereum = getInjectedEthereum();
+  const ethereum = await getActiveEip1193Provider();
 
   if (!ethereum) {
     return null;
@@ -104,19 +196,37 @@ export async function getCurrentAccount() {
 export async function connectWallet() {
   const ethereum = getInjectedEthereum();
 
-  if (!ethereum) {
+  if (ethereum) {
+    const accounts = (await ethereum.request({
+      method: "eth_requestAccounts",
+    })) as string[];
+
+    return accounts[0] ?? null;
+  }
+
+  const connectClient = await getMetaMaskConnectClient();
+
+  if (!connectClient) {
+    if (isLikelyMobileBrowser()) {
+      throw new Error(
+        METAMASK_CONNECT_PUBLIC_RPC_URL
+          ? "MetaMask is not available on this mobile browser. Install or open the MetaMask app and try again."
+          : "MetaMask mobile connect is not configured yet. Add NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL for mobile wallet support.",
+      );
+    }
+
     throw new Error("MetaMask is not available in this browser.");
   }
 
-  const accounts = (await ethereum.request({
-    method: "eth_requestAccounts",
-  })) as string[];
+  const { accounts } = await connectClient.connect({
+    chainIds: [ETHEREUM_MAINNET_CHAIN_HEX],
+  });
 
   return accounts[0] ?? null;
 }
 
 export async function checkChain(provider?: BrowserProvider | null) {
-  const ethereum = getInjectedEthereum();
+  const ethereum = await getActiveEip1193Provider();
 
   if (!ethereum) {
     return {
@@ -141,7 +251,7 @@ export async function checkChain(provider?: BrowserProvider | null) {
 }
 
 export async function ensureEthereumMainnetChain() {
-  const ethereum = getInjectedEthereum();
+  const ethereum = await getActiveEip1193Provider();
 
   if (!ethereum) {
     throw new Error("MetaMask is not available in this browser.");
@@ -228,6 +338,36 @@ export async function getWalletSnapshot(): Promise<WalletSnapshot> {
     chainId,
     isSupportedChain,
     vhlBalance,
-    hasProvider: Boolean(provider),
+    hasProvider: Boolean(provider) || canUseMetaMaskConnectMobile(),
+  };
+}
+
+export function hasWalletConnector() {
+  return Boolean(getInjectedEthereum()) || canUseMetaMaskConnectMobile();
+}
+
+export function getMetaMaskMobileInstallUrl() {
+  return isLikelyMobileBrowser() ? METAMASK_MOBILE_INSTALL_URL : null;
+}
+
+export async function subscribeToWalletEvents(listener: () => void) {
+  const provider = await getWalletEventSource();
+
+  if (!provider?.on) {
+    return () => {};
+  }
+
+  provider.on("accountsChanged", listener);
+  provider.on("chainChanged", listener);
+  provider.on("connect", listener);
+  provider.on("disconnect", listener);
+
+  return () => {
+    if (provider.removeListener) {
+      provider.removeListener("accountsChanged", listener);
+      provider.removeListener("chainChanged", listener);
+      provider.removeListener("connect", listener);
+      provider.removeListener("disconnect", listener);
+    }
   };
 }

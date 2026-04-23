@@ -91,10 +91,9 @@ export default async function DashboardPage() {
       <div className="vh-grid-two">
         <div className="vh-data-card">
           <p className="vh-mvp-eyebrow">Dashboard</p>
-          <h1 className="vh-mvp-title">Your account, orders, and payment attempts.</h1>
+          <h1 className="vh-mvp-title">YOUR ACCOUNT, ORDERS, AND ON-CHAIN PAYMENTS.</h1>
           <p className="vh-mvp-copy">
-            This is the protected customer area for the Vione Hernal MVP. It is backed by Supabase Auth and row-level
-            security, and it now tracks your live payment attempts and order history.
+            View your orders, payment status, and purchase history in one secure place, with live updates for completed transactions.
           </p>
           <div className="vh-actions">
             <Link className="vh-button" href="/shop">
@@ -139,7 +138,7 @@ export default async function DashboardPage() {
       {ordersError || paymentsError || orderItemsError ? (
         <div className="vh-status vh-status--error" style={{ marginTop: "2rem" }}>
           Supabase commerce tables are not set up yet. Run `supabase/schema.sql` in the Supabase SQL Editor, then
-          refresh and try again. 
+          refresh and try again.
         </div>
       ) : null}
 
@@ -311,16 +310,16 @@ export default async function DashboardPage() {
                           {formatAmountWithUnit(payment.amount_expected, getPaymentMethodLabel(payment.payment_method))}
                         </strong>
                       </div>
-                          <div className="vh-history-metric vh-history-metric--focus">
-                            <span className="vh-history-metric__label">Received Amount</span>
-                            <strong className="vh-history-metric__value">
-                              {payment.amount_received
-                                ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
-                                : payment.status === "failed"
-                                  ? "Payment attempt failed"
-                                  : "Waiting for on-chain confirmation"}
-                            </strong>
-                          </div>
+                      <div className="vh-history-metric vh-history-metric--focus">
+                        <span className="vh-history-metric__label">Received Amount</span>
+                        <strong className="vh-history-metric__value">
+                          {payment.amount_received
+                            ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
+                            : payment.status === "failed"
+                              ? "Payment attempt failed"
+                              : "Waiting for on-chain confirmation"}
+                        </strong>
+                      </div>
                       <div className="vh-history-metric">
                         <span className="vh-history-metric__label">Checkout Total</span>
                         <strong className="vh-history-metric__value">

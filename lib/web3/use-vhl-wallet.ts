@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 
-import { connectWallet, getInjectedEthereum, getWalletSnapshot } from "@/lib/web3/metamask";
+import {
+  connectWallet,
+  getMetaMaskMobileInstallUrl,
+  getWalletSnapshot,
+  hasWalletConnector,
+  subscribeToWalletEvents,
+} from "@/lib/web3/metamask";
 
 type WalletState = {
   account: string | null;
@@ -13,6 +19,7 @@ type WalletState = {
   isConnecting: boolean;
   isLoading: boolean;
   error: string;
+  mobileInstallUrl: string | null;
 };
 
 const initialState: WalletState = {
@@ -24,6 +31,7 @@ const initialState: WalletState = {
   isConnecting: false,
   isLoading: true,
   error: "",
+  mobileInstallUrl: null,
 };
 
 export function useVhlWallet() {
@@ -31,61 +39,68 @@ export function useVhlWallet() {
 
   useEffect(() => {
     let cancelled = false;
+    let unsubscribe = () => {};
 
     async function syncWallet() {
-      const snapshot = await getWalletSnapshot();
+      try {
+        const snapshot = await getWalletSnapshot();
 
-      if (cancelled) {
-        return;
+        if (cancelled) {
+          return;
+        }
+
+        setState((previous) => ({
+          ...previous,
+          ...snapshot,
+          isLoading: false,
+          error: previous.error && snapshot.account ? "" : previous.error,
+          mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+        }));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setState((previous) => ({
+          ...previous,
+          hasProvider: hasWalletConnector(),
+          isLoading: false,
+          error: error instanceof Error ? error.message : "Unable to check the wallet connection right now.",
+          mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+        }));
       }
-
-      setState((previous) => ({
-        ...previous,
-        ...snapshot,
-        isLoading: false,
-        error: previous.error && snapshot.account ? "" : previous.error,
-      }));
     }
 
     setState((previous) => ({
       ...previous,
-      hasProvider: Boolean(getInjectedEthereum()),
+      hasProvider: hasWalletConnector(),
       isLoading: true,
+      mobileInstallUrl: getMetaMaskMobileInstallUrl(),
     }));
 
     void syncWallet();
-
-    const ethereum = getInjectedEthereum();
-
-    if (!ethereum?.on) {
-      return () => {
-        cancelled = true;
-      };
-    }
 
     const handleWalletUpdate = () => {
       void syncWallet();
     };
 
-    ethereum.on("accountsChanged", handleWalletUpdate);
-    ethereum.on("chainChanged", handleWalletUpdate);
+    void (async () => {
+      unsubscribe = await subscribeToWalletEvents(handleWalletUpdate);
+    })();
 
     return () => {
       cancelled = true;
-
-      if (ethereum.removeListener) {
-        ethereum.removeListener("accountsChanged", handleWalletUpdate);
-        ethereum.removeListener("chainChanged", handleWalletUpdate);
-      }
+      unsubscribe();
     };
   }, []);
 
   async function handleConnectWallet() {
     setState((previous) => ({
       ...previous,
-      hasProvider: Boolean(getInjectedEthereum()),
+      hasProvider: hasWalletConnector(),
       isConnecting: true,
       error: "",
+      mobileInstallUrl: getMetaMaskMobileInstallUrl(),
     }));
 
     try {
@@ -102,6 +117,7 @@ export function useVhlWallet() {
         ...snapshot,
         isConnecting: false,
         isLoading: false,
+        mobileInstallUrl: getMetaMaskMobileInstallUrl(),
       });
     } catch (error) {
       const message =
@@ -116,10 +132,11 @@ export function useVhlWallet() {
 
       setState((previous) => ({
         ...previous,
-        hasProvider: Boolean(getInjectedEthereum()),
+        hasProvider: hasWalletConnector(),
         isConnecting: false,
         isLoading: false,
         error: message,
+        mobileInstallUrl: getMetaMaskMobileInstallUrl(),
       }));
     }
   }

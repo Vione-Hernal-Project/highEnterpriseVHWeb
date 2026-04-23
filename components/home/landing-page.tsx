@@ -13,7 +13,7 @@ export async function LandingPage() {
   const accountCtaHref = user ? "/dashboard" : "/sign-up";
 
   return (
-    <div className="storefront-app-view">
+    <div className="storefront-app-view vh-home-page">
       <h1 className="u-screen-reader">Vione Hernal Homepage</h1>
 
       <ul className="story-hero ui-list">
@@ -105,11 +105,12 @@ export async function LandingPage() {
         </li>
       </ul>
 
-      <div className="u-center">
-        <h3 className="u-margin-tb--none u-padding-t--lg">Featured Items</h3>
+      <div className="vh-home-page__featured-shell">
+        <div className="vh-home-page__featured-header">
+          <h3 className="vh-home-page__featured-title u-margin-tb--none">Featured Items</h3>
+        </div>
+        <FeaturedProducts products={featuredProducts} />
       </div>
-
-      <FeaturedProducts products={featuredProducts} />
     </div>
   );
 }

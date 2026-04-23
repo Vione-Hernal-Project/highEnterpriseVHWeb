@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { MobileHeader } from "@/components/site/mobile-header";
 import { HeaderStoreLinks } from "@/components/storefront/header-store-links";
 import { WalletStatus } from "@/components/wallet/wallet-status";
 
@@ -12,6 +13,8 @@ type Props = {
 export function SiteHeader({ signedIn, isManagementUser }: Props) {
   return (
     <header className="global-header vh-site-header">
+      <MobileHeader signedIn={signedIn} isManagementUser={isManagementUser} />
+
       <nav className="global-header__tertiary-nav vh-header-utility" aria-label="Tertiary">
         <a href="#page-content" className="btn btn--xs skip-link js-focus-to u-capitalize">
           Skip To Main Content

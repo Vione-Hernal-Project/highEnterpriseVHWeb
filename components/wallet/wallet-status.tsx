@@ -7,7 +7,8 @@ import { formatWalletAddress } from "@/lib/utils";
 import { ETHEREUM_MAINNET_NETWORK_NAME } from "@/lib/web3/network";
 
 export function WalletStatus() {
-  const { account, error, hasProvider, isConnecting, isLoading, isSupportedChain, vhlBalance, connectWallet } = useVhlWallet();
+  const { account, error, hasProvider, isConnecting, isLoading, isSupportedChain, mobileInstallUrl, vhlBalance, connectWallet } =
+    useVhlWallet();
 
   const connectedLabel = account
     ? `${formatWalletAddress(account)} · ${
@@ -38,6 +39,12 @@ export function WalletStatus() {
           {hasProvider ? ETHEREUM_MAINNET_NETWORK_NAME : "MetaMask required"}
           {isLoading ? " · checking wallet" : ""}
         </span>
+      ) : null}
+
+      {!account && !hasProvider && mobileInstallUrl ? (
+        <a className="vh-wallet-note vh-wallet-note--link" href={mobileInstallUrl} target="_blank" rel="noreferrer">
+          Get MetaMask Mobile
+        </a>
       ) : null}
 
       {error ? <span className="vh-wallet-note vh-wallet-note--error">{error}</span> : null}
