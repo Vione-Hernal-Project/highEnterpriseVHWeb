@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
+  clearPendingMetaMaskMobileConnectIntent,
   connectWallet,
+  disconnectWallet,
+  getMetaMaskInstallTarget,
+  getMetaMaskMobileDappUrl,
   getMetaMaskMobileInstallUrl,
   getWalletSnapshot,
+  hasPendingMetaMaskMobileConnectIntent,
   hasWalletConnector,
   subscribeToWalletEvents,
+  type MetaMaskInstallTarget,
 } from "@/lib/web3/metamask";
+
+const MOBILE_DEEPLINK_FALLBACK_DELAY_MS = 1600;
 
 type WalletState = {
   account: string | null;
@@ -17,9 +25,14 @@ type WalletState = {
   vhlBalance: string | null;
   hasProvider: boolean;
   isConnecting: boolean;
+  isDisconnecting: boolean;
   isLoading: boolean;
   error: string;
+  notice: string;
+  showInstallFallback: boolean;
+  installTarget: MetaMaskInstallTarget;
   mobileInstallUrl: string | null;
+  mobileDappUrl: string | null;
 };
 
 const initialState: WalletState = {
@@ -29,13 +42,47 @@ const initialState: WalletState = {
   vhlBalance: null,
   hasProvider: false,
   isConnecting: false,
+  isDisconnecting: false,
   isLoading: true,
   error: "",
+  notice: "",
+  showInstallFallback: false,
+  installTarget: getMetaMaskInstallTarget(),
   mobileInstallUrl: null,
+  mobileDappUrl: null,
 };
 
 export function useVhlWallet() {
   const [state, setState] = useState<WalletState>(initialState);
+  const mobileInstallFallbackTimerRef = useRef<number | null>(null);
+
+  function clearMobileInstallFallbackTimer() {
+    if (mobileInstallFallbackTimerRef.current !== null) {
+      window.clearTimeout(mobileInstallFallbackTimerRef.current);
+      mobileInstallFallbackTimerRef.current = null;
+    }
+  }
+
+  function scheduleMobileInstallFallback() {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    clearMobileInstallFallbackTimer();
+
+    mobileInstallFallbackTimerRef.current = window.setTimeout(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      setState((previous) => ({
+        ...previous,
+        isConnecting: false,
+        showInstallFallback: true,
+        installTarget: getMetaMaskInstallTarget(),
+      }));
+    }, MOBILE_DEEPLINK_FALLBACK_DELAY_MS);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -53,9 +100,77 @@ export function useVhlWallet() {
           ...previous,
           ...snapshot,
           isLoading: false,
+          isDisconnecting: false,
+          showInstallFallback: snapshot.account ? false : previous.showInstallFallback || !snapshot.hasProvider,
+          installTarget: getMetaMaskInstallTarget(),
           error: previous.error && snapshot.account ? "" : previous.error,
+          notice: snapshot.account ? "" : previous.notice,
           mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+          mobileDappUrl: getMetaMaskMobileDappUrl(),
         }));
+
+        if (!snapshot.account && hasPendingMetaMaskMobileConnectIntent()) {
+          try {
+            setState((previous) => ({
+              ...previous,
+              isConnecting: true,
+              error: "",
+              notice: "",
+            }));
+
+            await connectWallet({ allowMobileDeeplink: false });
+
+            if (cancelled) {
+              return;
+            }
+
+            const connectedSnapshot = await getWalletSnapshot();
+
+            if (cancelled) {
+              return;
+            }
+
+            setState((previous) => ({
+              ...previous,
+              ...connectedSnapshot,
+              isConnecting: false,
+              isLoading: false,
+              showInstallFallback: false,
+              installTarget: getMetaMaskInstallTarget(),
+              error: "",
+              notice: "",
+              mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+              mobileDappUrl: getMetaMaskMobileDappUrl(),
+            }));
+          } catch (error) {
+            if (cancelled) {
+              return;
+            }
+
+            const message =
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              error.code === 4001
+                ? "Wallet connection was cancelled."
+                : error instanceof Error
+                  ? error.message
+                  : "Unable to connect MetaMask right now.";
+
+            setState((previous) => ({
+              ...previous,
+              isConnecting: false,
+              showInstallFallback: previous.showInstallFallback || !previous.hasProvider,
+              installTarget: getMetaMaskInstallTarget(),
+              error: message,
+              notice: "",
+              mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+              mobileDappUrl: getMetaMaskMobileDappUrl(),
+            }));
+          } finally {
+            clearPendingMetaMaskMobileConnectIntent();
+          }
+        }
       } catch (error) {
         if (cancelled) {
           return;
@@ -65,8 +180,13 @@ export function useVhlWallet() {
           ...previous,
           hasProvider: hasWalletConnector(),
           isLoading: false,
+          isDisconnecting: false,
+          showInstallFallback: !hasWalletConnector(),
+          installTarget: getMetaMaskInstallTarget(),
           error: error instanceof Error ? error.message : "Unable to check the wallet connection right now.",
+          notice: "",
           mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+          mobileDappUrl: getMetaMaskMobileDappUrl(),
         }));
       }
     }
@@ -75,7 +195,11 @@ export function useVhlWallet() {
       ...previous,
       hasProvider: hasWalletConnector(),
       isLoading: true,
+      showInstallFallback: !hasWalletConnector(),
+      installTarget: getMetaMaskInstallTarget(),
+      notice: "",
       mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+      mobileDappUrl: getMetaMaskMobileDappUrl(),
     }));
 
     void syncWallet();
@@ -90,17 +214,24 @@ export function useVhlWallet() {
 
     return () => {
       cancelled = true;
+      clearMobileInstallFallbackTimer();
       unsubscribe();
     };
   }, []);
 
   async function handleConnectWallet() {
+    clearMobileInstallFallbackTimer();
+
     setState((previous) => ({
       ...previous,
       hasProvider: hasWalletConnector(),
       isConnecting: true,
       error: "",
+      notice: "",
+      showInstallFallback: false,
+      installTarget: getMetaMaskInstallTarget(),
       mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+      mobileDappUrl: getMetaMaskMobileDappUrl(),
     }));
 
     try {
@@ -117,9 +248,22 @@ export function useVhlWallet() {
         ...snapshot,
         isConnecting: false,
         isLoading: false,
+        showInstallFallback: false,
+        installTarget: getMetaMaskInstallTarget(),
         mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+        mobileDappUrl: getMetaMaskMobileDappUrl(),
       });
     } catch (error) {
+      const isRedirect =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "METAMASK_MOBILE_REDIRECT";
+
+      if (isRedirect) {
+        scheduleMobileInstallFallback();
+      }
+
       const message =
         typeof error === "object" &&
         error !== null &&
@@ -133,10 +277,54 @@ export function useVhlWallet() {
       setState((previous) => ({
         ...previous,
         hasProvider: hasWalletConnector(),
-        isConnecting: false,
+        isConnecting: isRedirect,
         isLoading: false,
-        error: message,
+        showInstallFallback: isRedirect ? false : previous.showInstallFallback || !previous.hasProvider,
+        installTarget: getMetaMaskInstallTarget(),
+        error: isRedirect ? "" : message,
+        notice: "",
         mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+        mobileDappUrl: getMetaMaskMobileDappUrl(),
+      }));
+    }
+  }
+
+  async function handleDisconnectWallet() {
+    clearMobileInstallFallbackTimer();
+
+    setState((previous) => ({
+      ...previous,
+      isDisconnecting: true,
+      error: "",
+      notice: "",
+      installTarget: getMetaMaskInstallTarget(),
+      mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+      mobileDappUrl: getMetaMaskMobileDappUrl(),
+    }));
+
+    try {
+      await disconnectWallet();
+      const snapshot = await getWalletSnapshot();
+
+      setState({
+        ...initialState,
+        ...snapshot,
+        isLoading: false,
+        isDisconnecting: false,
+        notice: "Wallet disconnected on this device.",
+        showInstallFallback: !snapshot.hasProvider,
+        installTarget: getMetaMaskInstallTarget(),
+        mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+        mobileDappUrl: getMetaMaskMobileDappUrl(),
+      });
+    } catch (error) {
+      setState((previous) => ({
+        ...previous,
+        isDisconnecting: false,
+        installTarget: getMetaMaskInstallTarget(),
+        error: error instanceof Error ? error.message : "Unable to disconnect the wallet right now.",
+        mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+        mobileDappUrl: getMetaMaskMobileDappUrl(),
       }));
     }
   }
@@ -145,5 +333,6 @@ export function useVhlWallet() {
     ...state,
     isConnected: Boolean(state.account),
     connectWallet: handleConnectWallet,
+    disconnectWallet: handleDisconnectWallet,
   };
 }

@@ -7,8 +7,22 @@ import { formatWalletAddress } from "@/lib/utils";
 import { ETHEREUM_MAINNET_NETWORK_NAME } from "@/lib/web3/network";
 
 export function WalletStatus() {
-  const { account, error, hasProvider, isConnecting, isLoading, isSupportedChain, mobileInstallUrl, vhlBalance, connectWallet } =
-    useVhlWallet();
+  const {
+    account,
+    disconnectWallet,
+    error,
+    hasProvider,
+    installTarget,
+    isConnecting,
+    isDisconnecting,
+    isLoading,
+    isSupportedChain,
+    mobileInstallUrl,
+    notice,
+    showInstallFallback,
+    vhlBalance,
+    connectWallet,
+  } = useVhlWallet();
 
   const connectedLabel = account
     ? `${formatWalletAddress(account)} · ${
@@ -23,7 +37,14 @@ export function WalletStatus() {
   return (
     <div className="vh-wallet-status" aria-live="polite">
       {account ? (
-        <span className="vh-wallet-pill">{connectedLabel}</span>
+        <>
+          <span className="vh-wallet-pill">{connectedLabel}</span>
+          <div className="vh-wallet-actions">
+            <button type="button" className="vh-wallet-action" disabled={isDisconnecting} onClick={disconnectWallet}>
+              {isDisconnecting ? "Disconnecting..." : "Disconnect Wallet"}
+            </button>
+          </div>
+        </>
       ) : (
         <button type="button" className="vh-wallet-pill vh-wallet-pill--button" disabled={isConnecting} onClick={connectWallet}>
           {isConnecting ? "Connecting..." : "Connect Wallet"}
@@ -41,13 +62,27 @@ export function WalletStatus() {
         </span>
       ) : null}
 
-      {!account && !hasProvider && mobileInstallUrl ? (
-        <a className="vh-wallet-note vh-wallet-note--link" href={mobileInstallUrl} target="_blank" rel="noreferrer">
-          Get MetaMask Mobile
-        </a>
-      ) : null}
-
+      {notice ? <span className="vh-wallet-note">{notice}</span> : null}
       {error ? <span className="vh-wallet-note vh-wallet-note--error">{error}</span> : null}
+
+      {!account && showInstallFallback ? (
+        <div className="vh-wallet-fallback">
+          <div className="vh-wallet-fallback__header">
+            <span className="vh-wallet-fallback__eyebrow">Install MetaMask</span>
+          </div>
+          <p className="vh-wallet-fallback__copy">
+            Install MetaMask from the official source only. Never download wallet apps from unofficial links.
+          </p>
+          <a className="vh-wallet-fallback__button" href={installTarget.href} target="_blank" rel="noreferrer">
+            {installTarget.label}
+          </a>
+          {!hasProvider && mobileInstallUrl ? (
+            <a className="vh-wallet-note vh-wallet-note--link" href={mobileInstallUrl} target="_blank" rel="noreferrer">
+              View official MetaMask download options
+            </a>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

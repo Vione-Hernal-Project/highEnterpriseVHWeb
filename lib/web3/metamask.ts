@@ -37,11 +37,24 @@ type WalletEventSource = Eip1193Provider & {
   removeListener?: (...args: unknown[]) => void;
 };
 
+export type MetaMaskInstallTarget = {
+  href: string;
+  label: string;
+  platform: "ios" | "android" | "desktop";
+};
+
 const METAMASK_CONNECT_PUBLIC_RPC_URL =
   process.env.NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL?.trim() ||
   process.env.NEXT_PUBLIC_ETHEREUM_MAINNET_RPC_URL?.trim() ||
   "";
 const METAMASK_MOBILE_INSTALL_URL = "https://metamask.io/download/";
+const METAMASK_DESKTOP_DOWNLOAD_URL = "https://metamask.io/download/";
+const METAMASK_IOS_APP_STORE_URL = "https://apps.apple.com/us/app/metamask-trade-crypto/id1438144202";
+const METAMASK_ANDROID_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=io.metamask";
+const METAMASK_MOBILE_DAPP_LINK_BASE = "https://metamask.app.link/dapp/";
+const METAMASK_MOBILE_ACTION_QUERY_PARAM = "vh_wallet_action";
+const METAMASK_MOBILE_CONNECT_ACTION = "connect";
+const WALLET_DISCONNECT_OVERRIDE_KEY = "vh.wallet.disconnectOverride";
 
 let metaMaskConnectClientPromise: Promise<MetamaskConnectEVM> | null = null;
 
@@ -62,12 +75,102 @@ function isLikelyMobileBrowser() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) || touchMac;
 }
 
+function isMetaMaskMobileBrowser() {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  return /MetaMaskMobile/i.test(navigator.userAgent || "");
+}
+
+function readDisconnectOverride() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(WALLET_DISCONNECT_OVERRIDE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDisconnectOverride(value: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    if (value) {
+      window.localStorage.setItem(WALLET_DISCONNECT_OVERRIDE_KEY, "1");
+    } else {
+      window.localStorage.removeItem(WALLET_DISCONNECT_OVERRIDE_KEY);
+    }
+  } catch {
+    // Ignore storage access failures so wallet UX keeps working in restricted browsers.
+  }
+}
+
+function shouldUseMetaMaskMobileDeeplink() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return !getInjectedEthereum() && isLikelyMobileBrowser() && !isMetaMaskMobileBrowser();
+}
+
+function buildMetaMaskMobileDappLink(action?: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const currentUrl = new URL(window.location.href);
+
+  if (action) {
+    currentUrl.searchParams.set(METAMASK_MOBILE_ACTION_QUERY_PARAM, action);
+  }
+
+  const dappTarget = `${currentUrl.host}${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`.replace(/^\/+/, "");
+
+  if (!dappTarget) {
+    return null;
+  }
+
+  return `${METAMASK_MOBILE_DAPP_LINK_BASE}${dappTarget}`;
+}
+
+function clearPendingMetaMaskMobileAction() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentUrl = new URL(window.location.href);
+
+  if (!currentUrl.searchParams.has(METAMASK_MOBILE_ACTION_QUERY_PARAM)) {
+    return;
+  }
+
+  currentUrl.searchParams.delete(METAMASK_MOBILE_ACTION_QUERY_PARAM);
+  window.history.replaceState({}, "", `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+}
+
+function openMetaMaskMobileDapp(action: string) {
+  const deeplink = buildMetaMaskMobileDappLink(action);
+
+  if (!deeplink) {
+    return null;
+  }
+
+  window.location.assign(deeplink);
+  return deeplink;
+}
+
 function canUseMetaMaskConnectMobile() {
   if (typeof window === "undefined") {
     return false;
   }
 
-  return !getInjectedEthereum() && isLikelyMobileBrowser() && Boolean(METAMASK_CONNECT_PUBLIC_RPC_URL);
+  return !shouldUseMetaMaskMobileDeeplink() && !getInjectedEthereum() && isLikelyMobileBrowser() && Boolean(METAMASK_CONNECT_PUBLIC_RPC_URL);
 }
 
 async function getMetaMaskConnectClient() {
@@ -91,6 +194,7 @@ async function getMetaMaskConnectClient() {
         showInstallModal: false,
       },
       mobile: {
+        useDeeplink: true,
         // Mobile-only: let MetaMask Connect open the wallet app with its official deeplink flow.
         preferredOpenLink: (deeplink: string) => {
           window.location.assign(deeplink);
@@ -178,6 +282,10 @@ export async function getBrowserProvider() {
 // Uses the quiet account check so the page can restore a previous connection
 // without prompting MetaMask every time the user loads the site.
 export async function getCurrentAccount() {
+  if (readDisconnectOverride()) {
+    return null;
+  }
+
   const ethereum = await getActiveEip1193Provider();
 
   if (!ethereum) {
@@ -193,7 +301,9 @@ export async function getCurrentAccount() {
 
 // Uses the standard MetaMask request flow when the user explicitly clicks
 // the connect action in the UI.
-export async function connectWallet() {
+export async function connectWallet(options?: { allowMobileDeeplink?: boolean }) {
+  writeDisconnectOverride(false);
+
   const ethereum = getInjectedEthereum();
 
   if (ethereum) {
@@ -201,7 +311,15 @@ export async function connectWallet() {
       method: "eth_requestAccounts",
     })) as string[];
 
+    clearPendingMetaMaskMobileAction();
     return accounts[0] ?? null;
+  }
+
+  if (shouldUseMetaMaskMobileDeeplink() && options?.allowMobileDeeplink !== false) {
+    openMetaMaskMobileDapp(METAMASK_MOBILE_CONNECT_ACTION);
+    throw Object.assign(new Error("Opening MetaMask Mobile. Continue in the MetaMask app to connect your wallet."), {
+      code: "METAMASK_MOBILE_REDIRECT",
+    });
   }
 
   const connectClient = await getMetaMaskConnectClient();
@@ -223,6 +341,32 @@ export async function connectWallet() {
   });
 
   return accounts[0] ?? null;
+}
+
+export async function disconnectWallet() {
+  writeDisconnectOverride(true);
+  clearPendingMetaMaskMobileAction();
+
+  const ethereum = getInjectedEthereum();
+
+  if (ethereum) {
+    try {
+      await ethereum.request({
+        method: "wallet_revokePermissions",
+        params: [{ eth_accounts: {} }],
+      });
+    } catch {
+      // Some providers do not support programmatic permission revocation.
+      // We still keep the frontend disconnected for this device/session.
+    }
+  }
+
+  try {
+    const connectClient = await getMetaMaskConnectClient();
+    await connectClient?.disconnect();
+  } catch {
+    // Best-effort cleanup for older MetaMask Connect sessions.
+  }
 }
 
 export async function checkChain(provider?: BrowserProvider | null) {
@@ -338,16 +482,61 @@ export async function getWalletSnapshot(): Promise<WalletSnapshot> {
     chainId,
     isSupportedChain,
     vhlBalance,
-    hasProvider: Boolean(provider) || canUseMetaMaskConnectMobile(),
+    hasProvider: Boolean(provider) || shouldUseMetaMaskMobileDeeplink() || canUseMetaMaskConnectMobile(),
   };
 }
 
 export function hasWalletConnector() {
-  return Boolean(getInjectedEthereum()) || canUseMetaMaskConnectMobile();
+  return Boolean(getInjectedEthereum()) || shouldUseMetaMaskMobileDeeplink() || canUseMetaMaskConnectMobile();
 }
 
 export function getMetaMaskMobileInstallUrl() {
   return isLikelyMobileBrowser() ? METAMASK_MOBILE_INSTALL_URL : null;
+}
+
+export function getMetaMaskInstallTarget(): MetaMaskInstallTarget {
+  if (typeof navigator !== "undefined") {
+    const userAgent = navigator.userAgent || "";
+
+    if (/iPhone|iPad|iPod/i.test(userAgent)) {
+      return {
+        href: METAMASK_IOS_APP_STORE_URL,
+        label: "Install MetaMask for iPhone",
+        platform: "ios",
+      };
+    }
+
+    if (/Android/i.test(userAgent)) {
+      return {
+        href: METAMASK_ANDROID_PLAY_STORE_URL,
+        label: "Install MetaMask for Android",
+        platform: "android",
+      };
+    }
+  }
+
+  return {
+    href: METAMASK_DESKTOP_DOWNLOAD_URL,
+    label: "Install MetaMask",
+    platform: "desktop",
+  };
+}
+
+export function getMetaMaskMobileDappUrl() {
+  return shouldUseMetaMaskMobileDeeplink() ? buildMetaMaskMobileDappLink(METAMASK_MOBILE_CONNECT_ACTION) : null;
+}
+
+export function hasPendingMetaMaskMobileConnectIntent() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const currentUrl = new URL(window.location.href);
+  return currentUrl.searchParams.get(METAMASK_MOBILE_ACTION_QUERY_PARAM) === METAMASK_MOBILE_CONNECT_ACTION;
+}
+
+export function clearPendingMetaMaskMobileConnectIntent() {
+  clearPendingMetaMaskMobileAction();
 }
 
 export async function subscribeToWalletEvents(listener: () => void) {

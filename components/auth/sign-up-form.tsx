@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { PasswordField } from "@/components/auth/password-field";
+import { getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Props = {
@@ -37,36 +38,56 @@ export function SignUpForm({ configError = null }: Props) {
       const formData = new FormData(event.currentTarget);
       const email = String(formData.get("email") || "").trim();
       const password = String(formData.get("password") || "");
-      const supabase = createSupabaseBrowserClient();
-
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+      const response = await fetch("/api/auth/sign-up", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
       });
+      const payload = await readJsonSafely<{
+        error?: string;
+        sessionCreated?: boolean;
+        requiresEmailConfirmation?: boolean;
+        isExistingUserLike?: boolean;
+      }>(response);
 
-      if (error) {
-        throw error;
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to create the account right now."));
       }
 
-      if (!data.session && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      if (payload?.isExistingUserLike) {
         setGenericSignUpMessage();
+        return;
+      }
+
+      if (payload?.sessionCreated) {
+        const supabase = createSupabaseBrowserClient();
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        setSuccess(true);
+        setMessage("Account created and signed in.");
+        router.push("/dashboard");
+        router.refresh();
         return;
       }
 
       setSuccess(true);
       setMessage(
-        data.session
-          ? "Account created and signed in."
+        payload?.requiresEmailConfirmation
+          ? "Account created. Please confirm your email before signing in."
           : "Account created. If email confirmation is enabled, please confirm your email before signing in.",
       );
-
-      if (data.session) {
-        router.push("/dashboard");
-        router.refresh();
-      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unable to create the account right now.";
       const normalizedMessage = errorMessage.toLowerCase();

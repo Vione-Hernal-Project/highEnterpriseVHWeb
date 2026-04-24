@@ -125,7 +125,7 @@ export default async function DashboardPage() {
               <p className="u-margin-b--none">{role}</p>
             </div>
             <div>
-              <strong>Wallet Placeholder</strong>
+              <strong>Saved Wallet Address</strong>
               <p className="u-margin-b--none">{formatWalletAddress(profile?.wallet_address)}</p>
             </div>
           </div>
