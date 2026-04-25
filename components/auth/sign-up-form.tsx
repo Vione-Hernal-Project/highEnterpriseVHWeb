@@ -65,8 +65,9 @@ export function SignUpForm({ configError = null }: Props) {
       }
 
       if (payload?.isExistingUserLike) {
-        setConfirmationEmail(email);
-        setGenericSignUpMessage();
+        setSuccess(false);
+        setConfirmationEmail("");
+        setMessage("This email may already be registered. Try signing in, or use forgot password if you need a new password.");
         return;
       }
 
