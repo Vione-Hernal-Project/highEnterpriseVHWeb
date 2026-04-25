@@ -18,6 +18,7 @@ import {
 } from "@/lib/web3/metamask";
 
 const MOBILE_DEEPLINK_FALLBACK_DELAY_MS = 1600;
+const WALLET_CONNECT_TIMEOUT_MS = 90_000;
 
 type WalletState = {
   account: string | null;
@@ -79,10 +80,30 @@ export function useVhlWallet() {
       setState((previous) => ({
         ...previous,
         isConnecting: false,
-        showInstallFallback: true,
+        error: previous.error || "MetaMask did not return a wallet connection to this browser. Return to this page and try again.",
+        showInstallFallback: !previous.hasProvider,
         installTarget: getMetaMaskInstallTarget(),
       }));
     }, MOBILE_DEEPLINK_FALLBACK_DELAY_MS);
+  }
+
+  function withConnectTimeout<T>(promise: Promise<T>) {
+    return new Promise<T>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        reject(new Error("MetaMask did not finish connecting. Return to this page and try again."));
+      }, WALLET_CONNECT_TIMEOUT_MS);
+
+      promise.then(
+        (value) => {
+          window.clearTimeout(timeoutId);
+          resolve(value);
+        },
+        (error) => {
+          window.clearTimeout(timeoutId);
+          reject(error);
+        },
+      );
+    });
   }
 
   useEffect(() => {
@@ -211,13 +232,31 @@ export function useVhlWallet() {
       void syncWallet({ eager: true });
     };
 
+    const handlePageReturn = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+
+      void syncWallet({ eager: true });
+    };
+
     void (async () => {
       unsubscribe = await subscribeToWalletEvents(handleWalletUpdate);
     })();
 
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handlePageReturn);
+    }
+
+    window.addEventListener("focus", handlePageReturn);
+
     return () => {
       cancelled = true;
       clearMobileInstallFallbackTimer();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handlePageReturn);
+      }
+      window.removeEventListener("focus", handlePageReturn);
       unsubscribe();
     };
   }, []);
@@ -238,7 +277,7 @@ export function useVhlWallet() {
     }));
 
     try {
-      const account = await connectWallet();
+      const account = await withConnectTimeout(connectWallet());
 
       if (!account) {
         throw new Error("No wallet account was returned.");
@@ -280,11 +319,11 @@ export function useVhlWallet() {
       setState((previous) => ({
         ...previous,
         hasProvider: hasWalletConnector(),
-        isConnecting: isRedirect,
+        isConnecting: false,
         isLoading: false,
         showInstallFallback: isRedirect ? false : previous.showInstallFallback || !previous.hasProvider,
         installTarget: getMetaMaskInstallTarget(),
-        error: isRedirect ? "" : message,
+        error: message,
         notice: "",
         mobileInstallUrl: getMetaMaskMobileInstallUrl(),
         mobileDappUrl: getMetaMaskMobileDappUrl(),

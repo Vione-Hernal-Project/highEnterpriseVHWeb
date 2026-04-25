@@ -66,6 +66,8 @@ const METAMASK_MOBILE_ACTION_QUERY_PARAM = "vh_wallet_action";
 const METAMASK_MOBILE_CONNECT_ACTION = "connect";
 const WALLET_DISCONNECT_OVERRIDE_KEY = "vh.wallet.disconnectOverride";
 const WALLET_CONNECTED_PREFERENCE_KEY = "vh.wallet.connectedPreference";
+const METAMASK_CONNECT_MOBILE_REQUIRED_MESSAGE =
+  "MetaMask opened this site in its in-app browser, so the original browser cannot receive that wallet session. Add NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL to enable return-to-site mobile wallet approval.";
 
 let metaMaskConnectClientPromise: Promise<MetamaskConnectEVM> | null = null;
 let eip6963ProviderListenerAttached = false;
@@ -187,7 +189,7 @@ function shouldUseMetaMaskMobileDeeplink() {
     return false;
   }
 
-  return !getInjectedEthereum() && isLikelyMobileBrowser() && !isMetaMaskMobileBrowser();
+  return !getInjectedEthereum() && isLikelyMobileBrowser() && !isMetaMaskMobileBrowser() && !canUseMetaMaskConnectMobile();
 }
 
 function buildMetaMaskMobileDappLink(action?: string) {
@@ -241,7 +243,7 @@ function canUseMetaMaskConnectMobile() {
     return false;
   }
 
-  return !shouldUseMetaMaskMobileDeeplink() && !getInjectedEthereum() && isLikelyMobileBrowser() && Boolean(METAMASK_CONNECT_PUBLIC_RPC_URL);
+  return !getInjectedEthereum() && isLikelyMobileBrowser() && !isMetaMaskMobileBrowser() && Boolean(METAMASK_CONNECT_PUBLIC_RPC_URL);
 }
 
 async function getMetaMaskConnectClient() {
@@ -265,7 +267,7 @@ async function getMetaMaskConnectClient() {
         showInstallModal: false,
       },
       mobile: {
-        useDeeplink: true,
+        useDeeplink: false,
         // Mobile-only: let MetaMask Connect open the wallet app with its official deeplink flow.
         preferredOpenLink: (deeplink: string) => {
           window.location.assign(deeplink);
@@ -448,7 +450,7 @@ export async function connectWallet(options?: { allowMobileDeeplink?: boolean })
 
   if (shouldUseMetaMaskMobileDeeplink() && options?.allowMobileDeeplink !== false) {
     openMetaMaskMobileDapp(METAMASK_MOBILE_CONNECT_ACTION);
-    throw Object.assign(new Error("Opening MetaMask Mobile. Continue in the MetaMask app to connect your wallet."), {
+    throw Object.assign(new Error(METAMASK_CONNECT_MOBILE_REQUIRED_MESSAGE), {
       code: "METAMASK_MOBILE_REDIRECT",
     });
   }
