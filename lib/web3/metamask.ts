@@ -18,6 +18,7 @@ type InjectedEthereum = Eip1193Provider & {
   isMetaMask?: boolean;
   isBraveWallet?: boolean;
   isCoinbaseWallet?: boolean;
+  isPhantom?: boolean;
   _metamask?: unknown;
   on?: (event: "accountsChanged" | "chainChanged", listener: (...args: unknown[]) => void) => void;
   removeListener?: (event: "accountsChanged" | "chainChanged", listener: (...args: unknown[]) => void) => void;
@@ -55,6 +56,7 @@ const METAMASK_MOBILE_DAPP_LINK_BASE = "https://metamask.app.link/dapp/";
 const METAMASK_MOBILE_ACTION_QUERY_PARAM = "vh_wallet_action";
 const METAMASK_MOBILE_CONNECT_ACTION = "connect";
 const WALLET_DISCONNECT_OVERRIDE_KEY = "vh.wallet.disconnectOverride";
+const WALLET_CONNECTED_PREFERENCE_KEY = "vh.wallet.connectedPreference";
 
 let metaMaskConnectClientPromise: Promise<MetamaskConnectEVM> | null = null;
 
@@ -95,6 +97,18 @@ function readDisconnectOverride() {
   }
 }
 
+function readConnectedPreference() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(WALLET_CONNECTED_PREFERENCE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function writeDisconnectOverride(value: boolean) {
   if (typeof window === "undefined") {
     return;
@@ -105,6 +119,22 @@ function writeDisconnectOverride(value: boolean) {
       window.localStorage.setItem(WALLET_DISCONNECT_OVERRIDE_KEY, "1");
     } else {
       window.localStorage.removeItem(WALLET_DISCONNECT_OVERRIDE_KEY);
+    }
+  } catch {
+    // Ignore storage access failures so wallet UX keeps working in restricted browsers.
+  }
+}
+
+function writeConnectedPreference(value: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    if (value) {
+      window.localStorage.setItem(WALLET_CONNECTED_PREFERENCE_KEY, "1");
+    } else {
+      window.localStorage.removeItem(WALLET_CONNECTED_PREFERENCE_KEY);
     }
   } catch {
     // Ignore storage access failures so wallet UX keeps working in restricted browsers.
@@ -233,30 +263,34 @@ async function getActiveEip1193Provider() {
   return connectClient?.getProvider() ?? null;
 }
 
-function selectMetaMaskProvider(ethereum: InjectedEthereum) {
-  if (ethereum.isMetaMask && !ethereum.isBraveWallet && !ethereum.isCoinbaseWallet) {
-    return ethereum;
-  }
+function isPreferredMetaMaskProvider(provider: InjectedEthereum) {
+  return Boolean(provider.isMetaMask) && !provider.isBraveWallet && !provider.isCoinbaseWallet && !provider.isPhantom;
+}
 
+function selectMetaMaskProvider(ethereum: InjectedEthereum) {
   if (Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
-    const exactMetaMaskProvider = ethereum.providers.find(
-      (provider) => provider.isMetaMask && !provider.isBraveWallet && !provider.isCoinbaseWallet,
-    );
+    const exactMetaMaskProvider = ethereum.providers.find((provider) => isPreferredMetaMaskProvider(provider));
 
     if (exactMetaMaskProvider) {
       return exactMetaMaskProvider;
     }
 
-    const metamaskSdkProvider = ethereum.providers.find((provider) => provider.isMetaMask && Boolean(provider._metamask));
+    const metamaskSdkProvider = ethereum.providers.find(
+      (provider) => provider.isMetaMask && Boolean(provider._metamask) && !provider.isPhantom,
+    );
 
     if (metamaskSdkProvider) {
       return metamaskSdkProvider;
     }
 
-    return ethereum.providers.find((provider) => provider.isMetaMask) ?? ethereum.providers[0] ?? ethereum;
+    return ethereum.providers.find((provider) => provider.isMetaMask && !provider.isPhantom) ?? null;
   }
 
-  return ethereum;
+  if (isPreferredMetaMaskProvider(ethereum)) {
+    return ethereum;
+  }
+
+  return ethereum.isMetaMask && !ethereum.isPhantom ? ethereum : null;
 }
 
 export function getInjectedEthereum() {
@@ -273,6 +307,10 @@ export function getInjectedEthereum() {
   return selectMetaMaskProvider(injected);
 }
 
+export function shouldRestoreWalletSession() {
+  return !readDisconnectOverride() && readConnectedPreference();
+}
+
 export async function getBrowserProvider() {
   const ethereum = await getActiveEip1193Provider();
 
@@ -285,8 +323,12 @@ export async function getBrowserProvider() {
 
 // Uses the quiet account check so the page can restore a previous connection
 // without prompting MetaMask every time the user loads the site.
-export async function getCurrentAccount() {
+export async function getCurrentAccount(options?: { eager?: boolean }) {
   if (readDisconnectOverride()) {
+    return null;
+  }
+
+  if (options?.eager === false && !shouldRestoreWalletSession()) {
     return null;
   }
 
@@ -314,9 +356,14 @@ export async function connectWallet(options?: { allowMobileDeeplink?: boolean })
     const accounts = (await ethereum.request({
       method: "eth_requestAccounts",
     })) as string[];
+    const account = accounts[0] ?? null;
+
+    if (account) {
+      writeConnectedPreference(true);
+    }
 
     clearPendingMetaMaskMobileAction();
-    return accounts[0] ?? null;
+    return account;
   }
 
   if (shouldUseMetaMaskMobileDeeplink() && options?.allowMobileDeeplink !== false) {
@@ -344,11 +391,18 @@ export async function connectWallet(options?: { allowMobileDeeplink?: boolean })
     chainIds: [ETHEREUM_MAINNET_CHAIN_HEX],
   });
 
-  return accounts[0] ?? null;
+  const account = accounts[0] ?? null;
+
+  if (account) {
+    writeConnectedPreference(true);
+  }
+
+  return account;
 }
 
 export async function disconnectWallet() {
   writeDisconnectOverride(true);
+  writeConnectedPreference(false);
   clearPendingMetaMaskMobileAction();
 
   const ethereum = getInjectedEthereum();
@@ -475,18 +529,39 @@ export function formatVhlBalance(balance: string | null) {
   }).format(numeric);
 }
 
-export async function getWalletSnapshot(): Promise<WalletSnapshot> {
+export async function getWalletSnapshot(options?: { eager?: boolean }): Promise<WalletSnapshot> {
+  const shouldEagerlyQueryProvider = options?.eager !== false;
+  const hasProvider = hasWalletConnector();
+
+  if (!shouldEagerlyQueryProvider && !shouldRestoreWalletSession()) {
+    return {
+      account: null,
+      chainId: null,
+      isSupportedChain: false,
+      vhlBalance: null,
+      hasProvider,
+    };
+  }
+
   const provider = await getBrowserProvider();
-  const account = await getCurrentAccount();
-  const { chainId, isSupportedChain } = await checkChain(provider);
-  const vhlBalance = account && isSupportedChain ? await getVhlBalance(account, provider) : null;
+  const account = await getCurrentAccount({ eager: shouldEagerlyQueryProvider });
+  let chainId: number | null = null;
+  let isSupportedChain = false;
+  let vhlBalance: string | null = null;
+
+  if (account) {
+    const chainSnapshot = await checkChain(provider);
+    chainId = chainSnapshot.chainId;
+    isSupportedChain = chainSnapshot.isSupportedChain;
+    vhlBalance = isSupportedChain ? await getVhlBalance(account, provider) : null;
+  }
 
   return {
     account,
     chainId,
     isSupportedChain,
     vhlBalance,
-    hasProvider: Boolean(provider) || shouldUseMetaMaskMobileDeeplink() || canUseMetaMaskConnectMobile(),
+    hasProvider: Boolean(provider) || hasProvider,
   };
 }
 

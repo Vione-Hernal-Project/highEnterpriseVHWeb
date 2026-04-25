@@ -565,6 +565,12 @@ textarea {
   margin-bottom: 1rem;
 }
 
+.vh-auth-resend {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+}
+
 .vh-field__label {
   margin: 0;
   color: #6c6c6c;

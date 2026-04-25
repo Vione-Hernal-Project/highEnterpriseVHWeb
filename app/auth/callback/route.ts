@@ -52,6 +52,10 @@ function getCallbackSuccessPath(params: {
   return params.nextPath;
 }
 
+function isPasswordRecoveryFlow(params: { otpType: EmailOtpType | null; nextPath: string }) {
+  return params.otpType === "recovery" || params.nextPath === "/reset-password";
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
@@ -74,8 +78,14 @@ export async function GET(request: Request) {
     const { error } = result;
 
     if (error) {
-      const fallbackPath = nextPath === "/reset-password" ? "/reset-password?error=invalid_or_expired_link" : "/sign-in?error=auth_callback_failed";
+      const fallbackPath = isPasswordRecoveryFlow({ otpType, nextPath })
+        ? "/reset-password?error=invalid_or_expired_link"
+        : "/sign-in?error=confirmation_link_invalid";
       return NextResponse.redirect(new URL(fallbackPath, requestUrl.origin));
+    }
+
+    if (!isPasswordRecoveryFlow({ otpType, nextPath })) {
+      await supabase.auth.signOut();
     }
 
     return applyPendingCookies(

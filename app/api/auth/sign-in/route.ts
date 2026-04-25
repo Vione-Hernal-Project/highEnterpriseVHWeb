@@ -134,6 +134,22 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!data.user?.email_confirmed_at) {
+      await supabase.auth.signOut();
+
+      console.info("[auth:sign-in]", {
+        phase: "failed",
+        status: 403,
+        errorMessage: "Email address is not confirmed yet.",
+        hasSession: false,
+        redirectTo,
+      });
+
+      return applyPendingCookies(
+        NextResponse.json({ error: "Confirm your email before signing in." }, { status: 403 }),
+      );
+    }
+
     await clearRateLimit(ipRateLimitKey);
     await clearRateLimit(emailRateLimitKey);
 

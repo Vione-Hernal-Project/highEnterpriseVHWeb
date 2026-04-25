@@ -12,6 +12,7 @@ import {
   getWalletSnapshot,
   hasPendingMetaMaskMobileConnectIntent,
   hasWalletConnector,
+  shouldRestoreWalletSession,
   subscribeToWalletEvents,
   type MetaMaskInstallTarget,
 } from "@/lib/web3/metamask";
@@ -88,9 +89,11 @@ export function useVhlWallet() {
     let cancelled = false;
     let unsubscribe = () => {};
 
-    async function syncWallet() {
+    async function syncWallet(options?: { eager?: boolean }) {
       try {
-        const snapshot = await getWalletSnapshot();
+        const snapshot = await getWalletSnapshot({
+          eager: options?.eager ?? (shouldRestoreWalletSession() || hasPendingMetaMaskMobileConnectIntent()),
+        });
 
         if (cancelled) {
           return;
@@ -205,7 +208,7 @@ export function useVhlWallet() {
     void syncWallet();
 
     const handleWalletUpdate = () => {
-      void syncWallet();
+      void syncWallet({ eager: true });
     };
 
     void (async () => {
@@ -241,7 +244,7 @@ export function useVhlWallet() {
         throw new Error("No wallet account was returned.");
       }
 
-      const snapshot = await getWalletSnapshot();
+      const snapshot = await getWalletSnapshot({ eager: true });
 
       setState({
         ...initialState,
@@ -304,7 +307,7 @@ export function useVhlWallet() {
 
     try {
       await disconnectWallet();
-      const snapshot = await getWalletSnapshot();
+      const snapshot = await getWalletSnapshot({ eager: true });
 
       setState({
         ...initialState,

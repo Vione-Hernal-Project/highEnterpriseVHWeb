@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { PasswordField } from "@/components/auth/password-field";
+import { ResendConfirmationButton } from "@/components/auth/resend-confirmation-button";
 import { getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -16,11 +17,12 @@ export function SignUpForm({ configError = null }: Props) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
 
   function setGenericSignUpMessage() {
     setSuccess(true);
     setMessage(
-      "If this email can be used, the sign-up request was accepted. Check your inbox if email confirmation is enabled, or try signing in.",
+      "If this email is still waiting for confirmation, you can resend the confirmation email below or try signing in.",
     );
   }
 
@@ -29,6 +31,7 @@ export function SignUpForm({ configError = null }: Props) {
     setLoading(true);
     setMessage("");
     setSuccess(false);
+    setConfirmationEmail("");
 
     try {
       if (configError) {
@@ -60,6 +63,7 @@ export function SignUpForm({ configError = null }: Props) {
       }
 
       if (payload?.isExistingUserLike) {
+        setConfirmationEmail(email);
         setGenericSignUpMessage();
         return;
       }
@@ -83,9 +87,10 @@ export function SignUpForm({ configError = null }: Props) {
       }
 
       setSuccess(true);
+      setConfirmationEmail(email);
       setMessage(
         payload?.requiresEmailConfirmation
-          ? "Account created. Please confirm your email before signing in."
+          ? "Your account is pending email confirmation. Please confirm your email before signing in."
           : "Account created. If email confirmation is enabled, please confirm your email before signing in.",
       );
     } catch (error) {
@@ -123,6 +128,7 @@ export function SignUpForm({ configError = null }: Props) {
       />
       {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}
       {message ? <div className={`vh-status ${success ? "vh-status--success" : "vh-status--error"}`}>{message}</div> : null}
+      {success && confirmationEmail ? <ResendConfirmationButton email={confirmationEmail} /> : null}
       <div className="vh-actions">
         <button type="submit" className="vh-button" disabled={loading || Boolean(configError)}>
           {loading ? "Creating..." : "Create Account"}

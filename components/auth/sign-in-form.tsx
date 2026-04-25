@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { PasswordField } from "@/components/auth/password-field";
+import { ResendConfirmationButton } from "@/components/auth/resend-confirmation-button";
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 
 type Props = {
@@ -16,6 +17,7 @@ export function SignInForm({ nextPath, configError = null }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [submittedEmail, setSubmittedEmail] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,6 +32,7 @@ export function SignInForm({ nextPath, configError = null }: Props) {
       const formData = new FormData(event.currentTarget);
       const email = String(formData.get("email") || "").trim();
       const password = String(formData.get("password") || "");
+      setSubmittedEmail(email);
       const response = await fetch("/api/auth/sign-in", {
         method: "POST",
         headers: {
@@ -76,6 +79,7 @@ export function SignInForm({ nextPath, configError = null }: Props) {
       </div>
       {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}
       {message ? <div className="vh-status vh-status--error">{message}</div> : null}
+      {message.toLowerCase().includes("confirm your email") && submittedEmail ? <ResendConfirmationButton email={submittedEmail} /> : null}
       <div className="vh-actions">
         <button type="submit" className="vh-button" disabled={loading || Boolean(configError)}>
           {loading ? "Signing In..." : "Sign In"}

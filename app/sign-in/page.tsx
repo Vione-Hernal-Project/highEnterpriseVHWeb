@@ -35,7 +35,11 @@ export default async function SignInPage({ searchParams }: Props) {
   const resetSuccessMessage = reset === "success" ? "Password updated. Sign in with your new password." : null;
   const confirmedSuccessMessage = confirmed === "success" ? "Your account has been confirmed. You can now sign in." : null;
   const callbackError =
-    error === "auth_callback_failed" ? "The authentication link could not be completed. Please try again." : null;
+    error === "auth_callback_failed"
+      ? "The authentication link could not be completed. Please try again."
+      : error === "confirmation_link_invalid"
+        ? "This confirmation link is invalid, expired, or already used. Request a fresh confirmation email and try again."
+        : null;
 
   return (
     <section className="vh-page-shell">
