@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 
 type Props = {
   configError?: string | null;
@@ -26,23 +26,27 @@ export function ForgotPasswordForm({ configError = null }: Props) {
 
       const formData = new FormData(event.currentTarget);
       const email = String(formData.get("email") || "").trim();
-      const supabase = createSupabaseBrowserClient();
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/reset-password")}`;
-
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo,
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+        }),
       });
+      const payload = await readJsonSafely<{ error?: string; message?: string }>(response);
 
-      if (error) {
-        throw error;
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to send the reset link right now."));
       }
 
       setSuccess(true);
-      setMessage("If an account exists for that email, a reset link has been sent.");
+      setMessage(payload?.message || "If an account exists for that email, a reset link has been sent.");
       event.currentTarget.reset();
     } catch (error) {
       setSuccess(false);
-      setMessage(error instanceof Error ? error.message : "Unable to send the reset link right now.");
+      setMessage(getErrorMessage(error, "Unable to send the reset link right now."));
     } finally {
       setLoading(false);
     }

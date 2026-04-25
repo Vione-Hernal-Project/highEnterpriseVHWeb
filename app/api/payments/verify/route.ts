@@ -9,6 +9,7 @@ import { getErrorMessage } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { verifyEthereumMainnetPayment } from "@/lib/payments/verify";
+import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyPaymentSchema } from "@/lib/validations/order";
 import { ETHEREUM_MAINNET_CHAIN_ID, isEthereumMainnetChain } from "@/lib/web3/network";
@@ -25,6 +26,11 @@ type OrderEmailRecord = {
 
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
+
+const PAYMENT_VERIFY_WINDOW_MS = 5 * 60_000;
+const PAYMENT_VERIFY_IP_LIMIT = 60;
+const PAYMENT_VERIFY_USER_LIMIT = 40;
+const PAYMENT_VERIFY_PAYMENT_LIMIT = 24;
 
 function getOrderConfirmationFunctionUrl() {
   const baseUrl = serverEnv.supabaseUrl.trim().replace(/\/+$/, "");
@@ -258,6 +264,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid payment verification request." }, { status: 400 });
     }
 
+    const ipAddress = getClientIp(request);
+    const ipRateLimit = applyRateLimit({
+      key: `payments:verify:ip:${ipAddress}`,
+      limit: PAYMENT_VERIFY_IP_LIMIT,
+      windowMs: PAYMENT_VERIFY_WINDOW_MS,
+    });
+
+    if (!ipRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many payment verification checks were made from this connection. Please wait a moment and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(ipRateLimit.resetAt),
+        },
+      );
+    }
+
+    const userRateLimit = applyRateLimit({
+      key: `payments:verify:user:${user.id}`,
+      limit: PAYMENT_VERIFY_USER_LIMIT,
+      windowMs: PAYMENT_VERIFY_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many payment verification checks were made for this account. Please wait a moment and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
+    }
+
+    const paymentRateLimit = applyRateLimit({
+      key: `payments:verify:payment:${parsed.data.paymentId}`,
+      limit: PAYMENT_VERIFY_PAYMENT_LIMIT,
+      windowMs: PAYMENT_VERIFY_WINDOW_MS,
+    });
+
+    if (!paymentRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "This payment has been checked too many times in a short window. Please wait a moment before retrying." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(paymentRateLimit.resetAt),
+        },
+      );
+    }
+
     const rpcSetupError = getEthereumMainnetRpcEnvError();
 
     if (rpcSetupError) {
@@ -365,12 +420,16 @@ export async function POST(request: Request) {
       paymentMethod: payment.payment_method,
     });
 
-    const { data: duplicatePayment } = await admin
+    const { data: duplicatePayment, error: duplicatePaymentError } = await admin
       .from("payments")
       .select("id")
       .neq("id", payment.id)
       .eq("tx_hash", txHash)
       .maybeSingle();
+
+    if (duplicatePaymentError) {
+      return NextResponse.json({ error: duplicatePaymentError.message || "Unable to validate this transaction hash." }, { status: 500 });
+    }
 
     if (duplicatePayment) {
       return NextResponse.json({ error: "This transaction hash is already attached to another payment." }, { status: 409 });

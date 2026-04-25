@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { PasswordField } from "@/components/auth/password-field";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 
 type Props = {
   nextPath: string;
@@ -30,21 +30,26 @@ export function SignInForm({ nextPath, configError = null }: Props) {
       const formData = new FormData(event.currentTarget);
       const email = String(formData.get("email") || "").trim();
       const password = String(formData.get("password") || "");
-      const supabase = createSupabaseBrowserClient();
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch("/api/auth/sign-in", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
       });
+      const payload = await readJsonSafely<{ error?: string }>(response);
 
-      if (error) {
-        throw error;
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to sign in right now."));
       }
 
       router.push(nextPath);
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to sign in right now.");
+      setMessage(getErrorMessage(error, "Unable to sign in right now."));
     } finally {
       setLoading(false);
     }

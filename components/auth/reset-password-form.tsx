@@ -15,6 +15,24 @@ export function ResetPasswordForm({ configError = null }: Props) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  function getSafeResetPasswordMessage(error: unknown) {
+    if (!(error instanceof Error)) {
+      return "Unable to reset your password right now.";
+    }
+
+    const normalizedMessage = error.message.trim().toLowerCase();
+
+    if (normalizedMessage.includes("passwords do not match")) {
+      return "Passwords do not match.";
+    }
+
+    if (normalizedMessage.includes("invalid") || normalizedMessage.includes("expired")) {
+      return "This reset link is invalid or has expired. Request a new password reset email and try again.";
+    }
+
+    return "Unable to reset your password right now.";
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -46,7 +64,7 @@ export function ResetPasswordForm({ configError = null }: Props) {
       router.push("/sign-in?reset=success");
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to reset your password right now.");
+      setMessage(getSafeResetPasswordMessage(error));
     } finally {
       setLoading(false);
     }

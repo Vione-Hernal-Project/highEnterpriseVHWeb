@@ -82,3 +82,15 @@ export function applyRateLimit(params: {
     resetAt: current.resetAt,
   };
 }
+
+export function clearRateLimit(key: string) {
+  getRateLimitStore().delete(key);
+}
+
+export function buildRateLimitHeaders(resetAt: number) {
+  const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
+
+  return {
+    "Retry-After": String(retryAfterSeconds),
+  };
+}

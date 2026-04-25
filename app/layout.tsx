@@ -6,6 +6,7 @@ import "@/app/globals.css";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { getCurrentUserContext } from "@/lib/auth";
+import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "Vione Hernal",
@@ -39,6 +40,18 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           rel="stylesheet"
           href="https://is4.fwrdassets.com/fw_4653ebc37119b026a2595fd10e8f3b6dd89bfaad/fw_src/main/dist/chrome.css"
         />
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-9K8H1W9NQJ"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-9K8H1W9NQJ');
+  `}
+        </Script>
       </head>
       <body>
         <div className="vh-app-shell">

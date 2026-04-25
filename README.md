@@ -111,7 +111,7 @@ Fill in:
 1. Open the Supabase dashboard for your production project.
 2. Enable Email auth.
 3. Set your site URL and add the auth callback URL:
-   `http://localhost:3000/auth/callback`
+   `https://your-production-domain.example/auth/callback`
 4. Run the SQL in [supabase/schema.sql](supabase/schema.sql).
    If you already created the MVP tables before this update, rerun the same SQL so the new order, email, and cancellation columns are added.
 5. To give yourself permanent owner access, add your store email to `STORE_OWNER_EMAILS` in `.env.local`.
@@ -175,10 +175,10 @@ where email = 'your-admin@email.com';
 
 The SQL schema enables row level security with these MVP rules:
 
-- users can read, insert, and update only their own profile
+- users can read only their own profile
 - users can read only their own orders
 - users can read only their own payments
-- server-side service-role operations handle protected writes safely
+- protected profile, order, payment, and admin writes go through the server-side backend or service-role operations
 
 ## Local Setup
 

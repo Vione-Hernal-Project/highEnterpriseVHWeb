@@ -4,6 +4,8 @@ import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
+const MAX_PRODUCT_MEDIA_UPLOAD_BYTES = 10 * 1024 * 1024;
+
 function sanitizePathSegment(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-");
 }
@@ -33,6 +35,10 @@ export async function POST(request: Request) {
 
     if (!(file instanceof Blob) || file.size <= 0) {
       return NextResponse.json({ error: "Choose an image file to upload." }, { status: 400 });
+    }
+
+    if (file.size > MAX_PRODUCT_MEDIA_UPLOAD_BYTES) {
+      return NextResponse.json({ error: "Images must be 10 MB or smaller." }, { status: 413 });
     }
 
     if (!productId) {

@@ -4,6 +4,11 @@ import { z } from "zod";
 
 import { getErrorMessage } from "@/lib/http";
 import { serverEnv } from "@/lib/env/server";
+import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
+
+const SIGN_UP_WINDOW_MS = 15 * 60_000;
+const SIGN_UP_IP_LIMIT = 10;
+const SIGN_UP_EMAIL_LIMIT = 4;
 
 const signUpSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
@@ -67,6 +72,40 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid sign-up request." }, { status: 400 });
     }
 
+    const ipAddress = getClientIp(request);
+    const normalizedEmail = parsed.data.email.trim().toLowerCase();
+    const ipRateLimit = applyRateLimit({
+      key: `auth:sign-up:ip:${ipAddress}`,
+      limit: SIGN_UP_IP_LIMIT,
+      windowMs: SIGN_UP_WINDOW_MS,
+    });
+
+    if (!ipRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many account creation attempts were made from this connection. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(ipRateLimit.resetAt),
+        },
+      );
+    }
+
+    const emailRateLimit = applyRateLimit({
+      key: `auth:sign-up:email:${normalizedEmail}`,
+      limit: SIGN_UP_EMAIL_LIMIT,
+      windowMs: SIGN_UP_WINDOW_MS,
+    });
+
+    if (!emailRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many account creation attempts were made for this email. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(emailRateLimit.resetAt),
+        },
+      );
+    }
+
     const redirectTo = resolveAuthCallbackUrl(new URL(request.url));
     const supabase = createClient(serverEnv.supabaseUrl, serverEnv.supabaseAnonKey, {
       auth: {
@@ -76,7 +115,7 @@ export async function POST(request: Request) {
     });
 
     const { data, error } = await supabase.auth.signUp({
-      email: parsed.data.email,
+      email: normalizedEmail,
       password: parsed.data.password,
       options: {
         emailRedirectTo: redirectTo,

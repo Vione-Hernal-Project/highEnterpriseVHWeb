@@ -3,7 +3,12 @@ import { z } from "zod";
 
 import { getErrorMessage } from "@/lib/http";
 import { getBagCheckoutPricing, getCheckoutPricing } from "@/lib/payments/quotes";
+import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
 import { orderLineItemSchema } from "@/lib/validations/order";
+
+const PUBLIC_QUOTE_WINDOW_MS = 60_000;
+const PUBLIC_QUOTE_GET_LIMIT = 60;
+const PUBLIC_QUOTE_POST_LIMIT = 30;
 
 const bagPricingRequestSchema = z.object({
   items: z.array(orderLineItemSchema).min(1, "Add at least one item to checkout."),
@@ -22,6 +27,23 @@ const bagPricingRequestSchema = z.object({
 
 export async function GET(request: Request) {
   try {
+    const ipAddress = getClientIp(request);
+    const rateLimit = applyRateLimit({
+      key: `quotes:get:ip:${ipAddress}`,
+      limit: PUBLIC_QUOTE_GET_LIMIT,
+      windowMs: PUBLIC_QUOTE_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many live quote requests were made from this connection. Please wait a moment and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(rateLimit.resetAt),
+        },
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get("productId") || "";
     const quantity = Number(searchParams.get("quantity") || "1");
@@ -35,6 +57,23 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const ipAddress = getClientIp(request);
+    const rateLimit = applyRateLimit({
+      key: `quotes:post:ip:${ipAddress}`,
+      limit: PUBLIC_QUOTE_POST_LIMIT,
+      windowMs: PUBLIC_QUOTE_WINDOW_MS,
+    });
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many checkout quote requests were made from this connection. Please wait a moment and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(rateLimit.resetAt),
+        },
+      );
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = bagPricingRequestSchema.safeParse(body);
 
