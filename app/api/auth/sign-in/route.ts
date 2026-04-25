@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { buildRateLimitHeaders, applyRateLimit, clearRateLimit, getClientIp } from "@/lib/security/rate-limit";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 
 const SIGN_IN_WINDOW_MS = 10 * 60_000;
 const SIGN_IN_IP_LIMIT = 20;
@@ -13,6 +13,7 @@ const SIGN_IN_BODY_LIMIT_BYTES = 8 * 1024;
 const signInSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
   password: z.string().min(1, "Enter your password."),
+  nextPath: z.string().trim().optional(),
 });
 
 function getSafeSignInErrorMessage(message: string) {
@@ -27,6 +28,16 @@ function getSafeSignInErrorMessage(message: string) {
   }
 
   return "Unable to sign in right now.";
+}
+
+function resolveNextPath(value: string | undefined) {
+  const requestedPath = (value || "").trim();
+
+  if (!requestedPath.startsWith("/") || requestedPath.startsWith("//")) {
+    return "/dashboard";
+  }
+
+  return requestedPath;
 }
 
 export async function POST(request: Request) {
@@ -46,6 +57,7 @@ export async function POST(request: Request) {
 
     const ipAddress = getClientIp(request);
     const normalizedEmail = parsed.data.email.trim().toLowerCase();
+    const redirectTo = resolveNextPath(parsed.data.nextPath);
     const ipRateLimitKey = `auth:sign-in:ip:${ipAddress}`;
     const emailRateLimitKey = `auth:sign-in:email:${normalizedEmail}`;
     const ipRateLimit = await applyRateLimit({
@@ -80,26 +92,73 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.signInWithPassword({
+    console.info("[auth:sign-in]", {
+      phase: "started",
+      requestOrigin: new URL(request.url).origin,
+      redirectTo,
+      nodeEnv: process.env.NODE_ENV ?? null,
+    });
+
+    const { supabase, applyPendingCookies } = await createSupabaseRouteHandlerClient();
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
       password: parsed.data.password,
     });
 
     if (error) {
-      return NextResponse.json(
+      console.info("[auth:sign-in]", {
+        phase: "failed",
+        status: error.message.toLowerCase().includes("email not confirmed") ? 403 : 401,
+        errorMessage: error.message,
+        hasSession: Boolean(data.session),
+        redirectTo,
+      });
+
+      return applyPendingCookies(NextResponse.json(
         { error: getSafeSignInErrorMessage(error.message) },
         { status: error.message.toLowerCase().includes("email not confirmed") ? 403 : 401 },
+      ));
+    }
+
+    if (!data.session) {
+      console.info("[auth:sign-in]", {
+        phase: "failed",
+        status: 500,
+        errorMessage: "No Supabase session returned after successful sign-in.",
+        hasSession: false,
+        redirectTo,
+      });
+
+      return applyPendingCookies(
+        NextResponse.json({ error: "Unable to establish the account session right now." }, { status: 500 }),
       );
     }
 
     await clearRateLimit(ipRateLimitKey);
     await clearRateLimit(emailRateLimitKey);
 
-    return NextResponse.json({
-      success: true,
+    console.info("[auth:sign-in]", {
+      phase: "completed",
+      status: 200,
+      errorMessage: null,
+      hasSession: true,
+      redirectTo,
     });
+
+    return applyPendingCookies(
+      NextResponse.json({
+        success: true,
+        redirectTo,
+        sessionCreated: true,
+      }),
+    );
   } catch (error) {
+    console.error("[auth:sign-in]", {
+      phase: "crashed",
+      message: getErrorMessage(error, "Unable to sign in right now."),
+      nodeEnv: process.env.NODE_ENV ?? null,
+    });
+
     return NextResponse.json(
       { error: getErrorMessage(error, "Unable to sign in right now.") },
       { status: 500 },

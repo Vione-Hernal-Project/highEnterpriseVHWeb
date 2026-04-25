@@ -583,6 +583,87 @@ textarea {
   box-sizing: border-box;
 }
 
+.vh-password-strength {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.05rem;
+}
+
+.vh-password-strength__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.vh-password-strength__label {
+  margin: 0;
+  color: #6c6c6c;
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vh-password-strength__status {
+  color: #6c6c6c;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vh-password-strength__status--weak {
+  color: #8a4b46;
+}
+
+.vh-password-strength__status--medium {
+  color: #8a6b38;
+}
+
+.vh-password-strength__status--strong {
+  color: #2f5f48;
+}
+
+.vh-password-strength__meter {
+  position: relative;
+  height: 3px;
+  background: #ece5dc;
+  overflow: hidden;
+}
+
+.vh-password-strength__meter-fill {
+  display: block;
+  height: 100%;
+  background: #8a4b46;
+  transition:
+    width 180ms ease,
+    background-color 180ms ease;
+}
+
+.vh-password-strength__meter-fill--medium {
+  background: #8a6b38;
+}
+
+.vh-password-strength__meter-fill--strong {
+  background: #2f5f48;
+}
+
+.vh-password-strength__checks {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.vh-password-strength__check {
+  margin: 0;
+  color: #7b756f;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.vh-password-strength__check.is-passed {
+  color: #111114;
+}
+
 .vh-textarea {
   min-height: 120px;
   resize: vertical;

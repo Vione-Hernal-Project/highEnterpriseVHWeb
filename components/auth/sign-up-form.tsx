@@ -117,6 +117,8 @@ export function SignUpForm({ configError = null }: Props) {
         label="Password"
         autoComplete="new-password"
         minLength={6}
+        showStrengthFeedback
+        strengthMinLength={10}
         required
       />
       {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}

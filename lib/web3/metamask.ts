@@ -234,6 +234,10 @@ async function getActiveEip1193Provider() {
 }
 
 function selectMetaMaskProvider(ethereum: InjectedEthereum) {
+  if (ethereum.isMetaMask && !ethereum.isBraveWallet && !ethereum.isCoinbaseWallet) {
+    return ethereum;
+  }
+
   if (Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
     const exactMetaMaskProvider = ethereum.providers.find(
       (provider) => provider.isMetaMask && !provider.isBraveWallet && !provider.isCoinbaseWallet,

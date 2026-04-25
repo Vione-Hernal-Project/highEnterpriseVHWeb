@@ -38,15 +38,23 @@ export function SignInForm({ nextPath, configError = null }: Props) {
         body: JSON.stringify({
           email,
           password,
+          nextPath,
         }),
       });
-      const payload = await readJsonSafely<{ error?: string }>(response);
+      const payload = await readJsonSafely<{ error?: string; redirectTo?: string }>(response);
 
       if (!response.ok) {
         throw new Error(getResponseErrorMessage(payload, "Unable to sign in right now."));
       }
 
-      router.push(nextPath);
+      const redirectTo = payload?.redirectTo || nextPath;
+
+      if (typeof window !== "undefined") {
+        window.location.assign(redirectTo);
+        return;
+      }
+
+      router.replace(redirectTo);
       router.refresh();
     } catch (error) {
       setMessage(getErrorMessage(error, "Unable to sign in right now."));
