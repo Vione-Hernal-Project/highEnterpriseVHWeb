@@ -1,3 +1,14 @@
+import type { Metadata } from "next";
+
+import { createSeoMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createSeoMetadata({
+  title: "About Vione Hernal",
+  description:
+    "Vione Hernal is a Philippine luxury fashion brand exploring blockchain fashion, minimal luxury, and designer streetwear.",
+  path: "/about",
+});
+
 export default function AboutPage() {
   return (
     <section className="storefront-app-view vh-about-page">

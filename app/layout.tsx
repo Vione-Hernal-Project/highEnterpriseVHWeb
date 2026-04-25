@@ -6,11 +6,34 @@ import "@/app/globals.css";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { getCurrentUserContext } from "@/lib/auth";
+import { JsonLd, organizationJsonLd, siteName, siteUrl, defaultSeoDescription } from "@/lib/seo";
 import Script from "next/script";
 
 export const metadata: Metadata = {
-  title: "Vione Hernal",
-  description: "Vione Hernal MVP storefront with Supabase auth, mock checkout, orders, payments, and admin tools.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: `${siteName} | Blockchain Fashion And Minimal Luxury`,
+    template: `%s | ${siteName}`,
+  },
+  description: defaultSeoDescription,
+  applicationName: siteName,
+  alternates: {
+    canonical: siteUrl,
+  },
+  openGraph: {
+    title: `${siteName} | Blockchain Fashion And Minimal Luxury`,
+    description: defaultSeoDescription,
+    url: siteUrl,
+    siteName,
+    type: "website",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
+  },
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
@@ -54,6 +77,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         </Script>
       </head>
       <body>
+        <JsonLd data={organizationJsonLd()} />
         <div className="vh-app-shell">
           <SiteHeader signedIn={signedIn} isManagementUser={isManagementUser} />
           <main id="page-content" className="vh-main">

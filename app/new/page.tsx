@@ -1,7 +1,15 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { loadNewArrivalCatalogProducts } from "@/lib/products";
+import { createSeoMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createSeoMetadata({
+  title: "New Arrivals - Minimal Luxury Fashion",
+  description: "New arrivals from Vione Hernal: minimal luxury fashion, refined designer streetwear, and blockchain fashion pieces.",
+  path: "/new",
+});
 
 export default async function NewArrivalsPage() {
   const products = await loadNewArrivalCatalogProducts();

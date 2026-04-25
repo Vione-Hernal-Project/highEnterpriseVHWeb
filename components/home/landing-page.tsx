@@ -15,6 +15,21 @@ export async function LandingPage() {
   return (
     <div className="storefront-app-view vh-home-page">
       <h1 className="u-screen-reader">Vione Hernal Homepage</h1>
+      <section className="u-screen-reader" aria-label="Vione Hernal SEO overview">
+        <h2>Blockchain Fashion</h2>
+        <p>
+          Vione Hernal explores blockchain fashion through verifiable ownership, authenticity, and a quieter digital layer
+          built around physical luxury.
+        </p>
+        <h2>Minimal Luxury Fashion</h2>
+        <p>
+          The collection focuses on minimal luxury fashion, refined silhouettes, designer streetwear, and intentional wardrobe presence.
+        </p>
+        <h2>New Arrivals</h2>
+        <p>
+          Discover new arrivals from a Philippine luxury fashion brand shaped by restraint, web3 fashion infrastructure, and modern design.
+        </p>
+      </section>
 
       <ul className="story-hero ui-list">
         <li className="story-hero__screen story-hero__split-video u-clearfix ui-list__item u-margin-b--lg">

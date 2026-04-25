@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ProductGrid } from "@/components/storefront/product-grid";
@@ -7,6 +8,13 @@ import {
   resolveCategoryFilter,
   resolveDepartmentFilter,
 } from "@/lib/products";
+import { createSeoMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createSeoMetadata({
+  title: "Shop Blockchain Fashion And Luxury Streetwear",
+  description: "Shop Vione Hernal minimal luxury fashion, designer streetwear, bags, shoes, and blockchain-ready pieces.",
+  path: "/shop",
+});
 
 type Props = {
   searchParams: Promise<{

@@ -1,3 +1,13 @@
+import type { Metadata } from "next";
+
+import { createSeoMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createSeoMetadata({
+  title: "Affiliate",
+  description: "Join the Vione Hernal affiliate program for a luxury fashion brand exploring web3 and designer streetwear.",
+  path: "/affiliate",
+});
+
 export default function AffiliatePage() {
   return (
     <section className="storefront-app-view storefront-app-affiliate">

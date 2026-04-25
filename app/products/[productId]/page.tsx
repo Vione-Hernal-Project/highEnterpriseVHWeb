@@ -1,7 +1,4 @@
-import { notFound } from "next/navigation";
-
-import { ProductDetailView } from "@/components/storefront/product-detail-view";
-import { loadPublishedCatalogProduct } from "@/lib/products";
+import { redirect } from "next/navigation";
 
 type Props = {
   params: Promise<{
@@ -9,13 +6,7 @@ type Props = {
   }>;
 };
 
-export default async function ProductPage({ params }: Props) {
+export default async function LegacyProductPage({ params }: Props) {
   const { productId } = await params;
-  const product = await loadPublishedCatalogProduct(productId);
-
-  if (!product) {
-    notFound();
-  }
-
-  return <ProductDetailView product={product} />;
+  redirect(`/product/${encodeURIComponent(productId)}`);
 }

@@ -155,5 +155,5 @@ export function getCatalogProductUiMeta(productOrId: CatalogProduct | string | n
 }
 
 export function getCatalogProductPageHref(productId: string) {
-  return `/products/${encodeURIComponent(productId)}`;
+  return `/product/${encodeURIComponent(productId)}`;
 }
