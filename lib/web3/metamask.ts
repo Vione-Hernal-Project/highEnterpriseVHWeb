@@ -67,7 +67,7 @@ const METAMASK_MOBILE_CONNECT_ACTION = "connect";
 const WALLET_DISCONNECT_OVERRIDE_KEY = "vh.wallet.disconnectOverride";
 const WALLET_CONNECTED_PREFERENCE_KEY = "vh.wallet.connectedPreference";
 const METAMASK_CONNECT_MOBILE_REQUIRED_MESSAGE =
-  "MetaMask opened this site in its in-app browser, so the original browser cannot receive that wallet session. Add NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL to enable return-to-site mobile wallet approval.";
+  "Mobile wallet approval needs MetaMask Connect so the original browser can receive the wallet session. Add NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL and try again.";
 
 let metaMaskConnectClientPromise: Promise<MetamaskConnectEVM> | null = null;
 let eip6963ProviderListenerAttached = false;
@@ -263,15 +263,11 @@ async function getMetaMaskConnectClient() {
         },
       },
       ui: {
-        preferExtension: false,
+        preferExtension: true,
         showInstallModal: false,
       },
       mobile: {
         useDeeplink: false,
-        // Mobile-only: let MetaMask Connect open the wallet app with its official deeplink flow.
-        preferredOpenLink: (deeplink: string) => {
-          window.location.assign(deeplink);
-        },
       },
     }).catch((error) => {
       metaMaskConnectClientPromise = null;
@@ -449,7 +445,6 @@ export async function connectWallet(options?: { allowMobileDeeplink?: boolean })
   }
 
   if (shouldUseMetaMaskMobileDeeplink() && options?.allowMobileDeeplink !== false) {
-    openMetaMaskMobileDapp(METAMASK_MOBILE_CONNECT_ACTION);
     throw Object.assign(new Error(METAMASK_CONNECT_MOBILE_REQUIRED_MESSAGE), {
       code: "METAMASK_MOBILE_REDIRECT",
     });
@@ -632,7 +627,7 @@ export async function getWalletSnapshot(options?: { eager?: boolean }): Promise<
 }
 
 export function hasWalletConnector() {
-  return Boolean(getInjectedEthereum()) || shouldUseMetaMaskMobileDeeplink() || canUseMetaMaskConnectMobile();
+  return Boolean(getInjectedEthereum()) || canUseMetaMaskConnectMobile();
 }
 
 export function getMetaMaskMobileInstallUrl() {
