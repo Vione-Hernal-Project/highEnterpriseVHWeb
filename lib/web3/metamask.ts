@@ -25,6 +25,15 @@ type InjectedEthereum = Eip1193Provider & {
   providers?: InjectedEthereum[];
 };
 
+type Eip6963ProviderDetail = {
+  info?: {
+    name?: string;
+    rdns?: string;
+    uuid?: string;
+  };
+  provider?: InjectedEthereum;
+};
+
 type WalletSnapshot = {
   account: string | null;
   chainId: number | null;
@@ -59,11 +68,43 @@ const WALLET_DISCONNECT_OVERRIDE_KEY = "vh.wallet.disconnectOverride";
 const WALLET_CONNECTED_PREFERENCE_KEY = "vh.wallet.connectedPreference";
 
 let metaMaskConnectClientPromise: Promise<MetamaskConnectEVM> | null = null;
+let eip6963ProviderListenerAttached = false;
+const announcedEip6963Providers: Eip6963ProviderDetail[] = [];
 
 function getEthereumWindow() {
   return window as Window & {
     ethereum?: InjectedEthereum;
   };
+}
+
+function rememberEip6963Provider(detail: Eip6963ProviderDetail | undefined) {
+  if (!detail?.provider) {
+    return;
+  }
+
+  const existingProviderIndex = announcedEip6963Providers.findIndex((announced) => announced.provider === detail.provider);
+
+  if (existingProviderIndex >= 0) {
+    announcedEip6963Providers[existingProviderIndex] = detail;
+    return;
+  }
+
+  announcedEip6963Providers.push(detail);
+}
+
+function requestEip6963Providers() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!eip6963ProviderListenerAttached) {
+    window.addEventListener("eip6963:announceProvider", ((event: CustomEvent<Eip6963ProviderDetail>) => {
+      rememberEip6963Provider(event.detail);
+    }) as EventListener);
+    eip6963ProviderListenerAttached = true;
+  }
+
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
 }
 
 function isLikelyMobileBrowser() {
@@ -267,6 +308,23 @@ function isPreferredMetaMaskProvider(provider: InjectedEthereum) {
   return Boolean(provider.isMetaMask) && !provider.isBraveWallet && !provider.isCoinbaseWallet && !provider.isPhantom;
 }
 
+function isMetaMaskEip6963Provider(detail: Eip6963ProviderDetail) {
+  const rdns = detail.info?.rdns?.toLowerCase() ?? "";
+  const name = detail.info?.name?.toLowerCase() ?? "";
+
+  return rdns === "io.metamask" || name === "metamask" || Boolean(detail.provider && isPreferredMetaMaskProvider(detail.provider));
+}
+
+function getAnnouncedMetaMaskProvider() {
+  requestEip6963Providers();
+
+  const exactMetaMaskProvider = announcedEip6963Providers.find(
+    (detail) => detail.provider && isMetaMaskEip6963Provider(detail),
+  );
+
+  return exactMetaMaskProvider?.provider ?? null;
+}
+
 function selectMetaMaskProvider(ethereum: InjectedEthereum) {
   if (Array.isArray(ethereum.providers) && ethereum.providers.length > 0) {
     const exactMetaMaskProvider = ethereum.providers.find((provider) => isPreferredMetaMaskProvider(provider));
@@ -296,6 +354,12 @@ function selectMetaMaskProvider(ethereum: InjectedEthereum) {
 export function getInjectedEthereum() {
   if (typeof window === "undefined") {
     return null;
+  }
+
+  const announcedProvider = getAnnouncedMetaMaskProvider();
+
+  if (announcedProvider) {
+    return announcedProvider;
   }
 
   const injected = getEthereumWindow().ethereum;
