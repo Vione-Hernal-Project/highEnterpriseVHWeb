@@ -71,6 +71,7 @@ const METAMASK_CONNECT_MOBILE_REQUIRED_MESSAGE =
 
 let metaMaskConnectClientPromise: Promise<MetamaskConnectEVM> | null = null;
 let eip6963ProviderListenerAttached = false;
+let lastOpenedMetaMaskConnectUri = "";
 const announcedEip6963Providers: Eip6963ProviderDetail[] = [];
 
 function getEthereumWindow() {
@@ -238,6 +239,15 @@ function openMetaMaskMobileDapp(action: string) {
   return deeplink;
 }
 
+function openMetaMaskConnectUri(uri: string) {
+  if (typeof window === "undefined" || !uri || uri === lastOpenedMetaMaskConnectUri) {
+    return;
+  }
+
+  lastOpenedMetaMaskConnectUri = uri;
+  window.location.assign(uri);
+}
+
 function canUseMetaMaskConnectMobile() {
   if (typeof window === "undefined") {
     return false;
@@ -263,11 +273,15 @@ async function getMetaMaskConnectClient() {
         },
       },
       ui: {
+        headless: true,
         preferExtension: true,
         showInstallModal: false,
       },
       mobile: {
-        useDeeplink: false,
+        useDeeplink: true,
+      },
+      eventHandlers: {
+        displayUri: openMetaMaskConnectUri,
       },
     }).catch((error) => {
       metaMaskConnectClientPromise = null;
