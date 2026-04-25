@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { loadAdminCatalogProducts, normalizeProductCategory, normalizeProductDepartment } from "@/lib/products";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adminProductSchema } from "@/lib/validations/product";
+
+const ADMIN_PRODUCT_WRITE_WINDOW_MS = 10 * 60_000;
+const ADMIN_PRODUCT_WRITE_LIMIT = 80;
+const ADMIN_PRODUCT_BODY_LIMIT_BYTES = 64 * 1024;
 
 function parseStringArray(value: unknown) {
   if (!Array.isArray(value)) {
@@ -107,6 +112,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Management access required." }, { status: 403 });
     }
 
+    const bodySizeError = getJsonBodySizeError(request, ADMIN_PRODUCT_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:products:write:user:${user.id}`,
+      limit: ADMIN_PRODUCT_WRITE_LIMIT,
+      windowMs: ADMIN_PRODUCT_WRITE_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many product update attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = adminProductSchema.safeParse(body);
 
@@ -156,6 +183,28 @@ export async function PATCH(request: Request) {
 
     if (!isManagementUser) {
       return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, ADMIN_PRODUCT_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:products:write:user:${user.id}`,
+      limit: ADMIN_PRODUCT_WRITE_LIMIT,
+      windowMs: ADMIN_PRODUCT_WRITE_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many product update attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);
@@ -214,6 +263,28 @@ export async function DELETE(request: Request) {
 
     if (!isManagementUser) {
       return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, ADMIN_PRODUCT_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:products:write:user:${user.id}`,
+      limit: ADMIN_PRODUCT_WRITE_LIMIT,
+      windowMs: ADMIN_PRODUCT_WRITE_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many product update attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);

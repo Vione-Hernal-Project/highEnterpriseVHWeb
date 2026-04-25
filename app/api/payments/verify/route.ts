@@ -5,7 +5,7 @@ import { ensureConfirmedOnChainPaymentAllocations } from "@/lib/admin/payment-al
 import { getCurrentUserContext } from "@/lib/auth";
 import { getEthereumMainnetRpcEnvError, serverEnv } from "@/lib/env/server";
 import type { Database } from "@/lib/database.types";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { verifyEthereumMainnetPayment } from "@/lib/payments/verify";
@@ -31,6 +31,7 @@ const PAYMENT_VERIFY_WINDOW_MS = 5 * 60_000;
 const PAYMENT_VERIFY_IP_LIMIT = 60;
 const PAYMENT_VERIFY_USER_LIMIT = 40;
 const PAYMENT_VERIFY_PAYMENT_LIMIT = 24;
+const PAYMENT_VERIFY_BODY_LIMIT_BYTES = 8 * 1024;
 
 function getOrderConfirmationFunctionUrl() {
   const baseUrl = serverEnv.supabaseUrl.trim().replace(/\/+$/, "");
@@ -257,6 +258,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
+    const bodySizeError = getJsonBodySizeError(request, PAYMENT_VERIFY_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = verifyPaymentSchema.safeParse(body);
 
@@ -265,7 +272,7 @@ export async function POST(request: Request) {
     }
 
     const ipAddress = getClientIp(request);
-    const ipRateLimit = applyRateLimit({
+    const ipRateLimit = await applyRateLimit({
       key: `payments:verify:ip:${ipAddress}`,
       limit: PAYMENT_VERIFY_IP_LIMIT,
       windowMs: PAYMENT_VERIFY_WINDOW_MS,
@@ -281,7 +288,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const userRateLimit = applyRateLimit({
+    const userRateLimit = await applyRateLimit({
       key: `payments:verify:user:${user.id}`,
       limit: PAYMENT_VERIFY_USER_LIMIT,
       windowMs: PAYMENT_VERIFY_WINDOW_MS,
@@ -297,7 +304,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const paymentRateLimit = applyRateLimit({
+    const paymentRateLimit = await applyRateLimit({
       key: `payments:verify:payment:${parsed.data.paymentId}`,
       limit: PAYMENT_VERIFY_PAYMENT_LIMIT,
       windowMs: PAYMENT_VERIFY_WINDOW_MS,

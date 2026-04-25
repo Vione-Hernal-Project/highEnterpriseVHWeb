@@ -2,40 +2,20 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { resolveAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { serverEnv } from "@/lib/env/server";
+import { getJsonBodySizeError } from "@/lib/http";
 import { buildRateLimitHeaders, applyRateLimit, getClientIp } from "@/lib/security/rate-limit";
 
 const FORGOT_PASSWORD_WINDOW_MS = 15 * 60_000;
 const FORGOT_PASSWORD_IP_LIMIT = 8;
 const FORGOT_PASSWORD_EMAIL_LIMIT = 3;
 const GENERIC_RESET_MESSAGE = "If an account exists for that email, a reset link has been sent.";
+const FORGOT_PASSWORD_BODY_LIMIT_BYTES = 8 * 1024;
 
 const forgotPasswordSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
 });
-
-function resolveResetCallbackUrl(requestUrl: URL) {
-  const configuredSiteUrl = serverEnv.publicSiteUrl.trim();
-
-  if (configuredSiteUrl) {
-    try {
-      const siteUrl = new URL(configuredSiteUrl);
-
-      if (
-        process.env.NODE_ENV === "production" &&
-        (siteUrl.hostname === "localhost" || siteUrl.hostname === "127.0.0.1")
-      ) {
-        return new URL("/auth/callback?next=/reset-password", requestUrl.origin).toString();
-      }
-
-      return new URL("/auth/callback?next=/reset-password", siteUrl).toString();
-    } catch {
-      // Fall back to the current request origin when the configured site URL is invalid.
-    }
-  }
-
-  return new URL("/auth/callback?next=/reset-password", requestUrl.origin).toString();
-}
 
 function getSafeForgotPasswordErrorMessage(message: string) {
   const normalizedMessage = message.trim().toLowerCase();
@@ -60,6 +40,12 @@ export async function POST(request: Request) {
       );
     }
 
+    const bodySizeError = getJsonBodySizeError(request, FORGOT_PASSWORD_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = forgotPasswordSchema.safeParse(body);
 
@@ -69,7 +55,7 @@ export async function POST(request: Request) {
 
     const ipAddress = getClientIp(request);
     const normalizedEmail = parsed.data.email.trim().toLowerCase();
-    const ipRateLimit = applyRateLimit({
+    const ipRateLimit = await applyRateLimit({
       key: `auth:forgot-password:ip:${ipAddress}`,
       limit: FORGOT_PASSWORD_IP_LIMIT,
       windowMs: FORGOT_PASSWORD_WINDOW_MS,
@@ -85,7 +71,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const emailRateLimit = applyRateLimit({
+    const emailRateLimit = await applyRateLimit({
       key: `auth:forgot-password:email:${normalizedEmail}`,
       limit: FORGOT_PASSWORD_EMAIL_LIMIT,
       windowMs: FORGOT_PASSWORD_WINDOW_MS,
@@ -101,7 +87,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const redirectTo = resolveResetCallbackUrl(new URL(request.url));
+    const requestUrl = new URL(request.url);
+    const redirectTo = resolveAuthRedirectUrl({
+      configuredSiteUrl: serverEnv.publicSiteUrl,
+      requestUrl,
+      path: "/auth/callback?next=/reset-password",
+    });
     const supabase = createClient(serverEnv.supabaseUrl, serverEnv.supabaseAnonKey, {
       auth: {
         autoRefreshToken: false,

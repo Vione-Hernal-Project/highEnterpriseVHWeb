@@ -4,7 +4,7 @@ import { getAddress } from "ethers";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getEthereumMainnetRpcEnvError } from "@/lib/env/server";
 import { sendOrderConfirmationEmail } from "@/lib/email";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { generateOrderNumber } from "@/lib/orders";
 import { phpCentsToDecimalString } from "@/lib/payments/amounts";
 import { resolveCheckoutInput } from "@/lib/payments/checkout";
@@ -24,6 +24,7 @@ const ORDER_CREATION_USER_LIMIT = 6;
 const ORDER_CREATION_IP_LIMIT = 20;
 const MAX_PENDING_ORDERS_PER_USER = 3;
 const MAX_RECENT_ORDERS_PER_USER = 12;
+const ORDER_CREATION_BODY_LIMIT_BYTES = 64 * 1024;
 
 function buildRateLimitHeaders(resetAt: number) {
   const retryAfterSeconds = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
@@ -90,6 +91,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
+    const bodySizeError = getJsonBodySizeError(request, ORDER_CREATION_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = orderSchema.safeParse(body);
 
@@ -98,7 +105,7 @@ export async function POST(request: Request) {
     }
 
     const ipAddress = getClientIp(request);
-    const ipRateLimit = applyRateLimit({
+    const ipRateLimit = await applyRateLimit({
       key: `orders:ip:${ipAddress}`,
       limit: ORDER_CREATION_IP_LIMIT,
       windowMs: ORDER_CREATION_WINDOW_MS,
@@ -114,7 +121,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const userRateLimit = applyRateLimit({
+    const userRateLimit = await applyRateLimit({
       key: `orders:user:${user.id}`,
       limit: ORDER_CREATION_USER_LIMIT,
       windowMs: ORDER_CREATION_WINDOW_MS,
@@ -241,8 +248,8 @@ export async function POST(request: Request) {
     });
 
     // Order creation stays server-side so the browser never gets direct write
-    // access to the protected commerce tables. Rate limiting can be added here
-    // later at the proxy or hosting layer without changing the client flow.
+    // access to the protected commerce tables. The route is also rate-limited
+    // here so checkout abuse controls stay aligned with the live server flow.
     const { data: order, error: orderError } = await admin
       .from("orders")
       .insert({

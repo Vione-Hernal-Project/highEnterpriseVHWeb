@@ -2,9 +2,14 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
 import { getConfiguredOwnerEmails } from "@/lib/env/server";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { profileRoleSchema } from "@/lib/validations/order";
+
+const ADMIN_ROLE_UPDATE_WINDOW_MS = 10 * 60_000;
+const ADMIN_ROLE_UPDATE_LIMIT = 30;
+const ADMIN_ROLE_UPDATE_BODY_LIMIT_BYTES = 8 * 1024;
 
 export async function PATCH(request: Request) {
   try {
@@ -16,6 +21,28 @@ export async function PATCH(request: Request) {
 
     if (!isOwner) {
       return NextResponse.json({ error: "Owner access required." }, { status: 403 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, ADMIN_ROLE_UPDATE_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:profiles:role:user:${user.id}`,
+      limit: ADMIN_ROLE_UPDATE_LIMIT,
+      windowMs: ADMIN_ROLE_UPDATE_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many role update attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);

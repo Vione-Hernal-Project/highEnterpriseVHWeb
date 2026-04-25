@@ -2,41 +2,20 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import { getErrorMessage } from "@/lib/http";
+import { resolveAuthRedirectUrl } from "@/lib/auth/redirect-url";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { serverEnv } from "@/lib/env/server";
 import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
 
 const SIGN_UP_WINDOW_MS = 15 * 60_000;
 const SIGN_UP_IP_LIMIT = 10;
 const SIGN_UP_EMAIL_LIMIT = 4;
+const SIGN_UP_BODY_LIMIT_BYTES = 8 * 1024;
 
 const signUpSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
   password: z.string().min(6, "Password must be at least 6 characters."),
 });
-
-function resolveAuthCallbackUrl(requestUrl: URL) {
-  const configuredSiteUrl = serverEnv.publicSiteUrl.trim();
-
-  if (configuredSiteUrl) {
-    try {
-      const siteUrl = new URL(configuredSiteUrl);
-
-      if (
-        process.env.NODE_ENV === "production" &&
-        (siteUrl.hostname === "localhost" || siteUrl.hostname === "127.0.0.1")
-      ) {
-        return new URL("/auth/callback", requestUrl.origin).toString();
-      }
-
-      return new URL("/auth/callback", siteUrl).toString();
-    } catch {
-      // Fall back to the current request origin when the configured site URL is invalid.
-    }
-  }
-
-  return new URL("/auth/callback", requestUrl.origin).toString();
-}
 
 function getSafeSignUpErrorMessage(message: string) {
   const normalizedMessage = message.trim().toLowerCase();
@@ -65,6 +44,12 @@ export async function POST(request: Request) {
       );
     }
 
+    const bodySizeError = getJsonBodySizeError(request, SIGN_UP_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = signUpSchema.safeParse(body);
 
@@ -74,7 +59,7 @@ export async function POST(request: Request) {
 
     const ipAddress = getClientIp(request);
     const normalizedEmail = parsed.data.email.trim().toLowerCase();
-    const ipRateLimit = applyRateLimit({
+    const ipRateLimit = await applyRateLimit({
       key: `auth:sign-up:ip:${ipAddress}`,
       limit: SIGN_UP_IP_LIMIT,
       windowMs: SIGN_UP_WINDOW_MS,
@@ -90,7 +75,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const emailRateLimit = applyRateLimit({
+    const emailRateLimit = await applyRateLimit({
       key: `auth:sign-up:email:${normalizedEmail}`,
       limit: SIGN_UP_EMAIL_LIMIT,
       windowMs: SIGN_UP_WINDOW_MS,
@@ -106,7 +91,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const redirectTo = resolveAuthCallbackUrl(new URL(request.url));
+    const requestUrl = new URL(request.url);
+    const redirectTo = resolveAuthRedirectUrl({
+      configuredSiteUrl: serverEnv.publicSiteUrl,
+      requestUrl,
+      path: "/auth/callback",
+    });
     const supabase = createClient(serverEnv.supabaseUrl, serverEnv.supabaseAnonKey, {
       auth: {
         autoRefreshToken: false,
@@ -129,8 +119,11 @@ export async function POST(request: Request) {
         status: "status" in error ? error.status : null,
         code: "code" in error ? error.code : null,
         redirectTo,
-        requestOrigin: new URL(request.url).origin,
+        requestOrigin: requestUrl.origin,
+        requestHost: requestUrl.host,
         hasConfiguredPublicSiteUrl: Boolean(serverEnv.publicSiteUrl),
+        configuredPublicSiteUrl: serverEnv.publicSiteUrl ? serverEnv.publicSiteUrl : null,
+        nodeEnv: process.env.NODE_ENV ?? null,
       });
 
       return NextResponse.json(
@@ -151,6 +144,8 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[auth:sign-up]", {
       message: getErrorMessage(error, "Unexpected sign-up failure."),
+      hasConfiguredPublicSiteUrl: Boolean(serverEnv.publicSiteUrl),
+      nodeEnv: process.env.NODE_ENV ?? null,
     });
 
     return NextResponse.json(

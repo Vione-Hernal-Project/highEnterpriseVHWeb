@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { cancelOrderSchema } from "@/lib/validations/order";
+
+const ORDER_CANCEL_WINDOW_MS = 10 * 60_000;
+const ORDER_CANCEL_USER_LIMIT = 20;
+const ORDER_CANCEL_BODY_LIMIT_BYTES = 8 * 1024;
 
 export async function POST(request: Request) {
   try {
@@ -11,6 +16,28 @@ export async function POST(request: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, ORDER_CANCEL_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `orders:cancel:user:${user.id}`,
+      limit: ORDER_CANCEL_USER_LIMIT,
+      windowMs: ORDER_CANCEL_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many cancellation attempts were made for this account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);

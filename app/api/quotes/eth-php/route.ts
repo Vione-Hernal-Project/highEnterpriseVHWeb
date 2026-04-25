@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { getBagCheckoutPricing, getCheckoutPricing } from "@/lib/payments/quotes";
 import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
 import { orderLineItemSchema } from "@/lib/validations/order";
@@ -9,6 +9,7 @@ import { orderLineItemSchema } from "@/lib/validations/order";
 const PUBLIC_QUOTE_WINDOW_MS = 60_000;
 const PUBLIC_QUOTE_GET_LIMIT = 60;
 const PUBLIC_QUOTE_POST_LIMIT = 30;
+const PUBLIC_QUOTE_BODY_LIMIT_BYTES = 32 * 1024;
 
 const bagPricingRequestSchema = z.object({
   items: z.array(orderLineItemSchema).min(1, "Add at least one item to checkout."),
@@ -28,7 +29,7 @@ const bagPricingRequestSchema = z.object({
 export async function GET(request: Request) {
   try {
     const ipAddress = getClientIp(request);
-    const rateLimit = applyRateLimit({
+    const rateLimit = await applyRateLimit({
       key: `quotes:get:ip:${ipAddress}`,
       limit: PUBLIC_QUOTE_GET_LIMIT,
       windowMs: PUBLIC_QUOTE_WINDOW_MS,
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const ipAddress = getClientIp(request);
-    const rateLimit = applyRateLimit({
+    const rateLimit = await applyRateLimit({
       key: `quotes:post:ip:${ipAddress}`,
       limit: PUBLIC_QUOTE_POST_LIMIT,
       windowMs: PUBLIC_QUOTE_WINDOW_MS,
@@ -72,6 +73,12 @@ export async function POST(request: Request) {
           headers: buildRateLimitHeaders(rateLimit.resetAt),
         },
       );
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, PUBLIC_QUOTE_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
     }
 
     const body = await request.json().catch(() => null);

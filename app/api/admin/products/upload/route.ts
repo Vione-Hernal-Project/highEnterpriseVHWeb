@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const MAX_PRODUCT_MEDIA_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_PRODUCT_MEDIA_REQUEST_BYTES = 12 * 1024 * 1024;
+const PRODUCT_MEDIA_UPLOAD_WINDOW_MS = 10 * 60_000;
+const PRODUCT_MEDIA_UPLOAD_LIMIT = 40;
 
 function sanitizePathSegment(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-");
@@ -26,6 +30,28 @@ export async function POST(request: Request) {
 
     if (!isManagementUser) {
       return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, MAX_PRODUCT_MEDIA_REQUEST_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:products:upload:user:${user.id}`,
+      limit: PRODUCT_MEDIA_UPLOAD_LIMIT,
+      windowMs: PRODUCT_MEDIA_UPLOAD_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many product media uploads were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const formData = await request.formData();
@@ -51,6 +77,11 @@ export async function POST(request: Request) {
 
     const fileName = typeof (file as { name?: unknown }).name === "string" ? (file as { name: string }).name : "upload";
     const extension = getFileExtension(fileName);
+
+    if (file.type === "image/svg+xml" || extension.toLowerCase() === ".svg") {
+      return NextResponse.json({ error: "SVG uploads are not supported for product media." }, { status: 400 });
+    }
+
     const objectPath = `products/${productId}/${slot}-${Date.now()}-${crypto.randomUUID()}${extension}`;
     const admin = createSupabaseAdminClient();
     const bytes = new Uint8Array(await file.arrayBuffer());

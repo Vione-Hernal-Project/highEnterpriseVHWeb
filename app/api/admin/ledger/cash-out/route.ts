@@ -3,13 +3,18 @@ import { getAddress } from "ethers";
 
 import { getCurrentUserContext } from "@/lib/auth";
 import { loadAllocationLedgerSnapshot } from "@/lib/admin/allocation-ledger";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { getPaymentMethodLabel } from "@/lib/payments/options";
 import { verifyEthereumMainnetTransfer } from "@/lib/payments/verify";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adminCashOutSchema } from "@/lib/validations/order";
 import { ETHEREUM_MAINNET_CHAIN_ID, isEthereumMainnetChain } from "@/lib/web3/network";
+
+const ADMIN_CASH_OUT_WINDOW_MS = 10 * 60_000;
+const ADMIN_CASH_OUT_LIMIT = 30;
+const ADMIN_CASH_OUT_BODY_LIMIT_BYTES = 24 * 1024;
 
 function resolveCashOutStatus(message: string) {
   const normalizedMessage = message.toLowerCase();
@@ -221,6 +226,28 @@ export async function POST(request: Request) {
 
     if (!isManagementUser) {
       return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, ADMIN_CASH_OUT_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:ledger:cash-out:user:${user.id}`,
+      limit: ADMIN_CASH_OUT_LIMIT,
+      windowMs: ADMIN_CASH_OUT_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many cash-out attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);

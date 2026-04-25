@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { walletSchema } from "@/lib/validations/order";
+
+const PROFILE_UPDATE_WINDOW_MS = 10 * 60_000;
+const PROFILE_UPDATE_USER_LIMIT = 20;
+const PROFILE_UPDATE_BODY_LIMIT_BYTES = 8 * 1024;
 
 export async function GET() {
   const { supabase, user, role } = await getCurrentUserContext();
@@ -28,6 +33,28 @@ export async function PATCH(request: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, PROFILE_UPDATE_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `profile:update:user:${user.id}`,
+      limit: PROFILE_UPDATE_USER_LIMIT,
+      windowMs: PROFILE_UPDATE_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many profile update attempts were made for this account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);

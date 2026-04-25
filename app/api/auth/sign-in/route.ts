@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { buildRateLimitHeaders, applyRateLimit, clearRateLimit, getClientIp } from "@/lib/security/rate-limit";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const SIGN_IN_WINDOW_MS = 10 * 60_000;
 const SIGN_IN_IP_LIMIT = 20;
 const SIGN_IN_EMAIL_LIMIT = 8;
+const SIGN_IN_BODY_LIMIT_BYTES = 8 * 1024;
 
 const signInSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
@@ -30,6 +31,12 @@ function getSafeSignInErrorMessage(message: string) {
 
 export async function POST(request: Request) {
   try {
+    const bodySizeError = getJsonBodySizeError(request, SIGN_IN_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = signInSchema.safeParse(body);
 
@@ -41,7 +48,7 @@ export async function POST(request: Request) {
     const normalizedEmail = parsed.data.email.trim().toLowerCase();
     const ipRateLimitKey = `auth:sign-in:ip:${ipAddress}`;
     const emailRateLimitKey = `auth:sign-in:email:${normalizedEmail}`;
-    const ipRateLimit = applyRateLimit({
+    const ipRateLimit = await applyRateLimit({
       key: ipRateLimitKey,
       limit: SIGN_IN_IP_LIMIT,
       windowMs: SIGN_IN_WINDOW_MS,
@@ -57,7 +64,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const emailRateLimit = applyRateLimit({
+    const emailRateLimit = await applyRateLimit({
       key: emailRateLimitKey,
       limit: SIGN_IN_EMAIL_LIMIT,
       windowMs: SIGN_IN_WINDOW_MS,
@@ -86,8 +93,8 @@ export async function POST(request: Request) {
       );
     }
 
-    clearRateLimit(ipRateLimitKey);
-    clearRateLimit(emailRateLimitKey);
+    await clearRateLimit(ipRateLimitKey);
+    await clearRateLimit(emailRateLimitKey);
 
     return NextResponse.json({
       success: true,

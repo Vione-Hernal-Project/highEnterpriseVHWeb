@@ -2,9 +2,14 @@ import { NextResponse } from "next/server";
 
 import { rebuildPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/http";
+import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adminOrderStatusSchema } from "@/lib/validations/order";
+
+const ADMIN_ORDER_UPDATE_WINDOW_MS = 10 * 60_000;
+const ADMIN_ORDER_UPDATE_LIMIT = 60;
+const ADMIN_ORDER_UPDATE_BODY_LIMIT_BYTES = 8 * 1024;
 
 export async function GET() {
   try {
@@ -41,6 +46,28 @@ export async function PATCH(request: Request) {
 
     if (!canManageOrders) {
       return NextResponse.json({ error: "Order operations access required." }, { status: 403 });
+    }
+
+    const bodySizeError = getJsonBodySizeError(request, ADMIN_ORDER_UPDATE_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:orders:update:user:${user.id}`,
+      limit: ADMIN_ORDER_UPDATE_LIMIT,
+      windowMs: ADMIN_ORDER_UPDATE_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many order update attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);
