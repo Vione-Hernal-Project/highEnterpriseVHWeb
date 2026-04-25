@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { getPasswordStrengthError, getPasswordStrengthInputs, passwordStrengthRules } from "@/lib/auth/password-strength";
 import { resolveAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { serverEnv } from "@/lib/env/server";
@@ -14,7 +15,7 @@ const SIGN_UP_BODY_LIMIT_BYTES = 8 * 1024;
 
 const signUpSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
-  password: z.string().min(6, "Password must be at least 6 characters."),
+  password: z.string().min(passwordStrengthRules.minLength, `Password must be at least ${passwordStrengthRules.minLength} characters.`),
 });
 
 function getSafeSignUpErrorMessage(message: string) {
@@ -55,6 +56,17 @@ export async function POST(request: Request) {
 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid sign-up request." }, { status: 400 });
+    }
+
+    const passwordStrengthError = getPasswordStrengthError(parsed.data.password, getPasswordStrengthInputs(parsed.data.email));
+
+    if (passwordStrengthError) {
+      return NextResponse.json(
+        {
+          error: `${passwordStrengthError} Use a unique password with uppercase, lowercase, numbers, symbols, and no predictable personal words.`,
+        },
+        { status: 400 },
+      );
     }
 
     const ipAddress = getClientIp(request);

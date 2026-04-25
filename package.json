@@ -21,13 +21,15 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "use-postal-ph": "^1.1.14",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@types/node": "^22.18.6",
     "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/zxcvbn": "^4.4.5",
     "eslint": "^9.38.0",
     "eslint-config-next": "^16.2.2",
     "typescript": "^5.9.3"

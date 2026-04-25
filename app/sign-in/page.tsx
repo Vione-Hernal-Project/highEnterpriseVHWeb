@@ -33,7 +33,7 @@ export default async function SignInPage({ searchParams }: Props) {
       ? "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local and restart the Next.js dev server."
       : null);
   const resetSuccessMessage = reset === "success" ? "Password updated. Sign in with your new password." : null;
-  const confirmedSuccessMessage = confirmed === "success" ? "Your account has been confirmed. You can now sign in." : null;
+  const confirmedSuccessMessage = confirmed === "success" ? "Your account has been successfully created. You can now sign in." : null;
   const callbackError =
     error === "auth_callback_failed"
       ? "The authentication link could not be completed. Please try again."

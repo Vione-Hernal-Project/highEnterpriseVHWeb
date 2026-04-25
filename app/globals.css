@@ -670,6 +670,13 @@ textarea {
   color: #111114;
 }
 
+.vh-password-strength__hint {
+  margin: 0;
+  color: #7b756f;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 .vh-textarea {
   min-height: 120px;
   resize: vertical;

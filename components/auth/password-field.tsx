@@ -2,75 +2,19 @@
 
 import { useEffect, useMemo, useState, type ChangeEvent, type InputHTMLAttributes } from "react";
 
+import { evaluatePasswordStrength, passwordStrengthRules } from "@/lib/auth/password-strength";
+
 type Props = {
   id: string;
   label: string;
   showStrengthFeedback?: boolean;
-  strengthMinLength?: number;
+  strengthInputs?: string[];
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type">;
 
-type PasswordStrength = {
-  label: "Weak" | "Medium" | "Strong";
-  tone: "weak" | "medium" | "strong";
-  score: number;
-  checks: Array<{
-    label: string;
-    passed: boolean;
-  }>;
-};
-
-function getPasswordStrength(password: string, minLength: number): PasswordStrength {
-  const checks = [
-    {
-      label: `At least ${minLength} characters`,
-      passed: password.length >= minLength,
-    },
-    {
-      label: "Includes uppercase and lowercase letters",
-      passed: /[A-Z]/.test(password) && /[a-z]/.test(password),
-    },
-    {
-      label: "Includes a number",
-      passed: /\d/.test(password),
-    },
-    {
-      label: "Includes a symbol",
-      passed: /[^A-Za-z0-9]/.test(password),
-    },
-  ];
-  const score = checks.filter((check) => check.passed).length;
-
-  if (score >= 4) {
-    return {
-      label: "Strong",
-      tone: "strong",
-      score,
-      checks,
-    };
-  }
-
-  if (score >= 2) {
-    return {
-      label: "Medium",
-      tone: "medium",
-      score,
-      checks,
-    };
-  }
-
-  return {
-    label: "Weak",
-    tone: "weak",
-    score,
-    checks,
-  };
-}
-
-export function PasswordField({ id, label, showStrengthFeedback = false, strengthMinLength, ...props }: Props) {
+export function PasswordField({ id, label, showStrengthFeedback = false, strengthInputs = [], ...props }: Props) {
   const [visible, setVisible] = useState(false);
   const [value, setValue] = useState(typeof props.defaultValue === "string" ? props.defaultValue : "");
-  const strengthRuleMinLength = strengthMinLength ?? 10;
-  const strength = useMemo(() => getPasswordStrength(value, strengthRuleMinLength), [strengthRuleMinLength, value]);
+  const strength = useMemo(() => evaluatePasswordStrength(value, strengthInputs), [strengthInputs, value]);
 
   useEffect(() => {
     if (typeof props.value === "string") {
@@ -108,7 +52,7 @@ export function PasswordField({ id, label, showStrengthFeedback = false, strengt
           <div className="vh-password-strength__meter" aria-hidden="true">
             <span
               className={`vh-password-strength__meter-fill vh-password-strength__meter-fill--${strength.tone}`}
-              style={{ width: `${Math.max(12, (strength.score / strength.checks.length) * 100)}%` }}
+              style={{ width: `${Math.max(12, ((strength.score + 1) / 5) * 100)}%` }}
             />
           </div>
           <div className="vh-password-strength__checks">
@@ -118,6 +62,14 @@ export function PasswordField({ id, label, showStrengthFeedback = false, strengt
               </p>
             ))}
           </div>
+          {value ? (
+            <p className="vh-password-strength__hint">
+              {strength.warning || `Use a unique password with at least ${passwordStrengthRules.minLength} characters.`}
+            </p>
+          ) : null}
+          {value && strength.suggestions.length ? (
+            <p className="vh-password-strength__hint">{strength.suggestions[0]}</p>
+          ) : null}
         </div>
       ) : null}
     </div>

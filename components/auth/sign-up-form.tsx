@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { getPasswordStrengthInputs, passwordStrengthRules } from "@/lib/auth/password-strength";
 import { PasswordField } from "@/components/auth/password-field";
 import { ResendConfirmationButton } from "@/components/auth/resend-confirmation-button";
 import { getResponseErrorMessage, readJsonSafely } from "@/lib/http";
@@ -18,6 +19,7 @@ export function SignUpForm({ configError = null }: Props) {
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
   const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [emailValue, setEmailValue] = useState("");
 
   function setGenericSignUpMessage() {
     setSuccess(true);
@@ -114,16 +116,25 @@ export function SignUpForm({ configError = null }: Props) {
       <h1 className="h2 u-margin-b--lg">Create Account</h1>
       <div className="vh-field">
         <label htmlFor="signup-email">Email</label>
-        <input id="signup-email" name="email" type="email" className="vh-input" autoComplete="email" required />
+        <input
+          id="signup-email"
+          name="email"
+          type="email"
+          className="vh-input"
+          autoComplete="email"
+          value={emailValue}
+          onChange={(event) => setEmailValue(event.target.value)}
+          required
+        />
       </div>
       <PasswordField
         id="signup-password"
         name="password"
         label="Password"
         autoComplete="new-password"
-        minLength={6}
+        minLength={passwordStrengthRules.minLength}
         showStrengthFeedback
-        strengthMinLength={10}
+        strengthInputs={getPasswordStrengthInputs(emailValue)}
         required
       />
       {configError ? <div className="vh-status vh-status--error">{configError}</div> : null}

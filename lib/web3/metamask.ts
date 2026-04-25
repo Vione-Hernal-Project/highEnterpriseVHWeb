@@ -366,6 +366,22 @@ export async function connectWallet(options?: { allowMobileDeeplink?: boolean })
     return account;
   }
 
+  const connectClient = await getMetaMaskConnectClient();
+
+  if (connectClient) {
+    const { accounts } = await connectClient.connect({
+      chainIds: [ETHEREUM_MAINNET_CHAIN_HEX],
+    });
+    const account = accounts[0] ?? null;
+
+    if (account) {
+      writeConnectedPreference(true);
+    }
+
+    clearPendingMetaMaskMobileAction();
+    return account;
+  }
+
   if (shouldUseMetaMaskMobileDeeplink() && options?.allowMobileDeeplink !== false) {
     openMetaMaskMobileDapp(METAMASK_MOBILE_CONNECT_ACTION);
     throw Object.assign(new Error("Opening MetaMask Mobile. Continue in the MetaMask app to connect your wallet."), {
@@ -373,31 +389,15 @@ export async function connectWallet(options?: { allowMobileDeeplink?: boolean })
     });
   }
 
-  const connectClient = await getMetaMaskConnectClient();
-
-  if (!connectClient) {
-    if (isLikelyMobileBrowser()) {
-      throw new Error(
-        METAMASK_CONNECT_PUBLIC_RPC_URL
-          ? "MetaMask is not available on this mobile browser. Install or open the MetaMask app and try again."
-          : "MetaMask mobile connect is not configured yet. Add NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL for mobile wallet support.",
-      );
-    }
-
-    throw new Error("MetaMask is not available in this browser.");
+  if (isLikelyMobileBrowser()) {
+    throw new Error(
+      METAMASK_CONNECT_PUBLIC_RPC_URL
+        ? "MetaMask is not available on this mobile browser. Install or open the MetaMask app and try again."
+        : "MetaMask mobile connect is not configured yet. Add NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL for mobile wallet support.",
+    );
   }
 
-  const { accounts } = await connectClient.connect({
-    chainIds: [ETHEREUM_MAINNET_CHAIN_HEX],
-  });
-
-  const account = accounts[0] ?? null;
-
-  if (account) {
-    writeConnectedPreference(true);
-  }
-
-  return account;
+  throw new Error("MetaMask is not available in this browser.");
 }
 
 export async function disconnectWallet() {
@@ -619,6 +619,10 @@ export function clearPendingMetaMaskMobileConnectIntent() {
 }
 
 export async function subscribeToWalletEvents(listener: () => void) {
+  if (!getInjectedEthereum() && !shouldRestoreWalletSession() && !hasPendingMetaMaskMobileConnectIntent()) {
+    return () => {};
+  }
+
   const provider = await getWalletEventSource();
 
   if (!provider?.on) {
