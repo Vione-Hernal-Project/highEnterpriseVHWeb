@@ -16,16 +16,13 @@ Set:
 Add Redirect URLs:
 
 - `https://YOUR_PUBLIC_DOMAIN/auth/callback`
-- `https://YOUR_PUBLIC_DOMAIN/auth/reset-password`
 
 If you use a public preview or staging URL, add those exact URLs too.
 
 Examples:
 
 - `https://staging.yourdomain.com/auth/callback`
-- `https://staging.yourdomain.com/auth/reset-password`
 - `https://your-tunnel-url.ngrok.app/auth/callback`
-- `https://your-tunnel-url.ngrok.app/auth/reset-password`
 
 ## 2. Enable email auth
 
@@ -61,13 +58,21 @@ In Supabase Dashboard:
 
 - Authentication -> Email Templates
 
-Use the files in [supabase/email-templates/confirm-signup.html](../supabase/email-templates/confirm-signup.html), [supabase/email-templates/magic-link.html](../supabase/email-templates/magic-link.html), and [supabase/email-templates/reset-password.html](../supabase/email-templates/reset-password.html).
+Use the files in:
+
+- [supabase/email-templates/confirm-signup.html](../supabase/email-templates/confirm-signup.html)
+- [supabase/email-templates/magic-link.html](../supabase/email-templates/magic-link.html)
+- [supabase/email-templates/reset-password.html](../supabase/email-templates/reset-password.html)
+- [supabase/email-templates/invite-user.html](../supabase/email-templates/invite-user.html)
+- [supabase/email-templates/change-email.html](../supabase/email-templates/change-email.html)
 
 Suggested subjects:
 
-- Confirm signup: `Confirm your Vione Hernal account`
+- Confirm signup: `Confirm Your Account`
 - Magic link: `Your Vione Hernal sign-in link`
-- Reset password: `Reset your Vione Hernal password`
+- Reset password: `Reset Your Password`
+- Invite user: `Your Vione Hernal invitation`
+- Change email address: `Confirm Your New Email`
 
 ## 5. Production note
 
