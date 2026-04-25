@@ -6,6 +6,7 @@ import { resolveAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { serverEnv } from "@/lib/env/server";
 import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const RESEND_WINDOW_MS = 15 * 60_000;
 const RESEND_IP_LIMIT = 6;
@@ -32,6 +33,38 @@ function getSafeResendMessage(message: string) {
   }
 
   return "We couldn't send a new confirmation email right now. Please try again shortly.";
+}
+
+async function findAuthUserByEmail(email: string) {
+  if (!serverEnv.supabaseServiceRoleKey) {
+    return null;
+  }
+
+  const admin = createSupabaseAdminClient();
+  const perPage = 100;
+
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const user = data.users.find((candidate) => candidate.email?.trim().toLowerCase() === email);
+
+    if (user) {
+      return user;
+    }
+
+    if (data.users.length < perPage) {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -96,6 +129,22 @@ export async function POST(request: Request) {
       requestUrl,
       path: "/auth/callback",
     });
+    const authUser = await findAuthUserByEmail(normalizedEmail);
+
+    if (!authUser) {
+      return NextResponse.json(
+        { error: "No pending account was found for this email. Create a new account first." },
+        { status: 404 },
+      );
+    }
+
+    if (authUser.email_confirmed_at || authUser.confirmed_at) {
+      return NextResponse.json(
+        { error: "This account is already confirmed. Sign in instead, or use forgot password if you cannot access it." },
+        { status: 409 },
+      );
+    }
+
     const supabase = createClient(serverEnv.supabaseUrl, serverEnv.supabaseAnonKey, {
       auth: {
         autoRefreshToken: false,
@@ -128,7 +177,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "If this account still needs confirmation, a fresh confirmation email has been sent.",
+      message: "A fresh confirmation email has been sent.",
     });
   } catch (error) {
     console.error("[auth:resend-confirmation]", {

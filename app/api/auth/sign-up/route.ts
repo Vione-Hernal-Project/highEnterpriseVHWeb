@@ -7,6 +7,7 @@ import { resolveAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { serverEnv } from "@/lib/env/server";
 import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const SIGN_UP_WINDOW_MS = 15 * 60_000;
 const SIGN_UP_IP_LIMIT = 10;
@@ -147,6 +148,26 @@ export async function POST(request: Request) {
     const authUser = data.user;
     const isExistingUserLike =
       !data.session && Boolean(authUser) && Array.isArray(authUser?.identities) && authUser.identities.length === 0;
+
+    if (authUser && serverEnv.supabaseServiceRoleKey) {
+      const admin = createSupabaseAdminClient();
+      const { error: profileError } = await admin.from("profiles").upsert(
+        {
+          id: authUser.id,
+          email: authUser.email ?? normalizedEmail,
+        },
+        {
+          onConflict: "id",
+        },
+      );
+
+      if (profileError) {
+        console.error("[auth:sign-up:profile-sync]", {
+          message: profileError.message,
+          userId: authUser.id,
+        });
+      }
+    }
 
     return NextResponse.json({
       sessionCreated: Boolean(data.session),
