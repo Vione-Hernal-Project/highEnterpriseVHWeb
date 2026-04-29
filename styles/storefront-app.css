@@ -911,10 +911,15 @@
 
 .products-grid__item {
   position: relative;
+  animation: storefront-app-product-enter 260ms ease both;
 }
 
 .products-grid__item .product-grids__link {
   display: block;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+  will-change: transform;
 }
 
 .products-grid__item .product__image-container {
@@ -929,6 +934,9 @@
   width: 100%;
   height: auto;
   backface-visibility: hidden;
+  transition:
+    opacity 220ms ease,
+    transform 260ms ease;
 }
 
 .products-grid__item .product__image-main-view {
@@ -954,6 +962,17 @@
 .products-grid__item.storefront-app-has-hover-alt .product__image-alt-trigger:focus-visible .product__image-alt-view,
 .products-grid__item.storefront-app-has-hover-alt:focus-within .product__image-alt-view {
   opacity: 1;
+}
+
+.products-grid__item .product-grids__link:hover,
+.products-grid__item .product-grids__link:focus-visible {
+  transform: translateY(-2px);
+}
+
+.products-grid__item .product-grids__link:active,
+.products-grid__item.is-navigating .product-grids__link {
+  opacity: 0.72;
+  transform: translateY(0);
 }
 
 .products-grid__item--mary-jane .product__image-container,
@@ -1078,6 +1097,7 @@
   background: #111;
   color: #fff;
   border-color: #111;
+  animation: storefront-app-heart-confirm 260ms ease both;
 }
 
 .storefront-app-wishlist-button__icon {
@@ -1101,6 +1121,32 @@
 .storefront-app-wishlist-button.is-active .storefront-app-wishlist-button__icon path {
   fill: currentColor;
   stroke: currentColor;
+}
+
+@keyframes storefront-app-heart-confirm {
+  0% {
+    transform: scale(1);
+  }
+
+  45% {
+    transform: scale(1.08);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes storefront-app-product-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 1024px) {

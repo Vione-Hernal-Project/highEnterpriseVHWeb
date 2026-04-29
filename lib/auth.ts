@@ -78,11 +78,12 @@ export async function getCurrentSession() {
   }
 
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser().catch(() => ({
+    data: { user: null },
+    error: new Error("Unable to read Supabase session."),
+  }));
 
-  return { supabase, user };
+  return { supabase, user: error ? null : data.user };
 }
 
 export async function getCurrentUserContext() {

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
-import { loadAdminCatalogProducts, normalizeProductCategory, normalizeProductDepartment } from "@/lib/products";
+import { PRODUCT_CACHE_TAG, loadAdminCatalogProducts, normalizeProductCategory, normalizeProductDepartment } from "@/lib/products";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adminProductSchema } from "@/lib/validations/product";
@@ -167,6 +168,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error?.message || "Unable to save the product right now." }, { status: 500 });
     }
 
+    revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
+
     return NextResponse.json({ product: data });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error, "Unable to save the product right now.") }, { status: 500 });
@@ -247,6 +250,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: error?.message || "Unable to update the product right now." }, { status: 500 });
     }
 
+    revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
+
     return NextResponse.json({ product: data });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error, "Unable to update the product right now.") }, { status: 500 });
@@ -320,6 +325,8 @@ export async function DELETE(request: Request) {
     if (storagePaths.length) {
       await admin.storage.from("product-media").remove(storagePaths);
     }
+
+    revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
 
     return NextResponse.json({ success: true });
   } catch (error) {

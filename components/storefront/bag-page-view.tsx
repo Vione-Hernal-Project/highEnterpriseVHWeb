@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -85,7 +86,7 @@ export function BagPageView({ products }: Props) {
               return (
                 <article key={item.itemKey} className="storefront-app-card storefront-app-cart-item">
                   <Link href={item.productHref}>
-                    <img src={item.image} alt={item.name} />
+                    <Image src={item.image} alt={item.name} width={180} height={240} sizes="(max-width: 767px) 38vw, 180px" />
                   </Link>
                   <div>
                     <div className="storefront-app-inline">

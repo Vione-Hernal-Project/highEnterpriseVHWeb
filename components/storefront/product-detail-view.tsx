@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -16,6 +17,7 @@ export function ProductDetailView({ product }: Props) {
   const [selectedSize, setSelectedSize] = useState(productUiMeta.sizes[0] ?? "One Size");
   const [quantity, setQuantity] = useState("1");
   const [message, setMessage] = useState("");
+  const [justAdded, setJustAdded] = useState(false);
 
   return (
     <section className="storefront-app-view">
@@ -30,7 +32,7 @@ export function ProductDetailView({ product }: Props) {
       <div className="storefront-app-grid">
         <div className="storefront-app-media vh-product-detail-media">
           <WishlistToggleButton productId={product.id} productName={product.name} />
-          <img src={product.image} alt={product.name} width="720" height="960" />
+          <Image src={product.image} alt={product.name} width={720} height={960} sizes="(max-width: 1024px) 100vw, 50vw" priority />
         </div>
 
         <div className="storefront-app-card">
@@ -90,17 +92,19 @@ export function ProductDetailView({ product }: Props) {
             <div className="vh-actions">
               <button
                 type="button"
-                className="action-button action-button--black action-button--lg"
+                className={`action-button action-button--black action-button--lg ${justAdded ? "is-confirmed" : ""}`}
                 onClick={() => {
+                  setJustAdded(true);
                   addBagItem({
                     productId: product.id,
                     quantity: Number(quantity || "1"),
                     size: selectedSize,
                   });
                   setMessage(`${product.name} added to your bag.`);
+                  window.setTimeout(() => setJustAdded(false), 650);
                 }}
               >
-                Add To Bag
+                {justAdded ? "Added" : "Add To Bag"}
               </button>
               <Link className="vh-button vh-button--ghost" href="/bag">
                 View My Bag

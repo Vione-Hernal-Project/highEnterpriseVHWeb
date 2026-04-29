@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ProductGrid } from "@/components/storefront/product-grid";
+import { PaginatedProductCatalog } from "@/components/storefront/paginated-product-catalog";
 import {
+  PRODUCT_CATEGORY_OPTIONS,
+  PRODUCT_DEPARTMENT_OPTIONS,
   getProductFilterSlug,
-  loadPublishedCatalogProducts,
+  loadPublishedCatalogProductsPage,
   resolveCategoryFilter,
   resolveDepartmentFilter,
 } from "@/lib/products";
@@ -22,10 +24,6 @@ type Props = {
     category?: string;
   }>;
 };
-
-function getUniqueLabels(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean)));
-}
 
 function buildShopHref(filters: { department?: string | null; category?: string | null }) {
   const params = new URLSearchParams();
@@ -45,20 +43,17 @@ function buildShopHref(filters: { department?: string | null; category?: string 
 
 export default async function ShopPage({ searchParams }: Props) {
   const { department: rawDepartment, category: rawCategory } = await searchParams;
-  const allProducts = await loadPublishedCatalogProducts();
-  const availableDepartments = getUniqueLabels(allProducts.map((product) => product.department));
   const requestedDepartment = resolveDepartmentFilter(rawDepartment);
-  const activeDepartment = requestedDepartment && availableDepartments.includes(requestedDepartment) ? requestedDepartment : null;
-  const departmentScopedProducts = activeDepartment
-    ? allProducts.filter((product) => product.department === activeDepartment)
-    : allProducts;
-  const availableCategories = getUniqueLabels(departmentScopedProducts.map((product) => product.categoryLabel));
+  const activeDepartment = requestedDepartment && PRODUCT_DEPARTMENT_OPTIONS.some((department) => department === requestedDepartment) ? requestedDepartment : null;
   const requestedCategory = resolveCategoryFilter(rawCategory);
-  const activeCategory = requestedCategory && availableCategories.includes(requestedCategory) ? requestedCategory : null;
-  const products = activeCategory
-    ? departmentScopedProducts.filter((product) => product.categoryLabel === activeCategory)
-    : departmentScopedProducts;
+  const activeCategory = requestedCategory && PRODUCT_CATEGORY_OPTIONS.some((category) => category === requestedCategory) ? requestedCategory : null;
   const activeFilterLabel = [activeDepartment, activeCategory].filter(Boolean).join(" / ");
+  const initialPage = await loadPublishedCatalogProductsPage({
+    offset: 0,
+    limit: 20,
+    department: activeDepartment,
+    category: activeCategory,
+  });
 
   return (
     <section className="storefront-app-view vh-shop-page">
@@ -68,17 +63,27 @@ export default async function ShopPage({ searchParams }: Props) {
         <span>Shop</span>
       </nav>
 
-      {products.length ? (
-        <>
-          <div className="storefront-app-hero">
-            <p className="u-text--sm u-uppercase u-margin-b--sm">Published Collection</p>
-            <h1 className="h2 u-margin-b--md">Shop</h1>
-            <p className="u-margin-b--none">
-              {products.length} item{products.length === 1 ? "" : "s"} available
-              {activeFilterLabel ? ` in ${activeFilterLabel}` : ""}
-            </p>
-          </div>
-
+      <PaginatedProductCatalog
+        activeFilterLabel={activeFilterLabel}
+        emptyAction={
+          <Link className="vh-button" href="/">
+            Back Home
+          </Link>
+        }
+        emptyMessage={activeFilterLabel ? `No published products match ${activeFilterLabel}.` : "No published products are available yet."}
+        filters={{
+          department: activeDepartment,
+          category: activeCategory,
+        }}
+        hero={{
+          eyebrow: "Published Collection",
+          title: "Shop",
+          copy: "Published collection",
+        }}
+        initialHasMore={initialPage.hasMore}
+        initialProducts={initialPage.products}
+        initialTotal={initialPage.total}
+        toolbar={
           <div className="vh-shop-filters">
             <div className="vh-shop-filter-group">
               <span className="vh-shop-filter-label">Department</span>
@@ -89,7 +94,7 @@ export default async function ShopPage({ searchParams }: Props) {
                 >
                   All
                 </Link>
-                {availableDepartments.map((department) => (
+                {PRODUCT_DEPARTMENT_OPTIONS.map((department) => (
                   <Link
                     key={department}
                     className={`vh-shop-filter-chip ${activeDepartment === department ? "vh-shop-filter-chip--active" : ""}`}
@@ -110,7 +115,7 @@ export default async function ShopPage({ searchParams }: Props) {
                 >
                   All
                 </Link>
-                {availableCategories.map((category) => (
+                {PRODUCT_CATEGORY_OPTIONS.map((category) => (
                   <Link
                     key={category}
                     className={`vh-shop-filter-chip ${activeCategory === category ? "vh-shop-filter-chip--active" : ""}`}
@@ -122,19 +127,8 @@ export default async function ShopPage({ searchParams }: Props) {
               </div>
             </div>
           </div>
-
-          <ProductGrid products={products} showCta={false} />
-        </>
-      ) : (
-        <div className="storefront-app-empty">
-          <p className="u-margin-b--lg">
-            {activeFilterLabel ? `No published products match ${activeFilterLabel}.` : "No published products are available yet."}
-          </p>
-          <Link className="vh-button" href="/">
-            Back Home
-          </Link>
-        </div>
-      )}
+        }
+      />
     </section>
   );
 }

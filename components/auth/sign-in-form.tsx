@@ -52,11 +52,6 @@ export function SignInForm({ nextPath, configError = null }: Props) {
 
       const redirectTo = payload?.redirectTo || nextPath;
 
-      if (typeof window !== "undefined") {
-        window.location.assign(redirectTo);
-        return;
-      }
-
       router.replace(redirectTo);
       router.refresh();
     } catch (error) {

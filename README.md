@@ -50,8 +50,6 @@ lib/
   orders.ts
 docs/
   supabase-auth-setup.md
-legacy-storefront/
-  index.html
 public/
   assets/
 styles/
@@ -74,7 +72,6 @@ supabase/
 - [app/api/payments/verify/route.ts](app/api/payments/verify/route.ts)
 - [app/api/profile/route.ts](app/api/profile/route.ts)
 - [supabase/schema.sql](supabase/schema.sql)
-- [legacy-storefront/index.html](legacy-storefront/index.html)
 
 ## Environment Setup
 

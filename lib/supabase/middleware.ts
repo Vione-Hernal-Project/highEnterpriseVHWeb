@@ -40,9 +40,11 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser().catch(() => ({
+    data: { user: null },
+    error: new Error("Unable to read Supabase session."),
+  }));
+  const user = error ? null : data.user;
 
   if (protectedRoutes.some((route) => request.nextUrl.pathname.startsWith(route)) && !user) {
     const redirectUrl = request.nextUrl.clone();

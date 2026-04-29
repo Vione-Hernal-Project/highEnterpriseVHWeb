@@ -34,7 +34,7 @@ Enable the email provider and enable sign-ups if you want users to create accoun
 
 ## 2a. Keep OTP length aligned
 
-This storefront is currently configured for an 8-digit email OTP in [legacy-storefront/supabase-config.js](../legacy-storefront/supabase-config.js).
+This storefront is currently configured for Supabase email auth through the Next.js React app and Supabase server/client helpers.
 
 - Frontend expectation: `8` digits
 - If your Supabase project is configured to send a different OTP length, update the frontend config to match

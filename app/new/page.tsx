@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ProductGrid } from "@/components/storefront/product-grid";
-import { loadNewArrivalCatalogProducts } from "@/lib/products";
+import { PaginatedProductCatalog } from "@/components/storefront/paginated-product-catalog";
+import { loadPublishedCatalogProductsPage } from "@/lib/products";
 import { createSeoMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = createSeoMetadata({
@@ -12,7 +12,11 @@ export const metadata: Metadata = createSeoMetadata({
 });
 
 export default async function NewArrivalsPage() {
-  const products = await loadNewArrivalCatalogProducts();
+  const initialPage = await loadPublishedCatalogProductsPage({
+    offset: 0,
+    limit: 20,
+    newArrivalsOnly: true,
+  });
 
   return (
     <section className="storefront-app-view vh-new-arrivals-page">
@@ -22,23 +26,23 @@ export default async function NewArrivalsPage() {
         <span>New Arrivals</span>
       </nav>
 
-      {products.length ? (
-        <>
-          <div className="storefront-app-hero">
-            <p className="u-text--sm u-uppercase u-margin-b--sm">Newest Published Pieces</p>
-            <h1 className="h2 u-margin-b--md">New Arrivals</h1>
-            <p className="u-margin-b--none">Sorted by newest published items first.</p>
-          </div>
-          <ProductGrid products={products} showCta={false} />
-        </>
-      ) : (
-        <div className="storefront-app-empty">
-          <p className="u-margin-b--lg">No products are marked for New Arrivals yet.</p>
+      <PaginatedProductCatalog
+        emptyAction={
           <Link className="vh-button" href="/shop">
             Browse Shop
           </Link>
-        </div>
-      )}
+        }
+        emptyMessage="No products are marked for New Arrivals yet."
+        filters={{ newArrivals: true }}
+        hero={{
+          eyebrow: "Newest Published Pieces",
+          title: "New Arrivals",
+          copy: "Sorted by newest published items first.",
+        }}
+        initialHasMore={initialPage.hasMore}
+        initialProducts={initialPage.products}
+        initialTotal={initialPage.total}
+      />
     </section>
   );
 }

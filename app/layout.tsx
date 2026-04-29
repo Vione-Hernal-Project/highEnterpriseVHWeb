@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Suspense } from "react";
 
 import "@/app/globals.css";
 
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
+import { PageTransition } from "@/components/site/page-transition";
 import { getCurrentUserContext } from "@/lib/auth";
 import { JsonLd, organizationJsonLd, siteName, siteUrl, defaultSeoDescription } from "@/lib/seo";
 import Script from "next/script";
@@ -81,7 +83,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <div className="vh-app-shell">
           <SiteHeader signedIn={signedIn} isManagementUser={isManagementUser} />
           <main id="page-content" className="vh-main">
-            <div className="container">{children}</div>
+            <div className="container">
+              <Suspense fallback={children}>
+                <PageTransition>{children}</PageTransition>
+              </Suspense>
+            </div>
           </main>
           <SiteFooter signedIn={signedIn} />
         </div>

@@ -4,6 +4,91 @@ html {
   scroll-behavior: smooth;
 }
 
+.vh-loading-line,
+.vh-loading-block {
+  overflow: hidden;
+  background: #f2eee8;
+  position: relative;
+}
+
+.vh-loading-line::after,
+.vh-loading-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.72) 48%, transparent 100%);
+  transform: translateX(-100%);
+  animation: vh-loading-sheen 1.15s ease-in-out infinite;
+}
+
+.vh-loading-line {
+  height: 0.72rem;
+}
+
+.vh-loading-line--breadcrumb {
+  width: 12rem;
+  margin-bottom: 1.5rem;
+}
+
+.vh-loading-line--eyebrow {
+  width: 10rem;
+  margin-bottom: 0.75rem;
+}
+
+.vh-loading-line--title {
+  width: min(18rem, 70vw);
+  height: 2.25rem;
+  margin-bottom: 0.85rem;
+}
+
+.vh-loading-line--copy {
+  width: min(24rem, 78vw);
+}
+
+.vh-loading-line--product {
+  width: 42%;
+  margin: 1rem auto 0.45rem;
+}
+
+.vh-loading-line--product-name {
+  width: 68%;
+  margin: 0 auto 0.45rem;
+}
+
+.vh-loading-line--price {
+  width: 34%;
+  margin: 0 auto;
+}
+
+@keyframes vh-loading-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .vh-page-transition,
+  .products-grid__item .product-grids__link,
+  .vh-button,
+  .action-button,
+  .storefront-app-wishlist-button {
+    transform: none !important;
+  }
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -32,6 +117,22 @@ textarea {
 
 .vh-main {
   flex: 1;
+}
+
+.vh-page-transition {
+  animation: vh-page-enter 220ms ease both;
+}
+
+@keyframes vh-page-enter {
+  from {
+    opacity: 0.82;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .vh-main .storefront-app-view {
@@ -432,6 +533,18 @@ textarea {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.action-button {
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .vh-button[disabled] {
@@ -443,6 +556,42 @@ textarea {
   background: #fff;
   color: #111114;
   border-color: #d9d1c6;
+}
+
+.vh-button:hover,
+.vh-button:focus-visible,
+.action-button:hover,
+.action-button:focus-visible {
+  transform: translateY(-1px);
+}
+
+.vh-button:active,
+.action-button:active,
+.action-button.is-confirmed {
+  transform: translateY(0);
+  opacity: 0.88;
+}
+
+.vh-load-more {
+  display: flex;
+  justify-content: center;
+  margin: 2rem 0 0.5rem;
+}
+
+.vh-load-more .vh-button {
+  min-width: 11rem;
+}
+
+.vh-load-more-status {
+  margin: 1.25rem 0 0;
+  color: #6d675f;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.vh-loading-grid {
+  margin-top: 1.5rem;
 }
 
 .vh-shop-page .vh-shop-filters {

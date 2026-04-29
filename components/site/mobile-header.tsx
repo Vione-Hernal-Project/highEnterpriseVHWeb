@@ -43,19 +43,6 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
     setIsOpen(false);
   }, [pathname]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isOpen]);
-
   return (
     <>
       <div className="vh-mobile-header">
