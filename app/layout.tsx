@@ -7,7 +7,6 @@ import "@/app/globals.css";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { PageTransition } from "@/components/site/page-transition";
-import { getCurrentUserContext } from "@/lib/auth";
 import { JsonLd, organizationJsonLd, siteName, siteUrl, defaultSeoDescription } from "@/lib/seo";
 import Script from "next/script";
 
@@ -38,20 +37,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
-  const hasSupabaseEnv = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
-  );
-
-  let signedIn = false;
-  let isManagementUser = false;
-
-  if (hasSupabaseEnv) {
-    const context = await getCurrentUserContext();
-    signedIn = Boolean(context.user);
-    isManagementUser = context.isManagementUser;
-  }
-
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <head>
@@ -81,7 +67,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <JsonLd data={organizationJsonLd()} />
         <div className="vh-app-shell">
-          <SiteHeader signedIn={signedIn} isManagementUser={isManagementUser} />
+          <SiteHeader />
           <main id="page-content" className="vh-main">
             <div className="container">
               <Suspense fallback={children}>
@@ -89,7 +75,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               </Suspense>
             </div>
           </main>
-          <SiteFooter signedIn={signedIn} />
+          <SiteFooter signedIn={false} />
         </div>
       </body>
     </html>

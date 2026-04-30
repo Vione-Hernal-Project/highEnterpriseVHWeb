@@ -120,19 +120,7 @@ textarea {
 }
 
 .vh-page-transition {
-  animation: vh-page-enter 220ms ease both;
-}
-
-@keyframes vh-page-enter {
-  from {
-    opacity: 0.82;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  display: contents;
 }
 
 .vh-main .storefront-app-view {

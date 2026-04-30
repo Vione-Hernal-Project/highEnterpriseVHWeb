@@ -1,6 +1,5 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
 type Props = {
@@ -8,13 +7,5 @@ type Props = {
 };
 
 export function PageTransition({ children }: Props) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const transitionKey = `${pathname}?${searchParams.toString()}`;
-
-  return (
-    <div key={transitionKey} className="vh-page-transition">
-      {children}
-    </div>
-  );
+  return <div className="vh-page-transition">{children}</div>;
 }

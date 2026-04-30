@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { memo, useState } from "react";
+import { memo, useEffect, useMemo } from "react";
 
 import { WishlistToggleButton } from "@/components/storefront/wishlist-toggle-button";
 import { featuredProducts, getCatalogPriceLabel, getCatalogProductPageHref, type CatalogProduct } from "@/lib/catalog";
@@ -16,13 +16,30 @@ type Props = {
 
 function ProductGridComponent({ ctaLabel = "View This Piece", products = featuredProducts, showCta = true }: Props) {
   const router = useRouter();
-  const [pendingProductId, setPendingProductId] = useState<string | null>(null);
+  const productHrefs = useMemo(() => products.map((product) => getCatalogProductPageHref(product.id)), [products]);
+
+  useEffect(() => {
+    const prefetchVisibleProducts = () => {
+      productHrefs.slice(0, 24).forEach((productHref) => {
+        router.prefetch(productHref);
+      });
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(prefetchVisibleProducts, { timeout: 1600 });
+
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeoutId = setTimeout(prefetchVisibleProducts, 250);
+
+    return () => clearTimeout(timeoutId);
+  }, [productHrefs, router]);
 
   return (
     <div className="g n-block-grid--4 product-grids js-product-opt-view">
       {products.map((product, index) => {
-        const productHref = getCatalogProductPageHref(product.id);
-        const isPending = pendingProductId === product.id;
+        const productHref = productHrefs[index];
 
         function prefetchProduct() {
           router.prefetch(productHref);
@@ -31,13 +48,12 @@ function ProductGridComponent({ ctaLabel = "View This Piece", products = feature
         return (
           <div
             key={product.id}
-            className={`gc products-grid__item storefront-app-has-hover-alt ${showCta ? "" : "products-grid__item--no-cta"} ${isPending ? "is-navigating" : ""}`}
+            className={`gc products-grid__item storefront-app-has-hover-alt ${showCta ? "" : "products-grid__item--no-cta"}`}
           >
             <WishlistToggleButton productId={product.id} productName={product.name} />
             <Link
               className="product-grids__link product__image-alt-trigger"
               href={productHref}
-              onClick={() => setPendingProductId(product.id)}
               onFocus={prefetchProduct}
               onMouseEnter={prefetchProduct}
               onTouchStart={prefetchProduct}
@@ -69,7 +85,6 @@ function ProductGridComponent({ ctaLabel = "View This Piece", products = feature
               <Link
                 className="vh-card-link"
                 href={productHref}
-                onClick={() => setPendingProductId(product.id)}
                 onFocus={prefetchProduct}
                 onMouseEnter={prefetchProduct}
                 onTouchStart={prefetchProduct}

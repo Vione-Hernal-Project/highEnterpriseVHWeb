@@ -1,19 +1,95 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { LogoutButton } from "@/components/auth/logout-button";
 import { MobileHeader } from "@/components/site/mobile-header";
 import { HeaderStoreLinks } from "@/components/storefront/header-store-links";
 import { WalletStatus } from "@/components/wallet/wallet-status";
+import { hasPublicSupabaseEnv } from "@/lib/env/public";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Props = {
+  signedIn?: boolean;
+  isManagementUser?: boolean;
+};
+
+type HeaderAuthState = {
   signedIn: boolean;
   isManagementUser: boolean;
 };
 
-export function SiteHeader({ signedIn, isManagementUser }: Props) {
+async function loadHeaderAuthState() {
+  if (!hasPublicSupabaseEnv()) {
+    return {
+      signedIn: false,
+      isManagementUser: false,
+    };
+  }
+
+  const supabase = createSupabaseBrowserClient();
+  const { data } = await supabase.auth.getUser();
+
+  if (!data.user) {
+    return {
+      signedIn: false,
+      isManagementUser: false,
+    };
+  }
+
+  const profileResponse = await fetch("/api/profile", {
+    cache: "no-store",
+  }).catch(() => null);
+  const profilePayload = profileResponse?.ok
+    ? ((await profileResponse.json().catch(() => null)) as { role?: string } | null)
+    : null;
+
+  return {
+    signedIn: true,
+    isManagementUser: profilePayload?.role === "admin" || profilePayload?.role === "owner",
+  };
+}
+
+export function SiteHeader({ signedIn = false, isManagementUser = false }: Props) {
+  const [authState, setAuthState] = useState<HeaderAuthState>({
+    signedIn,
+    isManagementUser,
+  });
+
+  useEffect(() => {
+    if (!hasPublicSupabaseEnv()) {
+      return;
+    }
+
+    let cancelled = false;
+    const supabase = createSupabaseBrowserClient();
+
+    loadHeaderAuthState().then((nextAuthState) => {
+      if (!cancelled) {
+        setAuthState(nextAuthState);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      loadHeaderAuthState().then((nextAuthState) => {
+        if (!cancelled) {
+          setAuthState(nextAuthState);
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   return (
     <header className="global-header vh-site-header">
-      <MobileHeader signedIn={signedIn} isManagementUser={isManagementUser} />
+      <MobileHeader signedIn={authState.signedIn} isManagementUser={authState.isManagementUser} />
 
       <nav className="global-header__tertiary-nav vh-header-utility" aria-label="Tertiary">
         <a href="#page-content" className="btn btn--xs skip-link js-focus-to u-capitalize">
@@ -31,7 +107,7 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
               <li className="global-header__tertiary-nav-list-item">
                 <a href="mailto:vionehernal@gmail.com">Need Help?</a>
               </li>
-              {signedIn ? (
+              {authState.signedIn ? (
                 <li className="global-header__tertiary-nav-list-item">
                   <div className="vh-header-auth-links">
                     <Link className="vh-auth-link" href="/dashboard">
@@ -82,12 +158,12 @@ export function SiteHeader({ signedIn, isManagementUser }: Props) {
           <nav className="global-header__secondary-nav vh-header-balance__nav vh-header-balance__nav--right" aria-label="Shopping">
             <ul className="global-header__secondary-nav-list vh-header-balance__list vh-header-balance__list--right">
               <HeaderStoreLinks />
-              {isManagementUser ? (
+              {authState.isManagementUser ? (
                 <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
                   <Link href="/admin/ledger">Ledger</Link>
                 </li>
               ) : null}
-              {isManagementUser ? (
+              {authState.isManagementUser ? (
                 <li className="global-header__secondary-nav-list-item">
                   <Link href="/admin">Admin</Link>
                 </li>
