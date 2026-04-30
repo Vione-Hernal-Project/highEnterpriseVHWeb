@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import "@/app/globals.css";
 
+import { CookieConsent } from "@/components/cookie-consent/CookieConsent";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { PageTransition } from "@/components/site/page-transition";
@@ -18,6 +19,15 @@ export const metadata: Metadata = {
   },
   description: defaultSeoDescription,
   applicationName: siteName,
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "16x16 32x32", type: "image/x-icon" },
+      { url: "/favicon-48x48.png", sizes: "48x48", type: "image/png" },
+      { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/favicon.ico"],
+  },
   alternates: {
     canonical: siteUrl,
   },
@@ -37,6 +47,59 @@ export const metadata: Metadata = {
   },
 };
 
+const cookieConsentBootstrap = `
+  (function () {
+    var storageKey = "vh_cookie_consent";
+
+    function readConsent() {
+      try {
+        var rawConsent = window.localStorage.getItem(storageKey);
+
+        if (!rawConsent) return null;
+
+        var consent = JSON.parse(rawConsent);
+
+        if (!consent || !consent.expiresAt || Date.parse(consent.expiresAt) <= Date.now()) {
+          window.localStorage.removeItem(storageKey);
+          return null;
+        }
+
+        return consent;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function getPreferences() {
+      var consent = readConsent();
+
+      return {
+        essential: true,
+        analytics: Boolean(consent && consent.preferences && consent.preferences.analytics),
+        marketing: Boolean(consent && consent.preferences && consent.preferences.marketing)
+      };
+    }
+
+    window.getCookieConsent = readConsent;
+    window.canLoadTracking = function (category) {
+      if (category === "essential") return true;
+      return Boolean(getPreferences()[category]);
+    };
+
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
+
+    var preferences = getPreferences();
+    window.gtag("consent", "default", {
+      analytics_storage: preferences.analytics ? "granted" : "denied",
+      ad_storage: preferences.marketing ? "granted" : "denied",
+      ad_user_data: preferences.marketing ? "granted" : "denied",
+      ad_personalization: preferences.marketing ? "granted" : "denied",
+      wait_for_update: 500
+    });
+  })();
+`;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
@@ -51,6 +114,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           rel="stylesheet"
           href="https://is4.fwrdassets.com/fw_4653ebc37119b026a2595fd10e8f3b6dd89bfaad/fw_src/main/dist/chrome.css"
         />
+        <Script id="cookie-consent-bootstrap" strategy="beforeInteractive">
+          {cookieConsentBootstrap}
+        </Script>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-9K8H1W9NQJ"
           strategy="afterInteractive"
@@ -77,6 +143,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </main>
           <SiteFooter signedIn={false} />
         </div>
+        <CookieConsent />
       </body>
     </html>
   );
