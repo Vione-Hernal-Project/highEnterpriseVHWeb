@@ -8,6 +8,8 @@ export const siteUrl = (
   process.env.PUBLIC_SITE_URL ||
   "https://vionehernal.com"
 ).replace(/\/+$/, "");
+export const siteDomain = new URL(siteUrl).hostname.replace(/^www\./, "");
+export const officialOnlineStoreTitle = `${siteName} Official Online Store | ${siteDomain}`;
 export const defaultSeoDescription =
   "Vione Hernal is a luxury fashion house exploring minimal luxury fashion, designer streetwear, and blockchain-enabled ownership.";
 export const seoKeywords = [
@@ -37,11 +39,13 @@ export function absoluteUrl(path = "/") {
 
 export function createSeoMetadata({ title, description = defaultSeoDescription, path = "/", image, noIndex }: SeoMetadataInput): Metadata {
   const canonical = absoluteUrl(path);
-  const resolvedTitle = title === siteName ? title : `${title} | ${siteName}`;
+  const resolvedTitle = path === "/" || title === siteName ? officialOnlineStoreTitle : `${siteName} | ${title}`;
   const images = image ? [{ url: absoluteUrl(image), alt: title }] : undefined;
 
   return {
-    title: resolvedTitle,
+    title: {
+      absolute: resolvedTitle,
+    },
     description,
     keywords: seoKeywords,
     alternates: {

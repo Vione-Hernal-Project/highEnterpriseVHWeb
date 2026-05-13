@@ -8,13 +8,13 @@ import { CookieConsent } from "@/components/cookie-consent/CookieConsent";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
 import { PageTransition } from "@/components/site/page-transition";
-import { JsonLd, organizationJsonLd, siteName, siteUrl, defaultSeoDescription } from "@/lib/seo";
+import { JsonLd, organizationJsonLd, siteName, siteUrl, officialOnlineStoreTitle, defaultSeoDescription } from "@/lib/seo";
 import Script from "next/script";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: `${siteName} | Blockchain Fashion And Minimal Luxury`,
+    default: officialOnlineStoreTitle,
     template: `%s | ${siteName}`,
   },
   description: defaultSeoDescription,
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     canonical: siteUrl,
   },
   openGraph: {
-    title: `${siteName} | Blockchain Fashion And Minimal Luxury`,
+    title: officialOnlineStoreTitle,
     description: defaultSeoDescription,
     url: siteUrl,
     siteName,
