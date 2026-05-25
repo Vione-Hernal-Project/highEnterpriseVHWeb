@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   Archive,
@@ -29,7 +30,7 @@ import {
   ChevronRight,
   Filter,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   AddButton,
@@ -164,17 +165,19 @@ const sortOptions: Array<{ value: SortKey; label: string }> = [
   { value: "za", label: "Z-A" },
 ];
 
+const manilaDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Manila",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function getManilaDateKey(value: Date) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(value);
+  return manilaDateFormatter.format(value);
 }
 
 function shiftDateKey(dateKey: string, days: number) {
@@ -398,6 +401,7 @@ export function AdminFilteredModule({
   alertMessage,
   selectable = true,
 }: Props) {
+  const router = useRouter();
   const [selectedTab, setSelectedTab] = useState(tabs[0]);
   const [dateRange, setDateRange] = useState<DateRangeKey>("all");
   const [search, setSearch] = useState("");
@@ -524,11 +528,18 @@ export function AdminFilteredModule({
     setFacetSelections(Object.fromEntries(filterConfigs.map((filter) => [filter.key, "all"])));
   };
 
-  const handleRowClick = (row: AdminFilteredRow) => {
-    if (row.href) {
-      window.location.href = row.href;
+  const handleRowClick = useCallback((row: AdminFilteredRow) => {
+    const href = row.href;
+
+    if (href) {
+      if (href.startsWith("/") && !href.startsWith("//")) {
+        startTransition(() => router.push(href));
+        return;
+      }
+
+      window.location.assign(href);
     }
-  };
+  }, [router]);
 
   return (
     <div className="vh-admin-page">

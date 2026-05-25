@@ -2,7 +2,8 @@
 
 import type { MouseEvent, ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Filter, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,7 @@ export function AdminInteractiveTableShell({
   children,
 }: Props) {
   const shellRef = useRef<HTMLElement | null>(null);
+  const router = useRouter();
   const [selectedTab, setSelectedTab] = useState(activeTab);
   const [search, setSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -116,6 +118,15 @@ export function AdminInteractiveTableShell({
     }
   }, [page, rowsPerPage, search, selectedTab, children]);
 
+  const navigateToHref = useCallback((href: string) => {
+    if (href.startsWith("/") && !href.startsWith("//")) {
+      startTransition(() => router.push(href));
+      return;
+    }
+
+    window.location.assign(href);
+  }, [router]);
+
   const handleRowClick = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest("a, button, input, select, textarea, label")) {
@@ -126,7 +137,7 @@ export function AdminInteractiveTableShell({
     const href = row?.dataset.adminRowHref;
 
     if (href) {
-      window.location.href = href;
+      navigateToHref(href);
     }
   };
 

@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Bell,
@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { AdminRoutePrefetcher } from "@/components/admin/admin-route-prefetcher";
 import { useBrandingAssets } from "@/components/branding/branding-assets";
 import { cn } from "@/lib/utils";
 
@@ -61,11 +62,27 @@ function isActivePath(pathname: string, href: string, exact?: boolean) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function getPathnameFromHref(href: string) {
+  try {
+    return new URL(href, "https://admin.local").pathname;
+  } catch {
+    return href.split(/[?#]/)[0] || "/admin";
+  }
+}
+
+function isPrimaryNavigationEvent(event: MouseEvent<HTMLAnchorElement> | PointerEvent<HTMLAnchorElement>) {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
 export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
   const pathname = usePathname();
-  const router = useRouter();
   const branding = useBrandingAssets();
+  const [activePathname, setActivePathname] = useState(pathname);
   const [ordersBadgeCount, setOrdersBadgeCount] = useState(ordersActionableCount);
+
+  useEffect(() => {
+    setActivePathname(pathname);
+  }, [pathname]);
 
   useEffect(() => {
     setOrdersBadgeCount(ordersActionableCount);
@@ -99,10 +116,30 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
     };
   }, [pathname]);
 
+  const primeSidebarNavigation = (href: string) => {
+    setActivePathname(getPathnameFromHref(href));
+  };
+
   return (
     <section className="vh-admin-system">
+      <AdminRoutePrefetcher />
       <aside className="vh-admin-sidebar" aria-label="Vione Hernal admin navigation">
-        <Link className="vh-admin-sidebar__brand" href="/admin" aria-label="Vione Hernal admin dashboard">
+        <Link
+          className="vh-admin-sidebar__brand"
+          href="/admin"
+          prefetch
+          aria-label="Vione Hernal admin dashboard"
+          onClick={(event) => {
+            if (isPrimaryNavigationEvent(event)) {
+              primeSidebarNavigation("/admin");
+            }
+          }}
+          onPointerDown={(event) => {
+            if (isPrimaryNavigationEvent(event)) {
+              primeSidebarNavigation("/admin");
+            }
+          }}
+        >
           <span>{branding.storeName.toUpperCase()}</span>
           <small>ADMIN PANEL</small>
         </Link>
@@ -110,17 +147,26 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
         <nav className="vh-admin-sidebar__nav">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const active = isActivePath(pathname, item.href, item.exact);
+            const active = isActivePath(activePathname, item.href, item.exact);
             const badge = item.href === "/admin/orders" && ordersBadgeCount > 0 ? String(ordersBadgeCount) : undefined;
 
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 className={cn("vh-admin-sidebar__link", active && "vh-admin-sidebar__link--active")}
                 aria-current={active ? "page" : undefined}
-                onFocus={() => router.prefetch(item.href)}
-                onPointerEnter={() => router.prefetch(item.href)}
+                onClick={(event) => {
+                  if (isPrimaryNavigationEvent(event)) {
+                    primeSidebarNavigation(item.href);
+                  }
+                }}
+                onPointerDown={(event) => {
+                  if (isPrimaryNavigationEvent(event)) {
+                    primeSidebarNavigation(item.href);
+                  }
+                }}
               >
                 <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
                 <span>{item.label}</span>
@@ -142,23 +188,88 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
         </div>
 
         <div className="vh-admin-sidebar__footer">
-          <Link href="/admin/ledger/transactions?date=all">
+          <Link
+            href="/admin/ledger/transactions?date=all"
+            prefetch
+            onClick={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/ledger/transactions?date=all");
+              }
+            }}
+            onPointerDown={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/ledger/transactions?date=all");
+              }
+            }}
+          >
             <CalendarDays size={16} strokeWidth={1.8} aria-hidden="true" />
             Transaction History
           </Link>
-          <Link href="/admin/ledger/distribution">
+          <Link
+            href="/admin/ledger/distribution"
+            prefetch
+            onClick={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/ledger/distribution");
+              }
+            }}
+            onPointerDown={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/ledger/distribution");
+              }
+            }}
+          >
             <Layers3 size={16} strokeWidth={1.8} aria-hidden="true" />
             Allocation Rules
           </Link>
-          <Link href="/admin/settings/payment-methods">
+          <Link
+            href="/admin/settings/payment-methods"
+            prefetch
+            onClick={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/settings/payment-methods");
+              }
+            }}
+            onPointerDown={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/settings/payment-methods");
+              }
+            }}
+          >
             <Percent size={16} strokeWidth={1.8} aria-hidden="true" />
             Payment Methods
           </Link>
-          <Link href="/admin/settings/email">
+          <Link
+            href="/admin/settings/email"
+            prefetch
+            onClick={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/settings/email");
+              }
+            }}
+            onPointerDown={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/settings/email");
+              }
+            }}
+          >
             <Mail size={16} strokeWidth={1.8} aria-hidden="true" />
             Email Settings
           </Link>
-          <Link href="/admin/settings/notifications">
+          <Link
+            href="/admin/settings/notifications"
+            prefetch
+            onClick={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/settings/notifications");
+              }
+            }}
+            onPointerDown={(event) => {
+              if (isPrimaryNavigationEvent(event)) {
+                primeSidebarNavigation("/admin/settings/notifications");
+              }
+            }}
+          >
             <Bell size={16} strokeWidth={1.8} aria-hidden="true" />
             Notifications
           </Link>

@@ -121,6 +121,12 @@ const DEFAULT_ADVANCED_FILTERS: AdvancedOrderFilters = {
 };
 
 const ORDER_DATE_TIME_ZONE = "Asia/Manila";
+const orderDateFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: ORDER_DATE_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 function getOrderDateKey(value: string | Date | null | undefined) {
   if (!value) {
@@ -133,12 +139,7 @@ function getOrderDateKey(value: string | Date | null | undefined) {
     return "";
   }
 
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: ORDER_DATE_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
+  const parts = orderDateFormatter.formatToParts(date);
 
   return `${parts.find((part) => part.type === "year")?.value || "1970"}-${
     parts.find((part) => part.type === "month")?.value || "01"

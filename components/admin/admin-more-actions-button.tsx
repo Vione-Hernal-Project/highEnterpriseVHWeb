@@ -1,11 +1,18 @@
 "use client";
 
 import { ChevronDown, Link2, MoreHorizontal, Printer, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export function AdminMoreActionsButton() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const refreshView = () => {
+    setOpen(false);
+    startTransition(() => router.refresh());
+  };
 
   useEffect(() => {
     if (!open) {
@@ -41,7 +48,7 @@ export function AdminMoreActionsButton() {
       </button>
       {open ? (
         <div className="vh-admin-range-menu vh-admin-actions-menu" role="menu">
-          <button type="button" onClick={() => window.location.reload()}>
+          <button type="button" onClick={refreshView}>
             <RefreshCw size={14} aria-hidden="true" />
             Refresh view
           </button>
