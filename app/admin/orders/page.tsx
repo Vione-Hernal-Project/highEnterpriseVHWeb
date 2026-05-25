@@ -1,213 +1,77 @@
-import Link from "next/link";
-
-import { AdminOrderStatusForm } from "@/components/admin/order-status-form";
+import { AdminOrdersView, type AdminOrderViewRow } from "@/components/admin/admin-orders-view";
 import { requireOrderOperationsUser } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { buildOrderItemsByOrderId, getOrderDisplayLines } from "@/lib/order-items";
-import { formatAmountWithUnit } from "@/lib/payments/options";
+import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatTransactionHash } from "@/lib/utils";
 
-function getHistoryBadgeClass(status: string) {
-  if (status === "paid") {
-    return "vh-badge--paid";
-  }
-
-  if (status === "cancelled") {
-    return "vh-badge--cancelled";
-  }
-
-  return "vh-badge--pending";
+function getCustomerName(order: Record<string, any>) {
+  return order.customer_name || order.email || "Guest customer";
 }
 
-function getHistoryStatusLabel(status: string) {
-  if (status === "paid") {
-    return "Paid / Confirmed";
-  }
-
-  if (status === "cancelled") {
-    return "Cancelled";
-  }
-
-  return "Pending";
-}
-
-function getConfirmationEmailLabel(status: string | null) {
-  if (!status) {
-    return "Not available";
-  }
-
-  if (status === "sent") {
-    return "Sent";
-  }
-
-  if (status === "pending") {
-    return "Queued";
-  }
-
-  if (status === "failed") {
-    return "Needs attention";
-  }
-
-  if (status === "not_configured") {
-    return "Not configured";
-  }
-
-  return status.replace(/_/g, " ");
+function getPaymentForOrder(payments: Array<Record<string, any>>, order: Record<string, any>) {
+  return payments.find((payment) => payment.order_id === order.id || payment.order_id === order.order_number) || null;
 }
 
 export default async function AdminOrdersPage() {
   const { role, isManagementUser } = await requireOrderOperationsUser();
   let orders: Array<Record<string, any>> = [];
-  let loadError = "";
+  let payments: Array<Record<string, any>> = [];
   let orderItems: Array<Record<string, any>> = [];
+  let loadError = "";
 
   try {
     const admin = createSupabaseAdminClient();
-    const [{ data, error }, { data: orderItemsData, error: orderItemsError }] = await Promise.all([
+    const [ordersResult, orderItemsResult, paymentsResult] = await Promise.all([
       admin.from("orders").select("*").order("created_at", { ascending: false }),
       admin.from("order_items").select("*").order("created_at", { ascending: true }),
+      admin.from("payments").select("*").order("created_at", { ascending: false }),
     ]);
 
-    if (error) {
-      loadError = error.message;
-    } else if (orderItemsError) {
-      loadError = orderItemsError.message;
+    if (ordersResult.error || orderItemsResult.error || paymentsResult.error) {
+      loadError = ordersResult.error?.message || orderItemsResult.error?.message || paymentsResult.error?.message || "";
     } else {
-      orders = data || [];
-      orderItems = orderItemsData || [];
+      orders = ordersResult.data || [];
+      orderItems = orderItemsResult.data || [];
+      payments = paymentsResult.data || [];
     }
   } catch (error) {
     loadError = getErrorMessage(error, "Unable to load order operations right now.");
   }
+
   const orderItemsByOrderId = buildOrderItemsByOrderId(orderItems as any);
+  const rows: AdminOrderViewRow[] = orders.map((order) => {
+    const payment = getPaymentForOrder(payments, order);
+    const orderLines = getOrderDisplayLines(order as any, (orderItemsByOrderId.get(order.id) || []) as any);
+    const tokenLabel = payment?.token_type || getPaymentMethodLabel(payment?.payment_method);
+    const transactionRef = payment?.signature || payment?.tx_hash;
+
+    return {
+      id: order.id,
+      orderNumber: order.order_number || order.id,
+      customerName: getCustomerName(order),
+      customerEmail: order.email || "No email recorded",
+      createdAt: order.created_at,
+      dateLabel: formatDateTime(order.created_at),
+      amountLabel: formatAmountWithUnit(order.amount, order.currency),
+      status: order.status,
+      initialStatus: order.status,
+      itemCount: orderLines.length || order.quantity || 1,
+      detailHref: `/admin/orders/${order.id}`,
+      paymentMethodLabel: payment ? getPaymentMethodLabel(payment.payment_method) : "No payment record",
+      tokenLabel: payment ? tokenLabel : "",
+      transactionLabel: payment ? formatTransactionHash(transactionRef) : "",
+      paymentDetailHref: payment ? `/admin/ledger/transactions/payment/${payment.id}` : null,
+    };
+  });
 
   return (
-    <section className="vh-page-shell">
-      <div className="vh-data-card">
-        <p className="vh-mvp-eyebrow">Order Operations</p>
-        <h1 className="vh-mvp-title">Review live and cancelled orders without opening finance tools.</h1>
-        <p className="vh-mvp-copy">
-          Effective role: {role}. This page is limited to order operations. Ledger data, allocations, payment finance,
-          and permission management stay outside the staff workflow.
-        </p>
-        <div className="vh-actions">
-          <Link className="vh-button vh-button--ghost" href="/dashboard">
-            Back To Dashboard
-          </Link>
-          {isManagementUser ? (
-            <Link className="vh-button vh-button--ghost" href="/admin">
-              Open Admin
-            </Link>
-          ) : null}
-        </div>
-        {loadError ? <div className="vh-status vh-status--error">{loadError}</div> : null}
-      </div>
-
-      <section className="vh-data-card vh-dashboard-history__column" style={{ marginTop: "2rem" }}>
-        <div className="vh-dashboard-history__heading">
-          <div>
-            <h2 className="h3 u-margin-b--sm">All Orders</h2>
-            <p className="vh-dashboard-history__meta">Review live and cancelled orders in a contained, easier-to-scan queue.</p>
-          </div>
-          {orders.length ? <span className="vh-dashboard-history__count">{orders.length} item{orders.length === 1 ? "" : "s"}</span> : null}
-        </div>
-        <div className="vh-list vh-dashboard-history__list">
-          {orders.length ? (
-            orders.map((order) => (
-              <article key={order.id} className="vh-history-item">
-                {(() => {
-                  const lineItems = orderItemsByOrderId.get(order.id) ?? [];
-                  const orderLines = getOrderDisplayLines(order as any, lineItems as any);
-                  const shippingSummary = [order.shipping_method, order.shipping_fee ? formatAmountWithUnit(order.shipping_fee, "PHP") : null]
-                    .filter(Boolean)
-                    .join(" · ");
-
-                  return (
-                    <div className="vh-history-card">
-                      <div className="vh-history-card__header">
-                        <div className="vh-history-card__identity">
-                          <p className="vh-history-card__label">Order</p>
-                          <p className="vh-history-card__id">{order.order_number || order.id}</p>
-                          <p className="vh-history-card__timestamp">{formatDateTime(order.created_at)}</p>
-                        </div>
-                        <div className="vh-history-card__status">
-                          <span className={`vh-badge ${getHistoryBadgeClass(order.status)}`}>
-                            {getHistoryStatusLabel(order.status)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="vh-history-card__metrics">
-                        <div className="vh-history-metric vh-history-metric--focus">
-                          <span className="vh-history-metric__label">Checkout Total</span>
-                          <strong className="vh-history-metric__value">
-                            {formatAmountWithUnit(order.amount, order.currency)}
-                          </strong>
-                        </div>
-                        <div className="vh-history-metric">
-                          <span className="vh-history-metric__label">Shipping</span>
-                          <strong className="vh-history-metric__value">{shippingSummary || "Not set"}</strong>
-                        </div>
-                        <div className="vh-history-metric">
-                          <span className="vh-history-metric__label">Confirmation Email</span>
-                          <strong className="vh-history-metric__value">{getConfirmationEmailLabel(order.confirmation_email_status)}</strong>
-                        </div>
-                      </div>
-
-                      <div className="vh-history-card__sections">
-                        <section className="vh-history-card__section">
-                          <p className="vh-history-card__section-title">Customer / Order Summary</p>
-                          <div className="vh-history-card__detail-grid">
-                            <div className="vh-history-card__detail">
-                              <span className="vh-history-card__detail-label">Email</span>
-                              <p className="vh-history-card__detail-value">{order.email || "No email recorded"}</p>
-                            </div>
-                            <div className="vh-history-card__detail">
-                              <span className="vh-history-card__detail-label">Customer</span>
-                              <p className="vh-history-card__detail-value">{order.customer_name || "Not set"}</p>
-                            </div>
-                            {orderLines.length ? (
-                              <div className="vh-history-card__detail vh-history-card__detail--full">
-                                <span className="vh-history-card__detail-label">Items</span>
-                                <div className="vh-history-card__stack">
-                                  {orderLines.map((line) => (
-                                    <p key={line} className="vh-history-card__detail-value">
-                                      {line}
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : null}
-                            <div className="vh-history-card__detail vh-history-card__detail--full">
-                              <span className="vh-history-card__detail-label">Shipping Address</span>
-                              <p className="vh-history-card__detail-value">{order.shipping_address || "Not set"}</p>
-                            </div>
-                          </div>
-                        </section>
-                      </div>
-
-                      <div className="vh-history-card__action">
-                        {role === "staff" && order.status === "paid" ? (
-                          <div className="vh-status">Paid orders are view-only for staff.</div>
-                        ) : (
-                          <AdminOrderStatusForm
-                            orderId={order.id}
-                            initialStatus={order.status}
-                            allowedStatuses={role === "staff" ? ["pending", "cancelled"] : undefined}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </article>
-            ))
-          ) : (
-            <div className="vh-empty">No orders yet.</div>
-          )}
-        </div>
-      </section>
-    </section>
+    <AdminOrdersView
+      rows={rows}
+      role={role}
+      isManagementUser={isManagementUser}
+      loadError={loadError}
+    />
   );
 }

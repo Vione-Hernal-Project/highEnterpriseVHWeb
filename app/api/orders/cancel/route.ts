@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
@@ -114,6 +115,19 @@ export async function POST(request: Request) {
     if (paymentError) {
       return NextResponse.json({ error: paymentError.message }, { status: 500 });
     }
+
+    await tryDispatchAdminNotification("order.cancelled", {
+      entityId: updatedOrder.id,
+      title: `Order cancelled ${updatedOrder.order_number || updatedOrder.id}`,
+      message: `${updatedOrder.customer_name || updatedOrder.email || "A customer"} cancelled an order.`,
+      href: `/admin/orders/${updatedOrder.id}`,
+      customerEmail: updatedOrder.email,
+      customerName: updatedOrder.customer_name,
+      metadata: {
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.order_number,
+      },
+    });
 
     return NextResponse.json({ order: updatedOrder });
   } catch (error) {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { FeaturedProducts } from "@/components/home/featured-products";
+import { WomenEditorialOverlayMotion } from "@/components/site/women-editorial-overlay-motion";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getCatalogProductPageHref } from "@/lib/catalog";
 import { loadFeaturedCatalogProducts } from "@/lib/products";
@@ -32,6 +33,7 @@ export async function LandingPage() {
       </section>
 
       <ul className="story-hero ui-list">
+        <WomenEditorialOverlayMotion />
         <li className="story-hero__screen story-hero__split-video u-clearfix ui-list__item u-margin-b--lg">
           {heroBackgroundSrc ? (
             <img
@@ -44,9 +46,14 @@ export async function LandingPage() {
             />
           ) : null}
           <div className="story-hero__video-pane" aria-hidden="true">
-            <video className="story-hero__video" width="1050" height="1401" autoPlay muted loop playsInline preload="metadata">
-              <source src="/assets/videos/model-video1-cropped.mp4" type="video/mp4" />
-            </video>
+            <img
+              className="story-hero__video"
+              src="/assets/images/vione-hernal-black-sandals-brand-plates.jpg"
+              alt=""
+              role="presentation"
+              width="960"
+              height="1280"
+            />
           </div>
           <div className="story-hero__copy-overlay">
             <h2 className="story-hero__copy-title">
@@ -82,7 +89,14 @@ export async function LandingPage() {
 
         <li className="story-hero__screen story-hero__editorial-row u-clearfix ui-list__item u-margin-b--lg">
           <div className="story-hero__relocated-pane" aria-hidden="true">
-            <img className="story-hero__relocated-image" src="/assets/images/model-3.jpg" alt="" role="presentation" width="640" height="806" />
+            <img
+              className="story-hero__relocated-image"
+              src="/assets/images/vione-hernal-black-vest-model-natural-lighting.png"
+              alt=""
+              role="presentation"
+              width="960"
+              height="1280"
+            />
           </div>
           <div className="story-hero__relocated-copy">
             <h2 className="story-hero__relocated-title">NEW IN, MOST WANTED</h2>
@@ -120,12 +134,14 @@ export async function LandingPage() {
         </li>
       </ul>
 
-      <div className="vh-home-page__featured-shell">
-        <div className="vh-home-page__featured-header">
-          <h3 className="vh-home-page__featured-title u-margin-tb--none">Featured Items</h3>
+      {featuredProducts.length ? (
+        <div className="vh-home-page__featured-shell">
+          <div className="vh-home-page__featured-header">
+            <h3 className="vh-home-page__featured-title u-margin-tb--none">Featured Items</h3>
+          </div>
+          <FeaturedProducts products={featuredProducts} />
         </div>
-        <FeaturedProducts products={featuredProducts} />
-      </div>
+      ) : null}
     </div>
   );
 }

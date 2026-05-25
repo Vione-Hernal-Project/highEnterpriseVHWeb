@@ -1,0 +1,175 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  BarChart3,
+  Bell,
+  BookOpenText,
+  Boxes,
+  CalendarDays,
+  FileBarChart,
+  FileText,
+  Home,
+  ImageIcon,
+  Layers3,
+  LogOut,
+  Mail,
+  Megaphone,
+  Package,
+  Percent,
+  Settings,
+  ShoppingBag,
+  Star,
+  Tag,
+  Users,
+} from "lucide-react";
+
+import { LogoutButton } from "@/components/auth/logout-button";
+import { useBrandingAssets } from "@/components/branding/branding-assets";
+import { cn } from "@/lib/utils";
+
+type Props = {
+  children: ReactNode;
+  ordersActionableCount?: number;
+};
+
+const NAV_ITEMS = [
+  { href: "/admin", label: "Dashboard", icon: Home, exact: true },
+  { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/admin/products", label: "Products", icon: Package },
+  { href: "/admin/collections", label: "Collections", icon: Boxes },
+  { href: "/admin/customers", label: "Customers", icon: Users },
+  { href: "/admin/reviews", label: "Reviews", icon: Star },
+  { href: "/admin/coupons", label: "Coupons", icon: Tag },
+  { href: "/admin/blog", label: "Blog", icon: BookOpenText },
+  { href: "/admin/pages", label: "Pages", icon: FileText },
+  { href: "/admin/banners", label: "Banners", icon: ImageIcon },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admin/marketing", label: "Marketing", icon: Megaphone },
+  { href: "/admin/reports", label: "Reports", icon: FileBarChart },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
+];
+
+function isActivePath(pathname: string, href: string, exact?: boolean) {
+  if (exact) {
+    return pathname === href;
+  }
+
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const branding = useBrandingAssets();
+  const [ordersBadgeCount, setOrdersBadgeCount] = useState(ordersActionableCount);
+
+  useEffect(() => {
+    setOrdersBadgeCount(ordersActionableCount);
+  }, [ordersActionableCount]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshBadges() {
+      try {
+        const response = await fetch("/api/admin/badges", { cache: "no-store" });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json() as { ordersActionableCount?: number };
+
+        if (!cancelled) {
+          setOrdersBadgeCount(Math.max(0, Number(payload.ordersActionableCount || 0)));
+        }
+      } catch {
+        // Badge refresh should never block admin navigation.
+      }
+    }
+
+    void refreshBadges();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
+  return (
+    <section className="vh-admin-system">
+      <aside className="vh-admin-sidebar" aria-label="Vione Hernal admin navigation">
+        <Link className="vh-admin-sidebar__brand" href="/admin" aria-label="Vione Hernal admin dashboard">
+          <span>{branding.storeName.toUpperCase()}</span>
+          <small>ADMIN PANEL</small>
+        </Link>
+
+        <nav className="vh-admin-sidebar__nav">
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = isActivePath(pathname, item.href, item.exact);
+            const badge = item.href === "/admin/orders" && ordersBadgeCount > 0 ? String(ordersBadgeCount) : undefined;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn("vh-admin-sidebar__link", active && "vh-admin-sidebar__link--active")}
+                aria-current={active ? "page" : undefined}
+                onFocus={() => router.prefetch(item.href)}
+                onPointerEnter={() => router.prefetch(item.href)}
+              >
+                <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+                <span>{item.label}</span>
+                {badge ? <b>{badge}</b> : null}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="vh-admin-sidebar__account">
+          <div className="vh-admin-sidebar__monogram">
+            <img src={branding.logoUrl || "/assets/images/vh-logo-v2.jpg"} alt="" />
+          </div>
+          <div>
+            <strong>{branding.storeName}</strong>
+            <span>Administrator</span>
+            <small>admin@vionehernal.com</small>
+          </div>
+        </div>
+
+        <div className="vh-admin-sidebar__footer">
+          <Link href="/admin/ledger/transactions?date=all">
+            <CalendarDays size={16} strokeWidth={1.8} aria-hidden="true" />
+            Transaction History
+          </Link>
+          <Link href="/admin/ledger/distribution">
+            <Layers3 size={16} strokeWidth={1.8} aria-hidden="true" />
+            Allocation Rules
+          </Link>
+          <Link href="/admin/settings/payment-methods">
+            <Percent size={16} strokeWidth={1.8} aria-hidden="true" />
+            Payment Methods
+          </Link>
+          <Link href="/admin/settings/email">
+            <Mail size={16} strokeWidth={1.8} aria-hidden="true" />
+            Email Settings
+          </Link>
+          <Link href="/admin/settings/notifications">
+            <Bell size={16} strokeWidth={1.8} aria-hidden="true" />
+            Notifications
+          </Link>
+          <LogoutButton className="vh-admin-sidebar__logout" redirectTo="/" variant="button">
+            <LogOut size={16} strokeWidth={1.8} aria-hidden="true" />
+            Log out
+          </LogoutButton>
+        </div>
+      </aside>
+
+      <main className="vh-admin-main">{children}</main>
+    </section>
+  );
+}

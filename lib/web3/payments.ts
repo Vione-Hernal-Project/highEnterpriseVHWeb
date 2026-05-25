@@ -51,12 +51,25 @@ function resolveExpectedWalletAddress(walletAddress: string | null | undefined) 
   return getAddress(value);
 }
 
+async function assertEthereumMainnetProvider(provider: BrowserProvider) {
+  const network = await provider.getNetwork();
+
+  if (Number(network.chainId) !== ETHEREUM_MAINNET_CHAIN_ID) {
+    throw new Error("Wrong network selected. Please switch to Ethereum mainnet.");
+  }
+}
+
 export async function prepareWalletForPayment(paymentMethod: PaymentMethod): Promise<PreparedWalletSession> {
   try {
+    const config = getPaymentMethodConfig(paymentMethod);
     const setupError = getPaymentMethodSetupError(paymentMethod);
 
     if (setupError) {
       throw new Error(setupError);
+    }
+
+    if (!config || config.network !== "ethereum" || config.walletProvider !== "metamask") {
+      throw new Error("Please use Phantom for Solana payments.");
     }
 
     const provider = await getBrowserProvider();
@@ -74,6 +87,7 @@ export async function prepareWalletForPayment(paymentMethod: PaymentMethod): Pro
     await ensureEthereumMainnetChain();
 
     const refreshedProvider = (await getBrowserProvider()) ?? provider;
+    await assertEthereumMainnetProvider(refreshedProvider);
     const signer = await refreshedProvider.getSigner();
     const signerAddress = await signer.getAddress();
 
@@ -102,6 +116,12 @@ export async function validateWalletCanPay(input: SendCryptoPaymentInput) {
   if (!config) {
     throw new Error("Unsupported payment method.");
   }
+
+  if (config.network !== "ethereum" || config.walletProvider !== "metamask") {
+    throw new Error("Please use Phantom for Solana payments.");
+  }
+
+  await assertEthereumMainnetProvider(preparedWallet.provider);
 
   if (expectedWalletAddress && preparedWallet.walletAddress !== expectedWalletAddress) {
     throw new Error("Reconnect the wallet that was originally used for this order before paying.");
@@ -159,6 +179,10 @@ export async function sendCryptoPayment(input: SendCryptoPaymentInput): Promise<
 
     if (!config) {
       throw new Error("Unsupported payment method.");
+    }
+
+    if (config.network !== "ethereum" || config.walletProvider !== "metamask") {
+      throw new Error("Please use Phantom for Solana payments.");
     }
 
     const signer = preparedWallet.signer;

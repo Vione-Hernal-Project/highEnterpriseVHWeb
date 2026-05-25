@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ProductDetailView } from "@/components/storefront/product-detail-view";
 import { getCatalogProductPageHref } from "@/lib/catalog";
 import { loadPublishedCatalogProduct, loadPublishedCatalogProducts } from "@/lib/products";
+import { loadApprovedProductReviews } from "@/lib/reviews";
 import { breadcrumbJsonLd, createSeoMetadata, getProductSeoDescription, JsonLd, productJsonLd } from "@/lib/seo";
 
 type Props = {
@@ -44,6 +45,7 @@ export default async function ProductPage({ params }: Props) {
   const relatedProducts = (await loadPublishedCatalogProducts())
     .filter((candidate) => candidate.id !== product.id && candidate.categoryLabel === product.categoryLabel)
     .slice(0, 3);
+  const reviews = await loadApprovedProductReviews(product.id);
 
   return (
     <>
@@ -55,7 +57,7 @@ export default async function ProductPage({ params }: Props) {
           { name: product.name, path: getCatalogProductPageHref(product.id) },
         ])}
       />
-      <ProductDetailView product={product} />
+      <ProductDetailView product={product} reviews={reviews} />
       <section className="u-screen-reader" aria-label={`${product.name} styling and product details`}>
         <h2>{product.name} Materials, Fit, And Styling</h2>
         <p>

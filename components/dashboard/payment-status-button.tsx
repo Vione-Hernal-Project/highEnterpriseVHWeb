@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
-import { getPaymentMethodConfig, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
+import { getPaymentMethodConfig, getPaymentMethodLabel, getPaymentMethodNetworkName, type PaymentMethod } from "@/lib/payments/options";
+import { sendSolanaPayment } from "@/lib/solana/payments";
 import { getWeb3ErrorMessage } from "@/lib/web3/errors";
 import { sendCryptoPayment } from "@/lib/web3/payments";
 
@@ -43,6 +44,7 @@ export function PaymentStatusButton({
   const hasSubmittedTx = Boolean(txHash) && paymentStatus === "pending";
   const canSubmitFreshPayment = !txHash || paymentStatus === "failed";
   const paymentLabel = getPaymentMethodLabel(paymentMethod);
+  const networkLabel = getPaymentMethodNetworkName(paymentMethod);
   const autoVerifyTimerRef = useRef<number | null>(null);
   const autoVerifyAttemptRef = useRef(0);
   const autoVerifyInFlightRef = useRef(false);
@@ -93,7 +95,7 @@ export function PaymentStatusButton({
         setMessage(
           (current) =>
             current ||
-            "Still waiting for on-chain confirmation. If this takes unusually long, check MetaMask for a dropped or replaced transaction.",
+            `Still waiting for ${networkLabel} confirmation. If this takes unusually long, check the transaction in your wallet.`,
         );
         return;
       }
@@ -113,7 +115,7 @@ export function PaymentStatusButton({
 
         if (response.status === 202) {
           setError("");
-          setMessage(payload?.message || "Submitted on-chain. Waiting for Ethereum Mainnet confirmation.");
+          setMessage(payload?.message || `Submitted on-chain. Waiting for ${networkLabel} confirmation.`);
           clearAutoVerifyTimer();
           autoVerifyTimerRef.current = window.setTimeout(runAutoVerify, AUTO_VERIFY_INTERVAL_MS);
           return;
@@ -152,7 +154,7 @@ export function PaymentStatusButton({
       clearAutoVerifyTimer();
       autoVerifyInFlightRef.current = false;
     };
-  }, [hasSubmittedTx, paymentId, paymentLabel, router, txHash, walletAddress]);
+  }, [hasSubmittedTx, networkLabel, paymentId, paymentLabel, router, txHash, walletAddress]);
 
   return (
     <div>
@@ -176,12 +178,19 @@ export function PaymentStatusButton({
 
             const walletPayment = hasSubmittedTx
               ? null
+              : paymentConfig.network === "solana"
+                ? await sendSolanaPayment({
+                    amount: amountExpected,
+                    paymentMethod: paymentMethod as PaymentMethod,
+                    recipientAddress,
+                    expectedWalletAddress: walletAddress,
+                  })
                 : await sendCryptoPayment({
-                  amount: amountExpected,
-                  paymentMethod: paymentMethod as PaymentMethod,
-                  recipientAddress,
-                  expectedWalletAddress: walletAddress,
-                });
+                    amount: amountExpected,
+                    paymentMethod: paymentMethod as PaymentMethod,
+                    recipientAddress,
+                    expectedWalletAddress: walletAddress,
+                  });
 
             const { response, payload } = await requestVerification({
               txHash: walletPayment?.txHash,
@@ -189,7 +198,7 @@ export function PaymentStatusButton({
             });
 
             if (response.status === 202) {
-              setMessage(payload?.message || "Submitted on-chain. Waiting for Ethereum Mainnet confirmation.");
+              setMessage(payload?.message || `Submitted on-chain. Waiting for ${networkLabel} confirmation.`);
               router.refresh();
               return;
             }

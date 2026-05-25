@@ -1,10 +1,20 @@
 import { z } from "zod";
+import { PublicKey } from "@solana/web3.js";
 
 import { normalizePaymentAmount } from "@/lib/payments/amounts";
 import type { CheckoutAmountMode } from "@/lib/payments/checkout";
-import { PAYMENT_METHOD_VALUES } from "@/lib/payments/options";
+import { getPaymentMethodConfig, PAYMENT_METHOD_VALUES } from "@/lib/payments/options";
+import { optionalCouponCodeSchema } from "@/lib/validations/coupon";
 
 const CHECKOUT_AMOUNT_MODES = ["php", "eth"] as const satisfies readonly CheckoutAmountMode[];
+
+function isSolanaPublicKey(value: string) {
+  try {
+    return new PublicKey(value).toBase58() === value;
+  } catch {
+    return false;
+  }
+}
 
 export const orderLineItemSchema = z.object({
   productId: z.string().trim().min(1, "Please select a product."),
@@ -15,6 +25,52 @@ export const orderLineItemSchema = z.object({
     .max(60, "Selected size is too long."),
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1.").max(10, "Quantity must be 10 or less."),
 });
+
+const optionalAttributionTextSchema = z
+  .string()
+  .trim()
+  .max(160, "Campaign attribution value is too long.")
+  .optional()
+  .nullable()
+  .transform((value) => value?.trim() || null);
+
+const checkoutAttributionSchema = z
+  .object({
+    source: optionalAttributionTextSchema,
+    medium: optionalAttributionTextSchema,
+    campaignId: optionalAttributionTextSchema,
+    campaignName: optionalAttributionTextSchema,
+    utmSource: optionalAttributionTextSchema,
+    utmMedium: optionalAttributionTextSchema,
+    utmCampaign: optionalAttributionTextSchema,
+  })
+  .optional()
+  .default({});
+
+const optionalCoordinateSchema = z
+  .union([z.string(), z.number()])
+  .optional()
+  .nullable()
+  .transform((value) => {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
+  });
+
+const deliveryAddressComponentsSchema = z
+  .object({
+    addressLine1: z.string().trim().max(240).optional().nullable(),
+    city: z.string().trim().max(120).optional().nullable(),
+    province: z.string().trim().max(120).optional().nullable(),
+    postalCode: z.string().trim().max(20).optional().nullable(),
+    country: z.string().trim().max(120).optional().nullable(),
+  })
+  .optional()
+  .nullable()
+  .default(null);
 
 export const orderSchema = z
   .object({
@@ -67,6 +123,11 @@ export const orderSchema = z
       .trim()
       .max(500, "Shipping address must be 500 characters or less.")
       .optional(),
+    deliveryLatitude: optionalCoordinateSchema.refine((value) => value === null || (value >= -90 && value <= 90), "Delivery latitude is invalid."),
+    deliveryLongitude: optionalCoordinateSchema.refine((value) => value === null || (value >= -180 && value <= 180), "Delivery longitude is invalid."),
+    deliveryPlaceId: z.string().trim().max(220, "Delivery place ID is too long.").optional().nullable().transform((value) => value?.trim() || null),
+    deliveryMapProvider: z.string().trim().max(60, "Delivery map provider is too long.").optional().nullable().transform((value) => value?.trim() || null),
+    deliveryAddressComponents: deliveryAddressComponentsSchema,
     enteredAmount: z
       .union([z.string(), z.number()])
       .transform((value) => (typeof value === "number" ? value.toString() : value.trim()))
@@ -84,10 +145,9 @@ export const orderSchema = z
         message: "Please select a payment method.",
       }),
     }),
-    payerWalletAddress: z
-      .string()
-      .trim()
-      .regex(/^0x[a-fA-F0-9]{40}$/, "Connect a valid MetaMask wallet before placing the order."),
+    couponCode: optionalCouponCodeSchema,
+    attribution: checkoutAttributionSchema,
+    payerWalletAddress: z.string().trim().min(1, "Connect a wallet before placing the order."),
     notes: z
       .string()
       .trim()
@@ -101,6 +161,24 @@ export const orderSchema = z
     }),
   })
   .superRefine((value, context) => {
+    const paymentConfig = getPaymentMethodConfig(value.paymentMethod);
+
+    if (paymentConfig?.network === "solana") {
+      if (!isSolanaPublicKey(value.payerWalletAddress)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Connect a valid Solana wallet before placing the order.",
+          path: ["payerWalletAddress"],
+        });
+      }
+    } else if (!/^0x[a-fA-F0-9]{40}$/.test(value.payerWalletAddress)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Connect a valid MetaMask wallet before placing the order.",
+        path: ["payerWalletAddress"],
+      });
+    }
+
     if (value.items?.length) {
       return;
     }
@@ -148,12 +226,15 @@ export const verifyPaymentSchema = z.object({
   txHash: z
     .string()
     .trim()
-    .regex(/^0x([A-Fa-f0-9]{64})$/, "Transaction hash is invalid.")
+    .refine((value) => /^0x([A-Fa-f0-9]{64})$/.test(value) || /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(value), "Transaction hash is invalid.")
     .optional(),
   walletAddress: z
     .string()
     .trim()
-    .regex(/^0x[a-fA-F0-9]{40}$/, "Wallet address must be a valid EVM address.")
+    .refine(
+      (value) => /^0x[a-fA-F0-9]{40}$/.test(value) || isSolanaPublicKey(value),
+      "Wallet address must be a valid EVM or Solana address.",
+    )
     .optional(),
 });
 
@@ -280,7 +361,7 @@ export const adminCashOutSchema = z
       });
     }
 
-    if (value.paymentMethod === "eth") {
+    if (value.paymentMethod === "evm_eth") {
       if (value.amountMode !== "eth" && value.amountMode !== "php") {
         context.addIssue({
           code: z.ZodIssueCode.custom,

@@ -9,6 +9,7 @@ import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/
 
 type Props = {
   initialProducts: CatalogProduct[];
+  collectionOptions?: string[];
 };
 
 type ProductFormState = {
@@ -28,8 +29,12 @@ type ProductFormState = {
   showInFeatured: boolean;
 };
 
-const PRODUCT_DEPARTMENT_OPTIONS = ["Womens"];
+const PRODUCT_DEPARTMENT_OPTIONS = ["Womens", "Mens"];
 const PRODUCT_CATEGORY_OPTIONS = ["Ready to Wear", "Tops", "Shoes", "Bags", "Accessories"];
+
+function uniqueOptions(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((first, second) => first.localeCompare(second));
+}
 
 function formatPhpInputFromCents(value: number) {
   return (value / 100).toFixed(2);
@@ -117,7 +122,7 @@ function buildProductPayload(form: ProductFormState) {
   };
 }
 
-export function ProductManager({ initialProducts }: Props) {
+export function ProductManager({ initialProducts, collectionOptions = [] }: Props) {
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
@@ -133,6 +138,11 @@ export function ProductManager({ initialProducts }: Props) {
   const previewImage = form.mainImageUrl.trim() || selectedProduct?.image || "";
   const previewHoverImage = form.hoverImageUrl.trim() || form.mainImageUrl.trim() || selectedProduct?.hoverImage || "";
   const previewPriceLabel = getCatalogPriceLabel(parsePhpInputToCents(form.pricePhp));
+  const productCollectionOptions = uniqueOptions([
+    ...collectionOptions,
+    ...products.map((product) => product.categoryLabel),
+    ...PRODUCT_CATEGORY_OPTIONS,
+  ]);
 
   async function refreshProducts(nextSelectedProductId: string | null) {
     const response = await fetch("/api/admin/products", {
@@ -435,7 +445,7 @@ export function ProductManager({ initialProducts }: Props) {
           </div>
 
           <div className="vh-field">
-            <label htmlFor="product-category">Category</label>
+            <label htmlFor="product-category">Collection</label>
             <select
               id="product-category"
               className="vh-input"
@@ -443,7 +453,10 @@ export function ProductManager({ initialProducts }: Props) {
               onChange={(event) => setForm((currentForm) => ({ ...currentForm, categoryLabel: event.target.value }))}
               disabled={loading || Boolean(uploadingSlot)}
             >
-              {PRODUCT_CATEGORY_OPTIONS.map((option) => (
+              <option value="" disabled>
+                Choose collection
+              </option>
+              {productCollectionOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -719,7 +732,7 @@ export function ProductManager({ initialProducts }: Props) {
               <p className="vh-editorial-summary__description">{form.description || "Product description preview."}</p>
               <p className="vh-editorial-summary__price">{previewPriceLabel}</p>
               <p className="u-margin-b--none" style={{ color: "#6c6c6c" }}>
-                {form.department || "Department"} · {form.categoryLabel || "Category"} · {form.status}
+                {form.department || "Department"} · {form.categoryLabel || "Collection"} · {form.status}
               </p>
               <p className="u-margin-b--none" style={{ color: "#6c6c6c" }}>
                 Featured: {form.showInFeatured ? "Yes" : "No"} · New Arrivals: {form.showInNewArrivals ? "Yes" : "No"}

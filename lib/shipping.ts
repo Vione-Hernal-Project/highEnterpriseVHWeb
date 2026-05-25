@@ -1,6 +1,14 @@
 import { formatPhpCurrencyFromCents, parsePhpInputToCents, phpCentsToDecimalString } from "@/lib/payments/amounts";
 import usePostalPH, { type PlaceProps } from "use-postal-ph";
 
+import {
+  DEFAULT_CHECKOUT_AVAILABILITY_SETTINGS,
+  getShippingCountryZone,
+  getShippingCountryZoneLabel,
+  isShippingCountryZoneEnabled,
+  type CheckoutAvailabilitySettings,
+} from "@/lib/checkout-availability";
+
 export type ShippingZoneCode = "metro_manila" | "luzon" | "visayas" | "mindanao";
 export type ShippingMethodCode = "standard" | "express";
 
@@ -528,8 +536,30 @@ export function getCheckoutShippingQuote(params: {
   merchandiseSubtotalPhpCents: number;
   address: ShippingAddressInput;
   selectedMethodCode?: ShippingMethodCode | null;
+  availabilitySettings?: CheckoutAvailabilitySettings | null;
 }): ShippingQuote {
   const resolvedAddress = resolveShippingAddress(params.address);
+  const availabilitySettings = params.availabilitySettings || DEFAULT_CHECKOUT_AVAILABILITY_SETTINGS;
+  const countryZone = getShippingCountryZone(resolvedAddress.country || params.address.country);
+
+  if (!isShippingCountryZoneEnabled(availabilitySettings, countryZone)) {
+    const zoneLabel = getShippingCountryZoneLabel(countryZone);
+
+    return {
+      isResolved: false,
+      message: `${zoneLabel} shipping is currently disabled.`,
+      normalizedAddress: resolvedAddress,
+      shippingZone: null,
+      shippingZoneLabel: null,
+      shippingMethodCode: null,
+      shippingMethodLabel: null,
+      shippingOptions: [],
+      shippingFeePhpCents: null,
+      shippingFeePhp: null,
+      shippingFeeLabel: "Unavailable",
+      freeShippingApplied: false,
+    };
+  }
 
   if (normalizeToken(resolvedAddress.country) !== "philippines") {
     return {

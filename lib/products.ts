@@ -10,8 +10,9 @@ type ProductRow = Database["public"]["Tables"]["products"]["Row"];
 
 export const PRODUCT_CACHE_TAG = "catalog-products";
 const PRODUCT_CACHE_REVALIDATE_SECONDS = 30;
+const PRODUCT_QUERY_TIMEOUT_MS = Number(process.env.PRODUCT_QUERY_TIMEOUT_MS?.trim() || "1200");
 
-export const PRODUCT_DEPARTMENT_OPTIONS = ["Womens"] as const;
+export const PRODUCT_DEPARTMENT_OPTIONS = ["Womens", "Mens"] as const;
 export const PRODUCT_CATEGORY_OPTIONS = ["Ready to Wear", "Tops", "Shoes", "Bags", "Accessories"] as const;
 
 function normalizeFilterToken(value: string | null | undefined) {
@@ -40,6 +41,10 @@ export function normalizeProductDepartment(value: string | null | undefined) {
 
   if (normalizedValue.includes("women")) {
     return "Womens";
+  }
+
+  if (normalizedValue.includes("men")) {
+    return "Mens";
   }
 
   return toTitleCase(value || PRODUCT_DEPARTMENT_OPTIONS[0]);
@@ -177,6 +182,65 @@ type ProductRowFilters = {
   category?: string | null;
 };
 
+type ProductQueryResult<T> =
+  | {
+      timedOut: false;
+      value: T;
+    }
+  | {
+      timedOut: true;
+    };
+
+async function withProductQueryTimeout<T>(promise: PromiseLike<T>): Promise<ProductQueryResult<T>> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race<ProductQueryResult<T>>([
+      Promise.resolve(promise).then(
+        (value) =>
+          ({
+            timedOut: false,
+            value,
+          }) as const,
+      ),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timeoutId = setTimeout(() => resolve({ timedOut: true }), PRODUCT_QUERY_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+function getFallbackPublishedProducts() {
+  return sortByPublishedNewest(featuredProducts.filter((product) => product.status === "published"));
+}
+
+function getFallbackCatalogPage(filters: {
+  offset: number;
+  limit: number;
+  department?: string | null;
+  category?: string | null;
+  newArrivalsOnly?: boolean;
+}) {
+  const fallbackProducts = getFallbackPublishedProducts().filter((product) => {
+    const departmentMatches = filters.department ? product.department === normalizeProductDepartment(filters.department) : true;
+    const categoryMatches = filters.category ? product.categoryLabel === normalizeProductCategory(filters.category) : true;
+    const newArrivalMatches = filters.newArrivalsOnly ? product.showInNewArrivals : true;
+
+    return departmentMatches && categoryMatches && newArrivalMatches;
+  });
+  const products = fallbackProducts.slice(filters.offset, filters.offset + filters.limit);
+
+  return {
+    products,
+    hasMore: filters.offset + products.length < fallbackProducts.length,
+    total: fallbackProducts.length,
+  };
+}
+
 async function loadProductRows(filters?: ProductRowFilters) {
   const admin = createSupabaseAdminClient();
   let query = admin.from("products").select("*");
@@ -211,7 +275,13 @@ async function loadProductRows(filters?: ProductRowFilters) {
     query = query.limit(filters.limit);
   }
 
-  const { data, error } = await query;
+  const result = await withProductQueryTimeout(query);
+
+  if (result.timedOut) {
+    return null;
+  }
+
+  const { data, error } = result.value;
 
   if (error) {
     throw new Error(error.message);
@@ -247,7 +317,14 @@ async function loadProductRowsPage(filters: ProductRowFilters & { offset: number
     .order("published_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .range(from, to);
-  const { data, error, count } = await query;
+
+  const result = await withProductQueryTimeout(query);
+
+  if (result.timedOut) {
+    return null;
+  }
+
+  const { data, error, count } = result.value;
 
   if (error) {
     throw new Error(error.message);
@@ -271,13 +348,13 @@ const loadCachedProductRows = cache(
   },
 );
 
-function getFallbackPublishedProducts() {
-  return sortByPublishedNewest(featuredProducts.filter((product) => product.status === "published"));
-}
-
 export async function loadPublishedCatalogProducts() {
   try {
     const rows = await loadCachedProductRows();
+    if (!rows) {
+      return getFallbackPublishedProducts();
+    }
+
     return sortByPublishedNewest(rows.map(mapProductRow));
   } catch {
     return getFallbackPublishedProducts();
@@ -287,15 +364,23 @@ export async function loadPublishedCatalogProducts() {
 export async function loadFeaturedCatalogProducts(limit = 3) {
   try {
     const rows = await loadCachedProductRows({ featuredOnly: true, limit });
+    if (!rows) {
+      return [];
+    }
+
     return sortByPublishedNewest(rows.map(mapProductRow)).slice(0, limit);
   } catch {
-    return sortByPublishedNewest(getFallbackPublishedProducts().filter((product) => product.showInFeatured)).slice(0, limit);
+    return [];
   }
 }
 
 export async function loadNewArrivalCatalogProducts() {
   try {
     const rows = await loadCachedProductRows({ newArrivalsOnly: true });
+    if (!rows) {
+      return sortByPublishedNewest(getFallbackPublishedProducts().filter((product) => product.showInNewArrivals));
+    }
+
     return sortByPublishedNewest(rows.map(mapProductRow));
   } catch {
     return sortByPublishedNewest(getFallbackPublishedProducts().filter((product) => product.showInNewArrivals));
@@ -321,32 +406,39 @@ export async function loadPublishedCatalogProductsPage(filters: {
       newArrivalsOnly: filters.newArrivalsOnly,
     });
 
+    if (!page) {
+      return getFallbackCatalogPage({
+        offset,
+        limit,
+        department: filters.department,
+        category: filters.category,
+        newArrivalsOnly: filters.newArrivalsOnly,
+      });
+    }
+
     return {
       products: page.rows.map(mapProductRow),
       hasMore: page.hasMore,
       total: page.total,
     };
   } catch {
-    const fallbackProducts = getFallbackPublishedProducts().filter((product) => {
-      const departmentMatches = filters.department ? product.department === normalizeProductDepartment(filters.department) : true;
-      const categoryMatches = filters.category ? product.categoryLabel === normalizeProductCategory(filters.category) : true;
-      const newArrivalMatches = filters.newArrivalsOnly ? product.showInNewArrivals : true;
-
-      return departmentMatches && categoryMatches && newArrivalMatches;
+    return getFallbackCatalogPage({
+      offset,
+      limit,
+      department: filters.department,
+      category: filters.category,
+      newArrivalsOnly: filters.newArrivalsOnly,
     });
-    const products = fallbackProducts.slice(offset, offset + limit);
-
-    return {
-      products,
-      hasMore: offset + products.length < fallbackProducts.length,
-      total: fallbackProducts.length,
-    };
   }
 }
 
 export async function loadPublishedCatalogProduct(productId: string) {
   try {
     const rows = await loadCachedProductRows({ productId, limit: 1 });
+    if (!rows) {
+      return featuredProducts.find((fallbackProduct) => fallbackProduct.id === productId) ?? null;
+    }
+
     return rows[0] ? mapProductRow(rows[0]) : null;
   } catch {
     return featuredProducts.find((fallbackProduct) => fallbackProduct.id === productId) ?? null;
@@ -355,6 +447,9 @@ export async function loadPublishedCatalogProduct(productId: string) {
 
 export async function loadAdminCatalogProducts() {
   const rows = await loadProductRows({ includeDrafts: true });
+  if (!rows) {
+    throw new Error("Catalog service is taking too long to respond.");
+  }
 
   return sortByPublishedNewest(rows.map(mapProductRow));
 }

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { getBagCheckoutPricing, getCheckoutPricing } from "@/lib/payments/quotes";
 import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
 import { orderLineItemSchema } from "@/lib/validations/order";
+import { PAYMENT_METHOD_VALUES } from "@/lib/payments/options";
 
 const PUBLIC_QUOTE_WINDOW_MS = 60_000;
 const PUBLIC_QUOTE_GET_LIMIT = 60;
@@ -13,6 +15,8 @@ const PUBLIC_QUOTE_BODY_LIMIT_BYTES = 32 * 1024;
 
 const bagPricingRequestSchema = z.object({
   items: z.array(orderLineItemSchema).min(1, "Add at least one item to checkout."),
+  paymentMethod: z.enum(PAYMENT_METHOD_VALUES).optional(),
+  couponCode: z.string().trim().max(40, "Coupon code is too long.").optional().nullable(),
   shippingMethodCode: z.enum(["standard", "express"]).optional().nullable(),
   shippingAddress: z
     .object({
@@ -88,9 +92,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid checkout quote request." }, { status: 400 });
     }
 
+    const { user } = await getCurrentUserContext();
     const pricing = await getBagCheckoutPricing(parsed.data.items, {
       shippingAddress: parsed.data.shippingAddress || undefined,
       shippingMethodCode: parsed.data.shippingMethodCode || undefined,
+      paymentMethod: parsed.data.paymentMethod || "evm_eth",
+      allowUnvalidatedMarket: true,
+      couponCode: parsed.data.couponCode,
+      userId: user?.id ?? null,
+      customerEmail: user?.email ?? null,
     });
 
     return NextResponse.json({ pricing });

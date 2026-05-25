@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getAddress, isAddress } from "ethers";
+import { PublicKey } from "@solana/web3.js";
 
 import { serverEnv } from "@/lib/env/server";
 import { logPaymentDebug } from "@/lib/payments/debug";
@@ -18,15 +19,41 @@ function normalizeWalletAddress(address: string, fallbackMessage: string) {
   return getAddress(address);
 }
 
+function normalizeSolanaWalletAddress(address: string, fallbackMessage: string) {
+  try {
+    return new PublicKey(address.trim()).toBase58();
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+}
+
 export async function resolveMerchantWalletAddress(): Promise<MerchantWalletResolution> {
   const configuredAddress = normalizeWalletAddress(
     serverEnv.merchantWalletAddress,
-    "Merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS in .env.local.",
+    "Merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_EVM_WALLET in .env.local.",
   );
 
   logPaymentDebug("merchant-wallet", {
     source: "env_configured",
     recipientAddress: configuredAddress,
+  });
+
+  return {
+    address: configuredAddress,
+    source: "env_configured",
+  };
+}
+
+export async function resolveSolanaMerchantWalletAddress(): Promise<MerchantWalletResolution> {
+  const configuredAddress = normalizeSolanaWalletAddress(
+    serverEnv.solanaMerchantWalletAddress,
+    "Solana merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_SOLANA_WALLET in .env.local.",
+  );
+
+  logPaymentDebug("merchant-wallet", {
+    source: "env_configured",
+    recipientAddress: configuredAddress,
+    network: "solana",
   });
 
   return {

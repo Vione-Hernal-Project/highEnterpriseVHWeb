@@ -18,7 +18,7 @@ import {
 } from "@/lib/web3/metamask";
 
 const MOBILE_DEEPLINK_FALLBACK_DELAY_MS = 1600;
-const WALLET_CONNECT_TIMEOUT_MS = 90_000;
+const WALLET_CONNECT_TIMEOUT_MS = 8_000;
 
 type WalletState = {
   account: string | null;
@@ -53,6 +53,62 @@ const initialState: WalletState = {
   mobileInstallUrl: null,
   mobileDappUrl: null,
 };
+
+function getWalletErrorCode(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return null;
+  }
+
+  const code = (error as { code?: unknown }).code;
+
+  return typeof code === "number" || typeof code === "string" ? code : null;
+}
+
+function getWalletRawMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+
+    return typeof message === "string" ? message : "";
+  }
+
+  return "";
+}
+
+function getWalletErrorMessage(error: unknown, fallback: string) {
+  const code = getWalletErrorCode(error);
+  const rawMessage = getWalletRawMessage(error);
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (code === 4001) {
+    return "Wallet connection was cancelled.";
+  }
+
+  if (code === -32002 || normalizedMessage.includes("already processing")) {
+    return "MetaMask already has a connection request open. Finish or close the MetaMask window, then try again.";
+  }
+
+  if (code === "METAMASK_LOCKED" || normalizedMessage.includes("metamask is locked")) {
+    return "MetaMask is locked. Unlock MetaMask from the extension, then choose Ethereum again.";
+  }
+
+  if (normalizedMessage.includes("taking too long")) {
+    return "MetaMask is taking too long to respond. Unlock or close MetaMask, then try again.";
+  }
+
+  if (normalizedMessage.includes("unexpected error")) {
+    return "MetaMask could not finish the connection. Unlock or close MetaMask, then try again.";
+  }
+
+  return rawMessage || fallback;
+}
 
 export function useVhlWallet() {
   const [state, setState] = useState<WalletState>(initialState);
@@ -90,7 +146,7 @@ export function useVhlWallet() {
   function withConnectTimeout<T>(promise: Promise<T>) {
     return new Promise<T>((resolve, reject) => {
       const timeoutId = window.setTimeout(() => {
-        reject(new Error("MetaMask did not finish connecting. Return to this page and try again."));
+        reject(new Error("MetaMask is taking too long to respond. Unlock MetaMask, then try again."));
       }, WALLET_CONNECT_TIMEOUT_MS);
 
       promise.then(
@@ -171,15 +227,7 @@ export function useVhlWallet() {
               return;
             }
 
-            const message =
-              typeof error === "object" &&
-              error !== null &&
-              "code" in error &&
-              error.code === 4001
-                ? "Wallet connection was cancelled."
-                : error instanceof Error
-                  ? error.message
-                  : "Unable to connect MetaMask right now.";
+            const message = getWalletErrorMessage(error, "Unable to connect MetaMask right now.");
 
             setState((previous) => ({
               ...previous,
@@ -207,7 +255,7 @@ export function useVhlWallet() {
           isDisconnecting: false,
           showInstallFallback: !hasWalletConnector(),
           installTarget: getMetaMaskInstallTarget(),
-          error: error instanceof Error ? error.message : "Unable to check the wallet connection right now.",
+          error: getWalletErrorMessage(error, "Unable to check the wallet connection right now."),
           notice: "",
           mobileInstallUrl: getMetaMaskMobileInstallUrl(),
           mobileDappUrl: getMetaMaskMobileDappUrl(),
@@ -283,6 +331,23 @@ export function useVhlWallet() {
         throw new Error("No wallet account was returned.");
       }
 
+      setState((previous) => ({
+        ...previous,
+        account,
+        chainId: null,
+        isSupportedChain: false,
+        vhlBalance: null,
+        hasProvider: true,
+        isConnecting: false,
+        isLoading: false,
+        showInstallFallback: false,
+        installTarget: getMetaMaskInstallTarget(),
+        error: "",
+        notice: "Ethereum wallet connected. Checking network...",
+        mobileInstallUrl: getMetaMaskMobileInstallUrl(),
+        mobileDappUrl: getMetaMaskMobileDappUrl(),
+      }));
+
       const snapshot = await getWalletSnapshot({ eager: true });
 
       setState({
@@ -306,22 +371,14 @@ export function useVhlWallet() {
         scheduleMobileInstallFallback();
       }
 
-      const message =
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === 4001
-          ? "Wallet connection was cancelled."
-          : error instanceof Error
-            ? error.message
-            : "Unable to connect MetaMask right now.";
+      const message = getWalletErrorMessage(error, "Unable to connect MetaMask right now.");
 
       setState((previous) => ({
         ...previous,
         hasProvider: hasWalletConnector(),
         isConnecting: false,
         isLoading: false,
-        showInstallFallback: isRedirect ? false : previous.showInstallFallback || !previous.hasProvider,
+        showInstallFallback: isRedirect || previous.account ? false : previous.showInstallFallback || !previous.hasProvider,
         installTarget: getMetaMaskInstallTarget(),
         error: message,
         notice: "",
@@ -364,7 +421,7 @@ export function useVhlWallet() {
         ...previous,
         isDisconnecting: false,
         installTarget: getMetaMaskInstallTarget(),
-        error: error instanceof Error ? error.message : "Unable to disconnect the wallet right now.",
+        error: getWalletErrorMessage(error, "Unable to disconnect the wallet right now."),
         mobileInstallUrl: getMetaMaskMobileInstallUrl(),
         mobileDappUrl: getMetaMaskMobileDappUrl(),
       }));

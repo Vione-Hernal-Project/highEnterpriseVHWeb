@@ -41,10 +41,22 @@ export const serverEnv = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "",
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "",
-  merchantWalletAddress: process.env.NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS?.trim() ?? "",
+  merchantWalletAddress:
+    process.env.NEXT_PUBLIC_MERCHANT_EVM_WALLET?.trim() || process.env.NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS?.trim() || "",
+  solanaMerchantWalletAddress:
+    process.env.NEXT_PUBLIC_MERCHANT_SOLANA_WALLET?.trim() ||
+    process.env.NEXT_PUBLIC_SOLANA_MERCHANT_WALLET?.trim() ||
+    process.env.NEXT_PUBLIC_SOLANA_MERCHANT_WALLET_ADDRESS?.trim() ||
+    "",
   ethereumMainnetRpcUrl: normalizeRpcUrl(process.env.ETHEREUM_MAINNET_RPC_URL?.trim() ?? ""),
-  usdcTokenAddress: process.env.NEXT_PUBLIC_USDC_TOKEN_ADDRESS?.trim() ?? "",
-  usdtTokenAddress: process.env.NEXT_PUBLIC_USDT_TOKEN_ADDRESS?.trim() ?? "",
+  solanaRpcUrl: normalizeRpcUrl(process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim() || process.env.SOLANA_RPC_URL?.trim() || ""),
+  solanaNetwork: process.env.NEXT_PUBLIC_SOLANA_NETWORK?.trim() ?? "",
+  usdcTokenAddress:
+    process.env.NEXT_PUBLIC_USDC_EVM_CONTRACT?.trim() || process.env.NEXT_PUBLIC_USDC_TOKEN_ADDRESS?.trim() || "",
+  usdtTokenAddress:
+    process.env.NEXT_PUBLIC_USDT_EVM_CONTRACT?.trim() || process.env.NEXT_PUBLIC_USDT_TOKEN_ADDRESS?.trim() || "",
+  usdcSolanaMintAddress: process.env.NEXT_PUBLIC_USDC_SOLANA_MINT?.trim() ?? "",
+  usdtSolanaMintAddress: process.env.NEXT_PUBLIC_USDT_SOLANA_MINT?.trim() ?? "",
   vhlTokenAddress: process.env.NEXT_PUBLIC_VHL_TOKEN_ADDRESS?.trim() ?? "",
   storeOwnerEmails: process.env.STORE_OWNER_EMAILS?.trim() ?? "",
   smtpHost: process.env.SMTP_HOST?.trim() ?? "",
@@ -84,6 +96,18 @@ export function getEthereumMainnetRpcEnvError() {
   }
 
   return `Ethereum Mainnet RPC is not configured. Add ${ETHEREUM_MAINNET_RPC_ENV_NAME} to .env.local and restart the Next.js dev server.`;
+}
+
+export function getSolanaRpcEnvError() {
+  if (serverEnv.solanaNetwork !== "mainnet-beta") {
+    return "Wrong network selected. Please switch to Solana mainnet.";
+  }
+
+  if (!serverEnv.solanaRpcUrl) {
+    return "Solana RPC is not configured. Add NEXT_PUBLIC_SOLANA_RPC_URL to .env.local and restart the Next.js dev server.";
+  }
+
+  return null;
 }
 
 export function getConfiguredOwnerEmails() {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { getPasswordStrengthError, getPasswordStrengthInputs, passwordStrengthRules } from "@/lib/auth/password-strength";
 import { resolveAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
@@ -167,6 +168,21 @@ export async function POST(request: Request) {
           userId: authUser.id,
         });
       }
+    }
+
+    if (authUser) {
+      await tryDispatchAdminNotification("customer.registration", {
+        entityId: authUser.id,
+        title: "New customer registration",
+        message: `${authUser.email || normalizedEmail} created a Vione Hernal account.`,
+        href: "/admin/customers",
+        customerEmail: authUser.email || normalizedEmail,
+        metadata: {
+          userId: authUser.id,
+          email: authUser.email || normalizedEmail,
+          requiresEmailConfirmation: !data.session,
+        },
+      });
     }
 
     return NextResponse.json({

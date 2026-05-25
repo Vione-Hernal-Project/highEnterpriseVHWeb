@@ -1,15 +1,17 @@
 import Link from "next/link";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { CustomerCoupons } from "@/components/dashboard/customer-coupons";
 import { CancelOrderButton } from "@/components/dashboard/cancel-order-button";
 import { PaymentStatusButton } from "@/components/dashboard/payment-status-button";
 import { WalletAddressForm } from "@/components/dashboard/wallet-address-form";
 import { requireUser } from "@/lib/auth";
+import { loadAvailableCustomerCoupons } from "@/lib/coupons";
 import type { Database } from "@/lib/database.types";
 import { buildOrderItemsByOrderId, getOrderDisplayLines } from "@/lib/order-items";
 import { formatAmountWithUnit, getPaymentMethodConfig, getPaymentMethodLabel } from "@/lib/payments/options";
 import { formatDateTime, formatWalletAddress } from "@/lib/utils";
-import { getAddressExplorerUrl, getTransactionExplorerUrl } from "@/lib/web3/network";
+import { getPaymentAddressExplorerUrl, getPaymentTransactionExplorerUrl } from "@/lib/web3/network";
 
 function getHistoryBadgeClass(status: string) {
   if (status === "paid") {
@@ -67,13 +69,48 @@ function getConfirmationEmailLabel(status: string | null) {
   return status.replace(/_/g, " ");
 }
 
-export default async function DashboardPage() {
-  const { supabase, user, profile, role, canManageOrders, isManagementUser } = await requireUser();
+function getCouponExpiryLabel(value: string | null) {
+  if (!value) {
+    return "No expiration";
+  }
 
-  const [{ data: orders, error: ordersError }, { data: payments, error: paymentsError }, { data: orderItems, error: orderItemsError }] = await Promise.all([
+  return new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
+
+function getCouponApplicabilityLabel(coupon: Awaited<ReturnType<typeof loadAvailableCustomerCoupons>>[number]) {
+  const collections = Array.isArray(coupon.applicable_collection_slugs) ? coupon.applicable_collection_slugs.filter((item) => typeof item === "string") : [];
+  const products = Array.isArray(coupon.applicable_product_ids) ? coupon.applicable_product_ids.filter((item) => typeof item === "string") : [];
+
+  if (products.length && collections.length) {
+    return `${products.length} products, ${collections.length} collections`;
+  }
+
+  if (products.length) {
+    return `${products.length} product${products.length === 1 ? "" : "s"}`;
+  }
+
+  if (collections.length) {
+    return `${collections.length} collection${collections.length === 1 ? "" : "s"}`;
+  }
+
+  return "All eligible items";
+}
+
+export default async function DashboardPage() {
+  const { supabase, user, profile, role } = await requireUser();
+
+  const [
+    { data: orders, error: ordersError },
+    { data: payments, error: paymentsError },
+    { data: orderItems, error: orderItemsError },
+    availableCoupons,
+  ] = await Promise.all([
     supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
     supabase.from("payments").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
     supabase.from("order_items").select("*").order("created_at", { ascending: true }),
+    loadAvailableCustomerCoupons({ userId: user.id, customerEmail: user.email ?? null }).catch(() => []),
   ]);
   const orderItemsByOrderId = buildOrderItemsByOrderId(orderItems || []);
   const paymentByOrderId = new Map<string, Database["public"]["Tables"]["payments"]["Row"]>();
@@ -99,16 +136,6 @@ export default async function DashboardPage() {
             <Link className="vh-button" href="/shop">
               Shop Collection
             </Link>
-            {canManageOrders ? (
-              <Link className="vh-button vh-button--ghost" href="/admin/orders">
-                View Orders
-              </Link>
-            ) : null}
-            {isManagementUser ? (
-              <Link className="vh-button vh-button--ghost" href="/admin">
-                Manage Store
-              </Link>
-            ) : null}
             <LogoutButton />
           </div>
         </div>
@@ -142,6 +169,19 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
+      <div style={{ marginTop: "2rem" }}>
+        <CustomerCoupons
+          coupons={availableCoupons.map((coupon) => ({
+            code: coupon.code,
+            discountLabel: coupon.discountLabel,
+            description: coupon.description,
+            expiryLabel: getCouponExpiryLabel(coupon.ends_at),
+            minimumPurchaseLabel: coupon.minimumPurchaseLabel,
+            applicabilityLabel: getCouponApplicabilityLabel(coupon),
+          }))}
+        />
+      </div>
+
       <div className="vh-admin-columns vh-dashboard-history" style={{ marginTop: "2rem" }}>
         <section className="vh-data-card vh-dashboard-history__column">
           <div className="vh-dashboard-history__heading">
@@ -164,6 +204,7 @@ export default async function DashboardPage() {
                     const shippingSummary = [order.shipping_method, order.shipping_fee ? formatAmountWithUnit(order.shipping_fee, "PHP") : null]
                       .filter(Boolean)
                       .join(" · ");
+                    const taxSummary = order.tax_rate_label && order.tax_amount !== null ? `${order.tax_rate_label} · ${formatAmountWithUnit(order.tax_amount, "PHP")}` : "Not applied";
                     const canCancelOrder =
                       order.status === "pending" &&
                       (!relatedPayment || (!relatedPayment.tx_hash && relatedPayment.status !== "paid" && relatedPayment.status !== "cancelled"));
@@ -204,6 +245,10 @@ export default async function DashboardPage() {
                           <div className="vh-history-metric">
                             <span className="vh-history-metric__label">Shipping</span>
                             <strong className="vh-history-metric__value">{shippingSummary || "Not set"}</strong>
+                          </div>
+                          <div className="vh-history-metric">
+                            <span className="vh-history-metric__label">Tax</span>
+                            <strong className="vh-history-metric__value">{taxSummary}</strong>
                           </div>
                           <div className="vh-history-metric">
                             <span className="vh-history-metric__label">Confirmation Email</span>
@@ -284,7 +329,7 @@ export default async function DashboardPage() {
                 <strong>Manual On-Chain Check</strong>
                 <p>
                   Compare expected vs received amount, confirm the recipient wallet matches the merchant wallet, then
-                  use the tx hash in Etherscan to inspect the transfer externally.
+                  use the transaction link to inspect the transfer externally.
                 </p>
               </div>
               {payments.map((payment) => (
@@ -350,7 +395,7 @@ export default async function DashboardPage() {
                             <span className="vh-history-card__detail-label">Locked Rate</span>
                             <p className="vh-history-card__detail-value">
                               {payment.conversion_rate
-                                ? `${formatAmountWithUnit(payment.conversion_rate, "PHP")} / ETH`
+                                ? `${formatAmountWithUnit(payment.conversion_rate, "PHP")} / ${getPaymentMethodLabel(payment.payment_method)}`
                                 : "Not set"}
                             </p>
                           </div>
@@ -366,7 +411,7 @@ export default async function DashboardPage() {
                               {payment.recipient_address ? (
                                 <a
                                   className="vh-inline-link"
-                                  href={getAddressExplorerUrl(payment.recipient_address) || undefined}
+                                  href={getPaymentAddressExplorerUrl(payment.payment_method, payment.recipient_address) || undefined}
                                   target="_blank"
                                   rel="noreferrer"
                                 >
@@ -383,7 +428,7 @@ export default async function DashboardPage() {
                               {payment.tx_hash ? (
                                 <a
                                   className="vh-inline-link"
-                                  href={getTransactionExplorerUrl(payment.tx_hash) || undefined}
+                                  href={getPaymentTransactionExplorerUrl(payment.payment_method, payment.tx_hash) || undefined}
                                   target="_blank"
                                   rel="noreferrer"
                                 >
@@ -400,7 +445,7 @@ export default async function DashboardPage() {
                               {payment.wallet_address ? (
                                 <a
                                   className="vh-inline-link"
-                                  href={getAddressExplorerUrl(payment.wallet_address) || undefined}
+                                  href={getPaymentAddressExplorerUrl(payment.payment_method, payment.wallet_address) || undefined}
                                   target="_blank"
                                   rel="noreferrer"
                                 >

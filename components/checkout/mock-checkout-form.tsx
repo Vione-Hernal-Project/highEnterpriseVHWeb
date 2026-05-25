@@ -4,18 +4,42 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { getCatalogPriceLabel, getCatalogProductPageHref, type CatalogProduct } from "@/lib/catalog";
+import { CHECKOUT_SETTINGS_SYNC_STORAGE_KEY } from "@/lib/checkout-settings-sync";
+import {
+  getEnabledPaymentMethodOptions,
+  isPaymentMethodEnabled,
+  type CheckoutAvailabilitySettings,
+} from "@/lib/checkout-availability";
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 import { formatOrderItemLine } from "@/lib/order-items";
 import { formatPhpCurrencyFromCents } from "@/lib/payments/amounts";
 import { getDefaultCheckoutInput, resolveCheckoutInput, type CheckoutAmountMode } from "@/lib/payments/checkout";
+import { readMarketingAttribution } from "@/lib/marketing/attribution";
+import {
+  getPaymentMethodConfig,
+  getPaymentMethodLabel,
+  getPaymentMethodNetworkName,
+  isPaymentMethodValue,
+  PAYMENT_METHOD_OPTIONS,
+  type PaymentMethod,
+} from "@/lib/payments/options";
+import { sendSolanaPayment, validateSolanaWalletCanPay } from "@/lib/solana/payments";
 import { getCheckoutShippingQuote, getShippingMethodLabel, resolveShippingPostalAutofill, type ShippingMethodCode } from "@/lib/shipping";
 import { getWeb3ErrorMessage } from "@/lib/web3/errors";
 import { sendCryptoPayment, validateWalletCanPay } from "@/lib/web3/payments";
 import { readBagItems, subscribeToStorefrontState, writeBagItems, type StorefrontBagItem } from "@/lib/storefront/storage";
+import {
+  isPreciseGeocodeResult,
+  useGeocodedAddress,
+  type GeocodeAddressComponents,
+  type GeocodeResult,
+} from "@/components/map/use-geocoded-address";
+import { VhInteractiveMap, type VhMapMarker } from "@/components/map/vh-interactive-map";
 
 type Props = {
   customerEmail: string;
   products: CatalogProduct[];
+  checkoutSettings: CheckoutAvailabilitySettings;
 };
 
 type CheckoutBagLineItem = StorefrontBagItem & {
@@ -59,6 +83,25 @@ type PricingPreview = {
   shippingZoneLabel: string | null;
   shippingMessage: string;
   freeShippingApplied: boolean;
+  couponId: string | null;
+  couponCode: string | null;
+  couponLabel: string | null;
+  couponMessage: string | null;
+  discountPhpCents: number;
+  discountPhp: string;
+  discountPhpLabel: string;
+  productDiscountPhpCents: number;
+  shippingDiscountPhpCents: number;
+  totalBeforeDiscountPhpCents: number;
+  taxRuleId: string | null;
+  taxLabel: string | null;
+  taxRatePercent: number;
+  taxableAmountPhpCents: number;
+  taxableAmountPhp: string;
+  taxableAmountPhpLabel: string;
+  taxPhpCents: number;
+  taxPhp: string;
+  taxPhpLabel: string;
   totalPhpCents: number;
   totalPhp: string;
   totalPhpLabel: string;
@@ -76,8 +119,32 @@ type PricingPreview = {
   phpPerEthLabel: string;
   requiredEth: string;
   requiredEthLabel: string;
+  phpPerCrypto: number;
+  phpPerCryptoLabel: string;
+  requiredCryptoAmount: string;
+  requiredCryptoLabel: string;
+  cryptoSymbol: string;
+  cryptoDecimals: number;
   quoteSource: string;
   quoteUpdatedAt: string | null;
+  estimatedUsdValue: string;
+  estimatedUsdLabel: string;
+  usdPhpRate: number | null;
+  coingeckoCryptoUsdPrice: number | null;
+  binanceCryptoUsdPrice: number | null;
+  priceDifferencePercent: number | null;
+  slippageBufferPercent: number;
+  slippageBufferLabel: string;
+  baseCryptoAmount: string;
+  baseCryptoLabel: string;
+  slippageBufferAmount: string;
+  slippageBufferAmountLabel: string;
+  networkFeeEstimateAmount: string;
+  networkFeeEstimateLabel: string;
+  networkFeeEstimateSymbol: string;
+  estimatedTotalLabel: string;
+  quoteExpiresAt: string;
+  quoteTtlSeconds: number;
 };
 
 type SubmissionState = {
@@ -92,11 +159,24 @@ type SubmissionState = {
   itemLines: string[];
   subtotalPhpLabel: string;
   shippingFeeLabel: string;
+  couponCode: string | null;
+  couponLabel: string | null;
+  discountPhpLabel: string | null;
+  taxLabel: string | null;
+  taxPhpLabel: string | null;
   shippingMethodLabel: string | null;
   shippingZoneLabel: string | null;
   totalPhpLabel: string;
   requiredEthLabel: string;
   payableEthLabel: string;
+  cryptoSymbol: string;
+  estimatedUsdLabel: string | null;
+  baseCryptoLabel: string | null;
+  slippageBufferLabel: string | null;
+  slippageBufferAmountLabel: string | null;
+  networkFeeEstimateLabel: string | null;
+  estimatedTotalLabel: string | null;
+  quoteExpiresAt: string | null;
   recipientWalletAddress: string | null;
   confirmationEmailStatus: string;
   verificationStatus: "paid" | "pending" | "failed";
@@ -114,6 +194,12 @@ type VerifyPaymentPayload = {
 
 const AUTO_VERIFY_INTERVAL_MS = 8000;
 const AUTO_VERIFY_MAX_ATTEMPTS = 10;
+const PENDING_CHECKOUT_PAYMENT_STORAGE_KEY = "vionehernal_pending_checkout_payment";
+const PENDING_CHECKOUT_PAYMENT_TTL_MS = 24 * 60 * 60 * 1000;
+const CHECKOUT_PAYMENT_METHOD_STORAGE_KEY = "vionehernal_checkout_payment_method";
+const CHECKOUT_QUOTE_DEBOUNCE_MS = 350;
+const CRYPTO_NETWORK_FEE_NOTE =
+  "Crypto payments include network processing fees required by the blockchain. These fees are not charged by Vione Hernal and go directly to the network. Final fees are confirmed in your wallet before payment.";
 
 function formatQuoteTime(value: string | null) {
   if (!value) {
@@ -126,11 +212,111 @@ function formatQuoteTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatQuoteCountdown(seconds: number | null) {
+  if (seconds === null) {
+    return "--";
+  }
+
+  if (seconds <= 0) {
+    return "Expired";
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
 function buildShippingAddress(parts: Array<string | null | undefined>) {
   return parts
     .map((part) => (part || "").trim())
     .filter(Boolean)
     .join(", ");
+}
+
+function readPendingCheckoutPayment() {
+  try {
+    const rawValue = window.localStorage.getItem(PENDING_CHECKOUT_PAYMENT_STORAGE_KEY);
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue) as (SubmissionState & { expiresAt?: string }) | null;
+
+    if (!parsed?.paymentId || !parsed.txHash || parsed.verificationStatus !== "pending") {
+      window.localStorage.removeItem(PENDING_CHECKOUT_PAYMENT_STORAGE_KEY);
+      return null;
+    }
+
+    if (parsed.expiresAt && Date.parse(parsed.expiresAt) <= Date.now()) {
+      window.localStorage.removeItem(PENDING_CHECKOUT_PAYMENT_STORAGE_KEY);
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingCheckoutPayment(submission: SubmissionState) {
+  if (!submission.txHash || submission.verificationStatus !== "pending") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      PENDING_CHECKOUT_PAYMENT_STORAGE_KEY,
+      JSON.stringify({
+        ...submission,
+        savedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + PENDING_CHECKOUT_PAYMENT_TTL_MS).toISOString(),
+      }),
+    );
+  } catch {
+    // Recovery storage is best-effort; the order remains recoverable from the dashboard.
+  }
+}
+
+function clearPendingCheckoutPayment() {
+  try {
+    window.localStorage.removeItem(PENDING_CHECKOUT_PAYMENT_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function readStoredCheckoutPaymentMethod(): PaymentMethod | "" {
+  try {
+    const storedValue = window.localStorage.getItem(CHECKOUT_PAYMENT_METHOD_STORAGE_KEY);
+
+    return isPaymentMethodValue(storedValue) ? storedValue : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredCheckoutPaymentMethod(value: PaymentMethod) {
+  try {
+    window.localStorage.setItem(CHECKOUT_PAYMENT_METHOD_STORAGE_KEY, value);
+  } catch {
+    // Remembering the last chain is convenience-only.
+  }
+}
+
+function getCheckoutPaymentPairLabel(option: (typeof PAYMENT_METHOD_OPTIONS)[number]) {
+  const chainSymbol = option.network === "ethereum" ? "ETH" : "SOL";
+
+  return option.kind === "native" ? chainSymbol : `${chainSymbol} / ${option.label}`;
+}
+
+function normalizeCheckoutCouponCode(value: string) {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9_-]/g, "");
 }
 
 async function rollbackPendingOrder(orderId: string) {
@@ -149,7 +335,7 @@ async function rollbackPendingOrder(orderId: string) {
   }
 }
 
-export function MockCheckoutForm({ customerEmail, products }: Props) {
+export function MockCheckoutForm({ customerEmail, products, checkoutSettings: initialCheckoutSettings }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const [bagItems, setBagItems] = useState<StorefrontBagItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -167,17 +353,25 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("Philippines");
   const [shippingMethodCode, setShippingMethodCode] = useState<ShippingMethodCode>("standard");
-  const [paymentMethod] = useState<"eth">("eth");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
   const [amountMode, setAmountMode] = useState<CheckoutAmountMode>("php");
   const [enteredAmount, setEnteredAmount] = useState("");
+  const [couponInput, setCouponInput] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [notes, setNotes] = useState("");
   const [pricing, setPricing] = useState<PricingPreview | null>(null);
+  const [checkoutSettings, setCheckoutSettings] = useState(initialCheckoutSettings);
   const [submission, setSubmission] = useState<SubmissionState | null>(null);
+  const [manualMapLocation, setManualMapLocation] = useState<GeocodeResult | null>(null);
+  const [quoteRefreshNonce, setQuoteRefreshNonce] = useState(0);
+  const [quoteNow, setQuoteNow] = useState(() => Date.now());
   const autoVerifyTimerRef = useRef<number | null>(null);
   const autoVerifyAttemptRef = useRef(0);
   const autoVerifyInFlightRef = useRef(false);
+  const mapAddressUpdateRef = useRef(false);
 
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+  const enabledPaymentOptions = useMemo(() => getEnabledPaymentMethodOptions(checkoutSettings), [checkoutSettings]);
 
   useEffect(() => {
     function syncBag() {
@@ -188,6 +382,109 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
     return subscribeToStorefrontState(syncBag);
   }, []);
+
+  useEffect(() => {
+    const pendingPayment = readPendingCheckoutPayment();
+
+    if (pendingPayment) {
+      setSubmission(pendingPayment);
+      return;
+    }
+
+    const storedPaymentMethod = readStoredCheckoutPaymentMethod();
+
+    if (storedPaymentMethod && isPaymentMethodEnabled(checkoutSettings, storedPaymentMethod)) {
+      setPaymentMethod(storedPaymentMethod);
+    }
+  }, [checkoutSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncCheckoutSettings() {
+      try {
+        const response = await fetch("/api/settings/checkout", { cache: "no-store" });
+        const payload = await readJsonSafely<{ settings?: CheckoutAvailabilitySettings }>(response);
+
+        if (!cancelled && response.ok && payload?.settings) {
+          setCheckoutSettings(payload.settings);
+        }
+      } catch {
+        // The server-rendered settings remain the fallback.
+      }
+    }
+
+    syncCheckoutSettings();
+    function handleCheckoutSettingsStorage(event: StorageEvent) {
+      if (event.key === CHECKOUT_SETTINGS_SYNC_STORAGE_KEY) {
+        void syncCheckoutSettings();
+      }
+    }
+
+    window.addEventListener("focus", syncCheckoutSettings);
+    window.addEventListener("storage", handleCheckoutSettingsStorage);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", syncCheckoutSettings);
+      window.removeEventListener("storage", handleCheckoutSettingsStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (paymentMethod && !isPaymentMethodEnabled(checkoutSettings, paymentMethod)) {
+      const fallbackMethod = enabledPaymentOptions[0]?.value || "";
+
+      setPaymentMethod(fallbackMethod);
+      setPricing(null);
+      setQuoteError(fallbackMethod ? "" : "No crypto payment methods are currently available.");
+      setReviewMode(false);
+      setConfirmed(false);
+
+      if (fallbackMethod) {
+        writeStoredCheckoutPaymentMethod(fallbackMethod);
+      }
+    }
+  }, [checkoutSettings, enabledPaymentOptions, paymentMethod]);
+
+  function handlePaymentMethodSelect(value: PaymentMethod) {
+    if (!isPaymentMethodEnabled(checkoutSettings, value)) {
+      return;
+    }
+
+    setPaymentMethod(value);
+    writeStoredCheckoutPaymentMethod(value);
+    setPricing(null);
+    setQuoteError("");
+    setShippingMessage("");
+    setReviewMode(false);
+    setConfirmed(false);
+    setError("");
+  }
+
+  useEffect(() => {
+    if (!submission) {
+      return;
+    }
+
+    if (submission.verificationStatus === "pending" && submission.txHash) {
+      writePendingCheckoutPayment(submission);
+      return;
+    }
+
+    clearPendingCheckoutPayment();
+  }, [submission]);
+
+  useEffect(() => {
+    if (!pricing?.quoteExpiresAt || submission) {
+      return;
+    }
+
+    setQuoteNow(Date.now());
+    const intervalId = window.setInterval(() => setQuoteNow(Date.now()), 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [pricing?.quoteExpiresAt, submission]);
 
   useEffect(() => {
     if (!submission || submission.verificationStatus !== "pending" || !submission.txHash) {
@@ -219,7 +516,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
             ? {
                 ...current,
                 message:
-                  "Transaction submitted. Still waiting for Ethereum Mainnet confirmation. If this takes unusually long, check MetaMask for a dropped or replaced transaction.",
+                  `Transaction submitted. Still waiting for ${getPaymentMethodNetworkName(submission.paymentMethod)} confirmation.`,
               }
             : current,
         );
@@ -254,7 +551,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
             current && current.paymentId === submission.paymentId
               ? {
                   ...current,
-                  message: payload?.message || "Transaction submitted. Waiting for Ethereum Mainnet confirmation.",
+                  message: payload?.message || `Transaction submitted. Waiting for ${getPaymentMethodNetworkName(submission.paymentMethod)} confirmation.`,
                 }
               : current,
           );
@@ -284,13 +581,14 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
         clearAutoVerifyTimer();
         setError("");
+        writeBagItems([]);
         setSubmission((current) =>
           current && current.paymentId === submission.paymentId
             ? {
                 ...current,
                 verificationStatus: "paid",
                 confirmationEmailStatus: payload?.order?.confirmation_email_status || current.confirmationEmailStatus,
-                message: payload?.message || "Ethereum Mainnet payment confirmed.",
+                message: payload?.message || `${getPaymentMethodNetworkName(submission.paymentMethod)} payment confirmed.`,
               }
             : current,
         );
@@ -354,7 +652,140 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
     () => buildShippingAddress([address1, city, province, postalCode, country]),
     [address1, city, province, postalCode, country],
   );
+  const streetWordCount = address1.trim().split(/\s+/).filter(Boolean).length;
+  const streetLooksSpecific = streetWordCount >= 3 || /\d/.test(address1);
+  const shouldResolveMapAddress = Boolean(
+    streetLooksSpecific && address1.trim() && city.trim() && province.trim() && postalCode.trim().length >= 3 && country.trim(),
+  );
+  const {
+    result: geocodedCheckoutAddress,
+    loading: mapResolving,
+    status: mapResolveStatus,
+  } = useGeocodedAddress(shippingAddress, {
+    debounceMs: 850,
+    enabled: shouldResolveMapAddress && !manualMapLocation,
+    structured: {
+      street: address1,
+      city,
+      province,
+      postalCode,
+      country,
+    },
+  });
+  const checkoutResolvedLocation = manualMapLocation || geocodedCheckoutAddress;
+  const checkoutAutoLocationIsPrecise = isPreciseGeocodeResult(geocodedCheckoutAddress);
+  const checkoutPreviewLocation =
+    !manualMapLocation && geocodedCheckoutAddress && !checkoutAutoLocationIsPrecise
+      ? { lat: geocodedCheckoutAddress.lat, lng: geocodedCheckoutAddress.lng }
+      : undefined;
+  const checkoutMapMarkers = useMemo<VhMapMarker[]>(() => {
+    if (!shouldResolveMapAddress) {
+      return [];
+    }
+
+    const location = checkoutResolvedLocation;
+
+    if (!location || (!manualMapLocation && !checkoutAutoLocationIsPrecise)) {
+      return [];
+    }
+
+    return [
+      {
+        id: "checkout-shipping-address",
+        label: "Shipping address",
+        description: shippingAddress,
+        lat: location.lat,
+        lng: location.lng,
+      },
+    ];
+  }, [checkoutAutoLocationIsPrecise, checkoutResolvedLocation, manualMapLocation, shippingAddress, shouldResolveMapAddress]);
+  const checkoutMapState = !shouldResolveMapAddress
+    ? "empty"
+    : mapResolving
+      ? "loading"
+      : checkoutMapMarkers.length
+        ? "found"
+        : mapResolveStatus === "not-found" || mapResolveStatus === "error"
+          ? "not-found"
+          : checkoutPreviewLocation
+            ? "needs-pin"
+          : "empty";
+  const checkoutLocationIsApproximate = Boolean(
+    checkoutMapState === "found"
+      && !manualMapLocation
+      && checkoutResolvedLocation?.precision
+      && !["address"].includes(checkoutResolvedLocation.precision),
+  );
+  const checkoutMapHeaderCopy =
+    checkoutMapState === "loading"
+      ? "Locating address"
+      : checkoutMapState === "found"
+        ? manualMapLocation
+          ? "Exact location marked"
+          : checkoutLocationIsApproximate
+            ? "Approximate - mark exact drop-off"
+            : "Drag, scroll, or right-click to adjust"
+        : checkoutMapState === "not-found"
+          ? "Address not found"
+          : checkoutMapState === "needs-pin"
+            ? "Approximate - mark exact drop-off"
+          : "Complete address to preview";
+  const checkoutMapEmptyTitle =
+    checkoutMapState === "loading"
+      ? "Locating address..."
+      : checkoutMapState === "not-found"
+        ? "Address not found yet."
+        : checkoutMapState === "needs-pin"
+          ? "Exact pin needed."
+        : "Complete address to preview.";
+  const checkoutMapEmptyCopy =
+    checkoutMapState === "loading"
+      ? "Checking the delivery location from the address you entered."
+      : checkoutMapState === "not-found"
+        ? "Try adding the street, barangay, city, province, postal code, and country."
+        : checkoutMapState === "needs-pin"
+          ? "This address only matched a general area. Right-click the exact gate, entrance, or drop-off point and choose Mark location."
+        : "Enter a street, city, province, postal code, and country to preview the delivery location.";
+  const selectedDeliveryLocation = checkoutMapMarkers.length ? checkoutResolvedLocation : null;
   const postalAutofill = useMemo(() => resolveShippingPostalAutofill({ postalCode, country }), [country, postalCode]);
+
+  function applyResolvedAddressComponents(components: GeocodeAddressComponents | undefined) {
+    if (!components) {
+      return;
+    }
+
+    mapAddressUpdateRef.current = true;
+
+    if (components.addressLine1) setAddress1(components.addressLine1);
+    if (components.city) setCity(components.city);
+    if (components.province) setProvince(components.province);
+    if (components.postalCode) setPostalCode(components.postalCode);
+    if (components.country) setCountry(components.country);
+  }
+
+  async function markCheckoutLocation(location: { lat: number; lng: number }) {
+    const fallbackLocation: GeocodeResult = {
+      label: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`,
+      lat: location.lat,
+      lng: location.lng,
+      provider: "manual",
+      precision: "coordinate",
+    };
+
+    try {
+      const response = await fetch(`/api/maps/reverse-geocode?lat=${encodeURIComponent(location.lat)}&lng=${encodeURIComponent(location.lng)}`);
+      const payload = await readJsonSafely<{ result?: GeocodeResult | null }>(response);
+      const resolvedLocation = payload?.result || fallbackLocation;
+
+      setManualMapLocation(resolvedLocation);
+
+      if (response.ok) {
+        applyResolvedAddressComponents(resolvedLocation.components);
+      }
+    } catch {
+      setManualMapLocation(fallbackLocation);
+    }
+  }
   const localShippingPreview = useMemo(
     () =>
       getCheckoutShippingQuote({
@@ -367,8 +798,9 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           country,
         },
         selectedMethodCode: shippingMethodCode,
+        availabilitySettings: checkoutSettings,
       }),
-    [address1, checkoutItems, city, country, postalCode, province, shippingMethodCode],
+    [address1, checkoutItems, checkoutSettings, city, country, postalCode, province, shippingMethodCode],
   );
 
   useEffect(() => {
@@ -388,6 +820,15 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
   }, [country, postalAutofill.city, postalAutofill.country, postalAutofill.postalCode, postalAutofill.province, postalAutofill.status]);
 
   useEffect(() => {
+    if (mapAddressUpdateRef.current) {
+      mapAddressUpdateRef.current = false;
+      return;
+    }
+
+    setManualMapLocation(null);
+  }, [shippingAddress]);
+
+  useEffect(() => {
     if (submission) {
       return;
     }
@@ -400,17 +841,18 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadPricing() {
-      if (!pricingRequestItems.length) {
-        if (!submission) {
-          setPricing(null);
-          setEnteredAmount("");
-          setQuoteError("");
-          setShippingMessage("");
-        }
-        return;
+    if (!pricingRequestItems.length || !paymentMethod) {
+      if (!submission) {
+        setPricing(null);
+        setEnteredAmount("");
+        setQuoteLoading(false);
+        setQuoteError("");
+        setShippingMessage("");
       }
+      return;
+    }
 
+    async function loadPricing() {
       setQuoteLoading(true);
       setQuoteError("");
 
@@ -422,6 +864,8 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           },
           body: JSON.stringify({
             items: pricingRequestItems,
+            paymentMethod,
+            couponCode: couponCode || null,
             shippingMethodCode,
             shippingAddress: {
               address1,
@@ -435,7 +879,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         const payload = await readJsonSafely<{ error?: string; pricing?: PricingPreview }>(response);
 
         if (!response.ok || !payload?.pricing) {
-          throw new Error(getResponseErrorMessage(payload, "Unable to load the current ETH quote."));
+          throw new Error(getResponseErrorMessage(payload, `Unable to load the current ${getPaymentMethodLabel(paymentMethod)} quote.`));
         }
 
         if (cancelled) {
@@ -454,8 +898,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         }
 
         setPricing(null);
-        setShippingMessage("");
-        setQuoteError(getErrorMessage(quoteLoadError, "Unable to load the current ETH quote."));
+        setQuoteError(getErrorMessage(quoteLoadError, `Unable to load the current ${getPaymentMethodLabel(paymentMethod)} quote.`));
       } finally {
         if (!cancelled) {
           setQuoteLoading(false);
@@ -463,17 +906,21 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
       }
     }
 
-    void loadPricing();
+    const timeoutId = window.setTimeout(() => {
+      void loadPricing();
+    }, CHECKOUT_QUOTE_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
     };
-  }, [address1, amountMode, city, country, postalCode, pricingRequestItems, province, shippingMethodCode, submission]);
+  }, [address1, amountMode, checkoutSettings, city, country, couponCode, paymentMethod, postalCode, pricingRequestItems, province, quoteRefreshNonce, shippingMethodCode, submission]);
 
   const resolvedInput = pricing
     ? resolveCheckoutInput({
         amountMode,
         enteredAmount,
+        paymentMethod: paymentMethod || "evm_eth",
         pricing,
       })
     : null;
@@ -482,6 +929,71 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
   const subtotalLabel = pricing?.subtotalPhpLabel || formatPhpCurrencyFromCents(localSubtotalPhpCents);
   const shippingLabel = pricing?.shippingFeeLabel || localShippingPreview.shippingFeeLabel;
   const totalLabel = pricing?.totalPhpLabel || formatPhpCurrencyFromCents(localSubtotalPhpCents + (localShippingPreview.shippingFeePhpCents || 0));
+  const quoteSecondsRemaining = pricing?.quoteExpiresAt
+    ? Math.max(0, Math.ceil((Date.parse(pricing.quoteExpiresAt) - quoteNow) / 1000))
+    : null;
+  const quoteExpired = quoteSecondsRemaining === 0;
+
+  function refreshQuote() {
+    setQuoteRefreshNonce((current) => current + 1);
+    setQuoteError("");
+    setReviewMode(false);
+    setConfirmed(false);
+    setError("");
+  }
+
+  function applyCoupon() {
+    const normalizedCode = normalizeCheckoutCouponCode(couponInput);
+
+    setCouponInput(normalizedCode);
+    setCouponCode(normalizedCode);
+    setQuoteError("");
+    setReviewMode(false);
+    setConfirmed(false);
+    setError("");
+  }
+
+  function removeCoupon() {
+    setCouponInput("");
+    setCouponCode("");
+    setQuoteError("");
+    setReviewMode(false);
+    setConfirmed(false);
+    setError("");
+  }
+
+  function renderPaymentMethodOptions(className: string, ariaLabel: string) {
+    return (
+      <div className={className} role="radiogroup" aria-label={ariaLabel}>
+        {enabledPaymentOptions.length ? enabledPaymentOptions.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={paymentMethod === option.value}
+            className={`vh-chain-option vh-chain-option--${option.network} ${paymentMethod === option.value ? "vh-chain-option--active" : ""}`}
+            data-token={option.label}
+            onClick={() => handlePaymentMethodSelect(option.value)}
+          >
+            <span className="vh-chain-option__asset-row">
+              <span className="vh-chain-option__icon-stack" aria-hidden="true">
+                <span className={`vh-chain-option__coin vh-chain-option__coin--${option.network === "ethereum" ? "eth" : "sol"}`} />
+                {option.kind === "token" ? <span className={`vh-chain-option__coin vh-chain-option__coin--${option.label.toLowerCase()}`} /> : null}
+              </span>
+              <span className="vh-chain-option__pair">{getCheckoutPaymentPairLabel(option)}</span>
+            </span>
+            <span className="vh-chain-option__name">{option.network === "ethereum" ? "Ethereum" : "Solana"}</span>
+            <span className="vh-chain-option__wallet">{option.walletProvider === "metamask" ? "MetaMask" : "Phantom Wallet"}</span>
+            <span className="vh-chain-option__detail">
+              {option.network === "ethereum" ? "Ethereum Mainnet" : "Solana Mainnet"} · {option.tokenStandard.toUpperCase()}
+            </span>
+          </button>
+        )) : (
+          <p className="vh-payment-note">Crypto payment methods are currently unavailable.</p>
+        )}
+      </div>
+    );
+  }
 
   function resetForm() {
     setCustomerName("");
@@ -508,12 +1020,31 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
     }
 
     if (!pricing) {
-      setError(quoteError || "The live ETH quote is still loading.");
+      setError(
+        !paymentMethod
+          ? "Choose Ethereum or Solana before reviewing this order."
+          : quoteError || `The live ${getPaymentMethodLabel(paymentMethod)} quote is still loading.`,
+      );
+      return;
+    }
+
+    if (paymentMethod && !isPaymentMethodEnabled(checkoutSettings, paymentMethod)) {
+      setError("This payment method is currently unavailable. Choose another active payment method.");
+      return;
+    }
+
+    if (quoteError) {
+      setError(quoteError);
       return;
     }
 
     if (!pricing.isShippingResolved || !pricing.shippingMethodCode) {
       setError(pricing.shippingMessage || "Shipping will be calculated after completing your address.");
+      return;
+    }
+
+    if (quoteExpired) {
+      setError("This crypto quote has expired. Refresh the quote before continuing to wallet payment.");
       return;
     }
 
@@ -543,15 +1074,58 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
       return;
     }
 
+    if (quoteError) {
+      setError(quoteError);
+      setReviewMode(false);
+      setConfirmed(false);
+      return;
+    }
+
+    if (!paymentMethod) {
+      setError("Choose Ethereum or Solana before starting payment.");
+      return;
+    }
+
+    if (!isPaymentMethodEnabled(checkoutSettings, paymentMethod)) {
+      setError("This payment method is currently unavailable. Choose another active payment method.");
+      setReviewMode(false);
+      setConfirmed(false);
+      return;
+    }
+
+    if (quoteExpired) {
+      setError("This crypto quote has expired. Refresh the quote before opening your wallet.");
+      setReviewMode(false);
+      setConfirmed(false);
+      return;
+    }
+
     setLoading(true);
     setError("");
     setSubmission(null);
 
     try {
-      const preparedWallet = await validateWalletCanPay({
-        amount: resolvedInput.payableEthAmount,
-        paymentMethod,
-      });
+      const paymentConfig = getPaymentMethodConfig(paymentMethod);
+
+      if (!paymentConfig) {
+        throw new Error("Unsupported token for this chain.");
+      }
+
+      const evmPreparedWallet =
+        paymentConfig.network === "ethereum"
+          ? await validateWalletCanPay({
+              amount: resolvedInput.payableCryptoAmount,
+              paymentMethod,
+            })
+          : null;
+      const solanaPreparedWallet =
+        paymentConfig.network === "solana"
+          ? await validateSolanaWalletCanPay({
+              amount: resolvedInput.payableCryptoAmount,
+              paymentMethod,
+            })
+          : null;
+      const preparedWalletAddress = evmPreparedWallet?.walletAddress || solanaPreparedWallet?.walletAddress || "";
 
       const createOrderResponse = await fetch("/api/orders", {
         method: "POST",
@@ -568,10 +1142,17 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           shippingPostalCode: postalCode,
           shippingCountry: country,
           shippingMethodCode,
+          deliveryLatitude: selectedDeliveryLocation?.lat ?? null,
+          deliveryLongitude: selectedDeliveryLocation?.lng ?? null,
+          deliveryPlaceId: selectedDeliveryLocation?.placeId || null,
+          deliveryMapProvider: selectedDeliveryLocation?.provider || null,
+          deliveryAddressComponents: selectedDeliveryLocation?.components || null,
           enteredAmount,
           amountMode,
           paymentMethod,
-          payerWalletAddress: preparedWallet.walletAddress,
+          couponCode: couponCode || null,
+          attribution: readMarketingAttribution(),
+          payerWalletAddress: preparedWalletAddress,
           notes,
           confirmed,
         }),
@@ -584,6 +1165,11 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         pricing: {
           subtotalPhpLabel: string;
           shippingFeeLabel: string;
+          couponCode?: string | null;
+          couponLabel?: string | null;
+          discountPhpLabel?: string | null;
+          taxLabel?: string | null;
+          taxPhpLabel?: string | null;
           shippingMethodCode: ShippingMethodCode | null;
           shippingMethodLabel: string | null;
           shippingZoneLabel: string | null;
@@ -591,12 +1177,30 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           requiredEthLabel: string;
           payableEthAmount: string;
           payableEthLabel: string;
+          payableCryptoAmount?: string;
+          payableCryptoLabel?: string;
+          cryptoSymbol?: string;
+          estimatedUsdLabel?: string;
+          baseCryptoLabel?: string;
+          slippageBufferLabel?: string;
+          slippageBufferAmountLabel?: string;
+          networkFeeEstimateLabel?: string;
+          estimatedTotalLabel?: string;
+          quoteExpiresAt?: string;
         };
         recipientWalletAddress?: string | null;
       }>(createOrderResponse);
 
       if (!createOrderResponse.ok || !createOrderPayload?.order || !createOrderPayload.payment || !createOrderPayload.pricing) {
         setError(getResponseErrorMessage(createOrderPayload, "Unable to create the order."));
+        return;
+      }
+
+      if (createOrderPayload.pricing.quoteExpiresAt && Date.parse(createOrderPayload.pricing.quoteExpiresAt) <= Date.now()) {
+        await rollbackPendingOrder(createOrderPayload.order.id);
+        setReviewMode(false);
+        setConfirmed(false);
+        setError("This crypto quote expired before wallet payment started. Refresh the quote and try again.");
         return;
       }
 
@@ -615,31 +1219,62 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         paymentId: createOrderPayload.payment.id,
         paymentMethod: createOrderPayload.payment.payment_method,
         txHash: null,
-        walletAddress: createOrderPayload.payment.wallet_address || preparedWallet.walletAddress,
+        walletAddress: createOrderPayload.payment.wallet_address || preparedWalletAddress,
         itemCount: pricing.itemCount,
         totalQuantity: pricing.totalQuantity,
         itemLines,
         subtotalPhpLabel: createOrderPayload.pricing.subtotalPhpLabel,
         shippingFeeLabel: createOrderPayload.pricing.shippingFeeLabel,
+        couponCode: createOrderPayload.pricing.couponCode || null,
+        couponLabel: createOrderPayload.pricing.couponLabel || null,
+        discountPhpLabel: createOrderPayload.pricing.discountPhpLabel || null,
+        taxLabel: createOrderPayload.pricing.taxLabel || null,
+        taxPhpLabel: createOrderPayload.pricing.taxPhpLabel || null,
         shippingMethodLabel: createOrderPayload.pricing.shippingMethodLabel,
         shippingZoneLabel: createOrderPayload.pricing.shippingZoneLabel,
         totalPhpLabel: createOrderPayload.pricing.totalPhpLabel,
         requiredEthLabel: createOrderPayload.pricing.requiredEthLabel,
-        payableEthLabel: createOrderPayload.pricing.payableEthLabel,
+        payableEthLabel: createOrderPayload.pricing.payableCryptoLabel || createOrderPayload.pricing.payableEthLabel,
+        cryptoSymbol: createOrderPayload.pricing.cryptoSymbol || getPaymentMethodLabel(paymentMethod),
+        estimatedUsdLabel: createOrderPayload.pricing.estimatedUsdLabel || pricing.estimatedUsdLabel || null,
+        baseCryptoLabel: createOrderPayload.pricing.baseCryptoLabel || pricing.baseCryptoLabel || null,
+        slippageBufferLabel: createOrderPayload.pricing.slippageBufferLabel || pricing.slippageBufferLabel || null,
+        slippageBufferAmountLabel: createOrderPayload.pricing.slippageBufferAmountLabel || pricing.slippageBufferAmountLabel || null,
+        networkFeeEstimateLabel: createOrderPayload.pricing.networkFeeEstimateLabel || pricing.networkFeeEstimateLabel || null,
+        estimatedTotalLabel: createOrderPayload.pricing.estimatedTotalLabel || pricing.estimatedTotalLabel || null,
+        quoteExpiresAt: createOrderPayload.pricing.quoteExpiresAt || pricing.quoteExpiresAt || null,
         recipientWalletAddress: createOrderPayload.payment.recipient_address || createOrderPayload.recipientWalletAddress || null,
         confirmationEmailStatus: createOrderPayload.order.confirmation_email_status,
       };
 
       try {
-        const walletPayment = await sendCryptoPayment({
-          amount: createOrderPayload.pricing.payableEthAmount,
-          paymentMethod,
-          preparedWallet,
-          recipientAddress: orderSnapshot.recipientWalletAddress,
-          expectedWalletAddress: orderSnapshot.walletAddress,
-        });
+        if (orderSnapshot.quoteExpiresAt && Date.parse(orderSnapshot.quoteExpiresAt) <= Date.now()) {
+          throw new Error("This crypto quote expired before wallet confirmation. Refresh the quote and try again.");
+        }
 
-        writeBagItems([]);
+        const walletPayment = paymentConfig.network === "solana"
+          ? await sendSolanaPayment({
+              amount: createOrderPayload.pricing.payableCryptoAmount || createOrderPayload.pricing.payableEthAmount,
+              paymentMethod,
+              recipientAddress: orderSnapshot.recipientWalletAddress,
+              expectedWalletAddress: orderSnapshot.walletAddress,
+            })
+          : await sendCryptoPayment({
+              amount: createOrderPayload.pricing.payableCryptoAmount || createOrderPayload.pricing.payableEthAmount,
+              paymentMethod,
+              preparedWallet: evmPreparedWallet ?? undefined,
+              recipientAddress: orderSnapshot.recipientWalletAddress,
+              expectedWalletAddress: orderSnapshot.walletAddress,
+            });
+        const submittedPaymentSnapshot: SubmissionState = {
+          ...orderSnapshot,
+          txHash: walletPayment.txHash,
+          walletAddress: walletPayment.walletAddress,
+          verificationStatus: "pending",
+          message: `Transaction submitted. Waiting for ${getPaymentMethodNetworkName(paymentMethod)} confirmation.`,
+        };
+
+        writePendingCheckoutPayment(submittedPaymentSnapshot);
 
         const verifyResponse = await fetch("/api/payments/verify", {
           method: "POST",
@@ -661,11 +1296,9 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
         if (verifyResponse.status === 202) {
           setSubmission({
-            ...orderSnapshot,
-            txHash: walletPayment.txHash,
-            walletAddress: walletPayment.walletAddress,
+            ...submittedPaymentSnapshot,
             verificationStatus: "pending",
-            message: verifyPayload?.message || "Transaction submitted. Waiting for Ethereum Mainnet confirmation.",
+            message: verifyPayload?.message || `Transaction submitted. Waiting for ${getPaymentMethodNetworkName(paymentMethod)} confirmation.`,
           });
           resetForm();
           return;
@@ -675,9 +1308,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
           const invalidVerification = verifyPayload?.verificationStatus === "invalid";
 
           setSubmission({
-            ...orderSnapshot,
-            txHash: walletPayment.txHash,
-            walletAddress: walletPayment.walletAddress,
+            ...submittedPaymentSnapshot,
             verificationStatus: invalidVerification ? "failed" : "pending",
             message: invalidVerification
               ? verifyPayload?.error || "Order created, but the payment attempt needs attention before it can be confirmed."
@@ -691,12 +1322,12 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         }
 
         setSubmission({
-          ...orderSnapshot,
-          txHash: walletPayment.txHash,
-          walletAddress: walletPayment.walletAddress,
+          ...submittedPaymentSnapshot,
           verificationStatus: "paid",
-          message: verifyPayload?.message || "Ethereum Mainnet payment confirmed.",
+          message: verifyPayload?.message || `${getPaymentMethodNetworkName(paymentMethod)} payment confirmed.`,
         });
+        clearPendingCheckoutPayment();
+        writeBagItems([]);
         resetForm();
       } catch (walletError) {
         let rollbackMessage = "";
@@ -708,7 +1339,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
         }
 
         setError(
-          `${getWeb3ErrorMessage(walletError, "MetaMask payment was not completed.")} Your bag was kept so you can try again.${rollbackMessage}`,
+          `${getWeb3ErrorMessage(walletError, `${getPaymentMethodLabel(paymentMethod)} payment was not completed.`)} Your bag was kept so you can try again.${rollbackMessage}`,
         );
       }
     } catch (submitError) {
@@ -885,6 +1516,27 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
               </div>
 
               <div className="vh-field">
+                <div className="vh-checkout-map-card">
+                  <div className="vh-checkout-map-card__header">
+                    <p className="vh-field__label">Map Preview</p>
+                    <span>{checkoutMapHeaderCopy}</span>
+                  </div>
+                  <VhInteractiveMap
+                    ariaLabel="Checkout shipping address map"
+                    className="vh-checkout-map"
+                    markers={checkoutMapMarkers}
+                    activeMarkerId="checkout-shipping-address"
+                    markerStyle="pin"
+                    emptyTitle={checkoutMapEmptyTitle}
+                    emptyCopy={checkoutMapEmptyCopy}
+                    onLocationMarked={markCheckoutLocation}
+                    previewLocation={checkoutPreviewLocation}
+                    zoom={15}
+                  />
+                </div>
+              </div>
+
+              <div className="vh-field">
                 <label htmlFor="checkout-shipping-method">Shipping Option</label>
                 <select
                   id="checkout-shipping-method"
@@ -912,7 +1564,13 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
 
               <div className="vh-field">
                 <p className="vh-field__label">Payment Method</p>
-                <p className="vh-payment-note">ETH is the live checkout option for this order.</p>
+                {renderPaymentMethodOptions("vh-chain-selector vh-chain-selector--desktop", "Payment network")}
+                {renderPaymentMethodOptions("vh-chain-selector vh-chain-selector--mobile", "Mobile payment network")}
+                <p className="vh-payment-note">
+                  {paymentMethod
+                    ? `${getPaymentMethodNetworkName(paymentMethod)} selected.`
+                    : "Choose a chain and token to load the live quote and continue to payment."}
+                </p>
               </div>
 
               <div className="vh-field">
@@ -930,14 +1588,16 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                     className={`vh-display-toggle__button ${amountMode === "eth" ? "vh-display-toggle__button--active" : ""}`}
                     onClick={() => setAmountMode("eth")}
                   >
-                    ETH
+                    {paymentMethod ? getPaymentMethodLabel(paymentMethod) : "Crypto"}
                   </button>
                 </div>
               </div>
 
               <div className="vh-field">
                 <label htmlFor="checkout-entered-amount">
-                  {amountMode === "php" ? "Entered Payment Amount (PHP)" : "Entered Payment Amount (ETH)"}
+                  {amountMode === "php"
+                    ? "Entered Payment Amount (PHP)"
+                    : `Entered Payment Amount (${paymentMethod ? getPaymentMethodLabel(paymentMethod) : "Crypto"})`}
                 </label>
                 <input
                   id="checkout-entered-amount"
@@ -946,11 +1606,137 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                   min={amountMode === "php" ? "1" : "0.0000001"}
                   step={amountMode === "php" ? "0.01" : "0.0000001"}
                   className="vh-input"
-                  placeholder={amountMode === "php" ? pricing?.totalPhp || "12500.00" : pricing?.requiredEth || "0.010000"}
+                  placeholder={amountMode === "php" ? pricing?.totalPhp || "12500.00" : pricing?.requiredCryptoAmount || pricing?.requiredEth || "0.010000"}
                   value={enteredAmount}
                   onChange={(event) => setEnteredAmount(event.target.value)}
                   required
                 />
+              </div>
+
+              <div className="vh-field vh-checkout-coupon">
+                <label htmlFor="checkout-coupon-code">Coupon Code</label>
+                <div className="vh-checkout-coupon__row">
+                  <input
+                    id="checkout-coupon-code"
+                    type="text"
+                    className="vh-input"
+                    placeholder="Enter code"
+                    value={couponInput}
+                    onChange={(event) => setCouponInput(normalizeCheckoutCouponCode(event.target.value))}
+                  />
+                  <button className="vh-button vh-button--secondary" type="button" onClick={applyCoupon} disabled={!couponInput.trim() || quoteLoading}>
+                    Apply
+                  </button>
+                  {couponCode ? (
+                    <button className="vh-button vh-button--ghost" type="button" onClick={removeCoupon} disabled={quoteLoading}>
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                <p className="vh-payment-note">
+                  {pricing?.couponMessage || (couponCode ? "Checking coupon eligibility with the live quote." : "Discounts are validated securely at checkout.")}
+                </p>
+              </div>
+
+              <div className="vh-checkout-pricing-panel vh-pricing-panel" aria-live="polite" aria-busy={quoteLoading}>
+                <div className="vh-checkout-pricing-panel__header">
+                  <p className="vh-field__label">Live Quote</p>
+                  <span>{quoteLoading ? "Refreshing" : pricing ? "Locked briefly" : paymentMethod ? "Loading" : "Select payment"}</span>
+                </div>
+
+                {pricing ? (
+                  <>
+                    <div className="vh-pricing-panel__row">
+                      <span>Product Price in PHP</span>
+                      <strong>{pricing.subtotalPhpLabel}</strong>
+                    </div>
+                    {pricing.discountPhpCents > 0 ? (
+                      <div className="vh-pricing-panel__row">
+                        <span>Coupon Discount{pricing.couponCode ? ` (${pricing.couponCode})` : ""}</span>
+                        <strong>-{pricing.discountPhpLabel}</strong>
+                      </div>
+                    ) : null}
+                    {pricing.taxLabel ? (
+                      <div className="vh-pricing-panel__row">
+                        <span>Tax ({pricing.taxLabel})</span>
+                        <strong>{pricing.taxPhpLabel}</strong>
+                      </div>
+                    ) : null}
+                    <div className="vh-pricing-panel__row">
+                      <span>Order Total</span>
+                      <strong>{pricing.totalPhpLabel}</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Estimated USD Value</span>
+                      <strong>{pricing.estimatedUsdLabel}</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Crypto Equivalent</span>
+                      <strong>{pricing.baseCryptoLabel}</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Network Fee Estimate</span>
+                      <strong>{pricing.networkFeeEstimateLabel}</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Market Buffer</span>
+                      <strong>
+                        {pricing.slippageBufferAmountLabel} ({pricing.slippageBufferLabel})
+                      </strong>
+                    </div>
+                    <div className="vh-pricing-panel__row vh-pricing-panel__row--total">
+                      <span>Estimated Total</span>
+                      <strong>{pricing.estimatedTotalLabel}</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Quote Expires</span>
+                      <strong>{formatQuoteCountdown(quoteSecondsRemaining)}</strong>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="vh-pricing-panel__row">
+                      <span>Product Price in PHP</span>
+                      <strong>{subtotalLabel}</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Order Total</span>
+                      <strong>{totalLabel}</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Estimated USD Value</span>
+                      <strong>--</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Crypto Equivalent</span>
+                      <strong>--</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Network Fee Estimate</span>
+                      <strong>--</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row">
+                      <span>Market Buffer</span>
+                      <strong>--</strong>
+                    </div>
+                    <div className="vh-pricing-panel__row vh-pricing-panel__row--total">
+                      <span>Estimated Total</span>
+                      <strong>--</strong>
+                    </div>
+                    <p className="vh-checkout-quote-note vh-payment-note">
+                      {paymentMethod ? "Loading the live crypto quote." : "Choose a payment method to load the live quote."}
+                    </p>
+                  </>
+                )}
+
+                {quoteError ? <p className="vh-checkout-quote-note vh-payment-note vh-payment-note--error">{quoteError}</p> : null}
+                <p className="vh-checkout-quote-note vh-payment-note">Final network fee may vary slightly at wallet confirmation.</p>
+                <p className="vh-checkout-quote-note vh-payment-note">{CRYPTO_NETWORK_FEE_NOTE}</p>
+                {pricing ? (
+                  <button type="button" className="vh-quote-refresh" disabled={quoteLoading} onClick={refreshQuote}>
+                    {quoteLoading ? "Refreshing Quote..." : quoteExpired ? "Refresh Expired Quote" : "Refresh Quote"}
+                  </button>
+                ) : null}
               </div>
 
               <div className="vh-field">
@@ -988,13 +1774,37 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                   <br />
                   Shipping: {pricing.shippingMethodLabel || getShippingMethodLabel(shippingMethodCode)} · {pricing.shippingFeeLabel}
                   <br />
+                  {pricing.discountPhpCents > 0 ? (
+                    <>
+                      Coupon: {pricing.couponCode} · -{pricing.discountPhpLabel}
+                      <br />
+                    </>
+                  ) : null}
+                  {pricing.taxLabel ? (
+                    <>
+                      Tax: {pricing.taxLabel} · {pricing.taxPhpLabel}
+                      <br />
+                    </>
+                  ) : null}
                   Order Total: {pricing.totalPhpLabel}
+                  <br />
+                  Estimated USD value: {pricing.estimatedUsdLabel}
+                  <br />
+                  Crypto equivalent: {pricing.baseCryptoLabel}
+                  <br />
+                  Market buffer: {pricing.slippageBufferAmountLabel} ({pricing.slippageBufferLabel})
+                  <br />
+                  Network fee estimate: {pricing.networkFeeEstimateLabel}
+                  <br />
+                  Estimated total: {pricing.estimatedTotalLabel}
+                  <br />
+                  Quote expires in: {formatQuoteCountdown(quoteSecondsRemaining)}
                   <br />
                   Required: {pricing.requiredEthLabel}
                   <br />
                   Entered amount: {resolvedInput.enteredAmountLabel}
                   <br />
-                  You will send: {resolvedInput.payableEthAmount} ETH
+                  You will send: {resolvedInput.payableCryptoAmount} {pricing.cryptoSymbol || (paymentMethod ? getPaymentMethodLabel(paymentMethod) : "Crypto")}
                   <br />
                   Customer: {customerName}
                   <br />
@@ -1005,6 +1815,8 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                   Zone: {pricing.shippingZoneLabel || "Pending"}
                   <br />
                   {notes ? `Notes: ${notes}` : "No additional notes."}
+                  <br />
+                  Final network fee may vary slightly at wallet confirmation.
                 </div>
               ) : null}
 
@@ -1016,7 +1828,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                     onChange={(event) => setConfirmed(event.target.checked)}
                     required={reviewMode}
                   />
-                  <span>I confirm these order details are correct before opening the payment in MetaMask.</span>
+                  <span>I confirm these order details are correct before opening the payment in my wallet.</span>
                 </label>
               ) : null}
 
@@ -1028,15 +1840,21 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                   <button
                     type="button"
                     className="action-button action-button--black action-button--lg"
-                    disabled={loading || quoteLoading || !pricing}
+                    disabled={loading || quoteLoading || !paymentMethod || !pricing || quoteExpired || Boolean(quoteError)}
                     onClick={handleReview}
                   >
-                    Continue To Review
+                    {quoteExpired ? "Refresh Quote To Continue" : paymentMethod ? "Continue To Review" : "Choose Payment To Continue"}
                   </button>
                 ) : (
                   <>
-                    <button type="submit" className="action-button action-button--black action-button--lg" disabled={loading || !pricing || !resolvedInput?.ok}>
-                      {loading ? "Processing..." : "Pay With MetaMask"}
+                    <button type="submit" className="action-button action-button--black action-button--lg" disabled={loading || !pricing || !resolvedInput?.ok || quoteExpired || Boolean(quoteError)}>
+                      {loading
+                        ? "Processing..."
+                        : quoteExpired
+                          ? "Refresh Quote To Pay"
+                        : getPaymentMethodConfig(paymentMethod)?.network === "solana"
+                          ? "Pay With Phantom Wallet"
+                          : "Pay With MetaMask"}
                     </button>
                     <button
                       type="button"
@@ -1074,7 +1892,7 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                 }`}
               >
                 {submission.verificationStatus === "paid"
-                  ? "Ethereum Mainnet payment confirmed."
+                  ? `${getPaymentMethodNetworkName(submission.paymentMethod)} payment confirmed.`
                   : submission.verificationStatus === "failed"
                     ? "Order created, but the payment attempt still needs attention."
                     : "Order created and waiting for payment confirmation."}
@@ -1089,9 +1907,30 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
                 <br />
                 Shipping: {submission.shippingMethodLabel || "Shipping"} · {submission.shippingFeeLabel}
                 <br />
+                {submission.discountPhpLabel ? (
+                  <>
+                    Coupon: {submission.couponCode || submission.couponLabel || "Applied"} · -{submission.discountPhpLabel}
+                    <br />
+                  </>
+                ) : null}
+                {submission.taxLabel ? (
+                  <>
+                    Tax: {submission.taxLabel} · {submission.taxPhpLabel}
+                    <br />
+                  </>
+                ) : null}
                 Total: {submission.totalPhpLabel}
                 <br />
-                Required ETH: {submission.requiredEthLabel}
+                Estimated USD: {submission.estimatedUsdLabel || "--"}
+                <br />
+                Required {submission.cryptoSymbol}: {submission.requiredEthLabel}
+                <br />
+                Market buffer: {submission.slippageBufferAmountLabel || "--"}
+                {submission.slippageBufferLabel ? ` (${submission.slippageBufferLabel})` : ""}
+                <br />
+                Network fee estimate: {submission.networkFeeEstimateLabel || "--"}
+                <br />
+                Estimated total: {submission.estimatedTotalLabel || "--"}
                 <br />
                 Sending: {submission.payableEthLabel}
                 <br />
@@ -1157,9 +1996,25 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
               <span>Shipping</span>
               <strong>{submission?.shippingFeeLabel ?? shippingLabel}</strong>
             </div>
+            {(submission?.discountPhpLabel || (pricing?.discountPhpCents ?? 0) > 0) ? (
+              <div className="storefront-app-summary-row">
+                <span>Coupon{(submission?.couponCode || pricing?.couponCode) ? ` (${submission?.couponCode || pricing?.couponCode})` : ""}</span>
+                <strong>-{submission?.discountPhpLabel ?? pricing?.discountPhpLabel}</strong>
+              </div>
+            ) : null}
+            {(submission?.taxLabel || pricing?.taxLabel) ? (
+              <div className="storefront-app-summary-row">
+                <span>Tax ({submission?.taxLabel ?? pricing?.taxLabel})</span>
+                <strong>{submission?.taxPhpLabel ?? pricing?.taxPhpLabel}</strong>
+              </div>
+            ) : null}
             <div className="storefront-app-summary-row">
               <span>Total</span>
               <strong>{submission?.totalPhpLabel ?? totalLabel}</strong>
+            </div>
+            <div className="storefront-app-summary-row">
+              <span>Estimated USD</span>
+              <strong>{submission?.estimatedUsdLabel ?? pricing?.estimatedUsdLabel ?? "--"}</strong>
             </div>
           </div>
 
@@ -1174,24 +2029,48 @@ export function MockCheckoutForm({ customerEmail, products }: Props) {
             </div>
             <div className="storefront-app-summary-row">
               <span>Payment Method</span>
-              <strong>ETH</strong>
+              <strong>{submission?.cryptoSymbol ?? (paymentMethod ? getPaymentMethodLabel(paymentMethod) : "Choose network")}</strong>
             </div>
             <div className="storefront-app-summary-row">
-              <span>Required ETH</span>
-              <strong>{submission?.requiredEthLabel ?? pricing?.requiredEthLabel ?? "--"}</strong>
+              <span>Required {submission?.cryptoSymbol ?? (paymentMethod ? getPaymentMethodLabel(paymentMethod) : "Crypto")}</span>
+              <strong>{submission?.requiredEthLabel ?? pricing?.requiredCryptoLabel ?? pricing?.requiredEthLabel ?? "--"}</strong>
+            </div>
+            <div className="storefront-app-summary-row">
+              <span>Crypto Equivalent</span>
+              <strong>{submission?.baseCryptoLabel ?? pricing?.baseCryptoLabel ?? "--"}</strong>
+            </div>
+            <div className="storefront-app-summary-row">
+              <span>Network Fee Estimate</span>
+              <strong>{submission?.networkFeeEstimateLabel ?? pricing?.networkFeeEstimateLabel ?? "--"}</strong>
+            </div>
+            <div className="storefront-app-summary-row">
+              <span>Market Buffer</span>
+              <strong>
+                {submission?.slippageBufferAmountLabel ?? pricing?.slippageBufferAmountLabel ?? "--"}
+                {submission?.slippageBufferLabel || pricing?.slippageBufferLabel
+                  ? ` (${submission?.slippageBufferLabel ?? pricing?.slippageBufferLabel})`
+                  : ""}
+              </strong>
+            </div>
+            <div className="storefront-app-summary-row">
+              <span>Estimated Total</span>
+              <strong>{submission?.estimatedTotalLabel ?? pricing?.estimatedTotalLabel ?? "--"}</strong>
             </div>
             <div className="storefront-app-summary-row">
               <span>Rate</span>
-              <strong>{pricing?.phpPerEthLabel || "--"}</strong>
+              <strong>{pricing?.phpPerCryptoLabel || pricing?.phpPerEthLabel || "--"}</strong>
             </div>
             <div className="storefront-app-summary-row">
-              <span>Quote Updated</span>
-              <strong>{formatQuoteTime(pricing?.quoteUpdatedAt || null)}</strong>
+              <span>Quote Expires</span>
+              <strong>{submission?.quoteExpiresAt ? formatQuoteTime(submission.quoteExpiresAt) : formatQuoteCountdown(quoteSecondsRemaining)}</strong>
             </div>
-            <div className="storefront-app-summary-row">
-              <span>Quote Source</span>
-              <strong>{pricing?.quoteSource || "--"}</strong>
-            </div>
+            {!submission && pricing ? (
+              <button type="button" className="vh-quote-refresh" disabled={quoteLoading} onClick={refreshQuote}>
+                {quoteLoading ? "Refreshing Quote..." : quoteExpired ? "Refresh Expired Quote" : "Refresh Quote"}
+              </button>
+            ) : null}
+            <p className="vh-payment-note">Final network fee may vary slightly at wallet confirmation.</p>
+            <p className="vh-payment-note">{CRYPTO_NETWORK_FEE_NOTE}</p>
             <p className="vh-payment-note">
               {shippingMessage || pricing?.shippingMessage || localShippingPreview.message}
             </p>

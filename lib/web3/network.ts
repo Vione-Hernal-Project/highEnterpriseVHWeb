@@ -6,6 +6,10 @@ export const ETHEREUM_MAINNET_NETWORK_NAME = "Ethereum Mainnet";
 export const ETHEREUM_MAINNET_EXPLORER_LABEL = "Etherscan";
 export const ETHEREUM_MAINNET_EXPLORER_BASE_URL = "https://etherscan.io";
 export const ETHEREUM_MAINNET_RPC_ENV_NAME = "ETHEREUM_MAINNET_RPC_URL";
+export const SOLANA_MAINNET_CHAIN_ID = 101;
+export const SOLANA_MAINNET_NETWORK_NAME = "Solana Mainnet";
+export const SOLANA_EXPLORER_LABEL = "Solscan";
+export const SOLANA_EXPLORER_BASE_URL = "https://solscan.io";
 
 export function isEthereumMainnetChain(chainId: bigint | number | null | undefined) {
   if (chainId === null || chainId === undefined) {
@@ -29,6 +33,16 @@ export function getTransactionExplorerUrl(txHash: string | null | undefined) {
   return `${ETHEREUM_MAINNET_EXPLORER_BASE_URL}/tx/${normalizedHash}`;
 }
 
+export function getSolanaTransactionExplorerUrl(signature: string | null | undefined) {
+  const normalizedSignature = (signature || "").trim();
+
+  if (!/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(normalizedSignature)) {
+    return null;
+  }
+
+  return `${SOLANA_EXPLORER_BASE_URL}/tx/${normalizedSignature}`;
+}
+
 export function getAddressExplorerUrl(address: string | null | undefined) {
   const normalizedAddress = (address || "").trim();
 
@@ -37,4 +51,22 @@ export function getAddressExplorerUrl(address: string | null | undefined) {
   }
 
   return `${ETHEREUM_MAINNET_EXPLORER_BASE_URL}/address/${getAddress(normalizedAddress)}`;
+}
+
+export function getSolanaAddressExplorerUrl(address: string | null | undefined) {
+  const normalizedAddress = (address || "").trim();
+
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(normalizedAddress)) {
+    return null;
+  }
+
+  return `${SOLANA_EXPLORER_BASE_URL}/account/${normalizedAddress}`;
+}
+
+export function getPaymentTransactionExplorerUrl(paymentMethod: string | null | undefined, txHash: string | null | undefined) {
+  return paymentMethod?.startsWith("sol_") ? getSolanaTransactionExplorerUrl(txHash) : getTransactionExplorerUrl(txHash);
+}
+
+export function getPaymentAddressExplorerUrl(paymentMethod: string | null | undefined, address: string | null | undefined) {
+  return paymentMethod?.startsWith("sol_") ? getSolanaAddressExplorerUrl(address) : getAddressExplorerUrl(address);
 }

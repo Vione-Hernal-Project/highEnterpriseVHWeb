@@ -138,10 +138,13 @@ export function SiteHeader({ signedIn = false, isManagementUser = false }: Props
           <nav className="global-header__secondary-nav vh-header-balance__nav vh-header-balance__nav--left" aria-label="Store">
             <ul className="global-header__secondary-nav-list vh-header-balance__list vh-header-balance__list--left">
               <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
-                <Link href="/shop">Womens</Link>
+                <Link href="/">Womens</Link>
               </li>
               <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
-                <Link href="/dashboard">Dashboard</Link>
+                <Link href="/men">Mens</Link>
+              </li>
+              <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
+                <Link href="/dashboard">Account</Link>
               </li>
             </ul>
           </nav>
@@ -160,12 +163,7 @@ export function SiteHeader({ signedIn = false, isManagementUser = false }: Props
               <HeaderStoreLinks />
               {authState.isManagementUser ? (
                 <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
-                  <Link href="/admin/ledger">Ledger</Link>
-                </li>
-              ) : null}
-              {authState.isManagementUser ? (
-                <li className="global-header__secondary-nav-list-item">
-                  <Link href="/admin">Admin</Link>
+                  <Link href="/admin">Admin Panel</Link>
                 </li>
               ) : null}
             </ul>

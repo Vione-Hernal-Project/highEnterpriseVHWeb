@@ -1,77 +1,159 @@
 import Link from "next/link";
 
-import { LogoutButton } from "@/components/auth/logout-button";
-import { AdminOrderStatusForm } from "@/components/admin/order-status-form";
-import { ProfileRoleForm } from "@/components/admin/profile-role-form";
+import { AdminDashboardSummary } from "@/components/admin/admin-dashboard-summary";
+import { AdminNotificationsMenu } from "@/components/admin/admin-notifications-menu";
+import { AdminSalesOverview, type AdminSalesDataset } from "@/components/admin/admin-sales-overview";
+import {
+  AdminPageHeader,
+  AdminStatusBadge,
+  EmptyAdminState,
+} from "@/components/admin/admin-ui";
+import { AdminLiveRefresh } from "@/components/admin/admin-live-refresh";
+import { loadAdminNotificationCenterRows } from "@/lib/admin/notifications";
 import { requireManagementUser } from "@/lib/auth";
+import type { CatalogProduct } from "@/lib/catalog";
 import { getErrorMessage } from "@/lib/http";
-import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
+import { formatAmountWithUnit } from "@/lib/payments/options";
+import { loadAdminCatalogProducts } from "@/lib/products";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
-import { getAddressExplorerUrl, getTransactionExplorerUrl } from "@/lib/web3/network";
 
-function getHistoryBadgeClass(status: string) {
-  if (status === "paid") {
-    return "vh-badge--paid";
+const ADMIN_TIME_ZONE = "Asia/Manila";
+
+function toNumber(value: string | number | null | undefined) {
+  const numeric = typeof value === "number" ? value : Number(value || 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function getDateKey(value: string | Date | null | undefined) {
+  if (!value) {
+    return "";
   }
 
-  if (status === "failed") {
-    return "vh-badge--failed";
+  const date = typeof value === "string" ? new Date(value) : value;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ADMIN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  return `${parts.find((part) => part.type === "year")?.value || "1970"}-${
+    parts.find((part) => part.type === "month")?.value || "01"
+  }-${parts.find((part) => part.type === "day")?.value || "01"}`;
+}
+
+function getProductStock(product: CatalogProduct) {
+  return Object.values(product.sizeInventory).reduce((total, stock) => total + stock, 0);
+}
+
+function getCustomerName(order: Record<string, any>) {
+  return order.customer_name || order.email || "Guest customer";
+}
+
+function getStatusTone(status: string): "paid" | "processing" | "pending" | "cancelled" | "shipped" {
+  if (status === "paid") {
+    return "paid";
   }
 
   if (status === "cancelled") {
-    return "vh-badge--cancelled";
+    return "cancelled";
   }
 
-  return "vh-badge--pending";
+  return "processing";
 }
 
-function getHistoryStatusLabel(status: string) {
-  if (status === "paid") {
-    return "Paid / Confirmed";
-  }
-
-  if (status === "failed") {
-    return "Failed / Needs Action";
-  }
-
-  if (status === "cancelled") {
-    return "Cancelled";
-  }
-
-  return "Pending";
+function getDateFromKey(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00+08:00`);
 }
 
-function getConfirmationEmailLabel(status: string | null) {
-  if (!status) {
-    return "Not available";
+function formatSalesPointLabel(dateKey: string) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(getDateFromKey(dateKey));
+}
+
+function shiftDate(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function getDateRange(startDate: Date, endDate: Date) {
+  const days: string[] = [];
+  let cursor = new Date(startDate);
+  const endKey = getDateKey(endDate);
+
+  while (getDateKey(cursor) <= endKey) {
+    days.push(getDateKey(cursor));
+    cursor = shiftDate(cursor, 1);
   }
 
-  if (status === "sent") {
-    return "Sent";
+  return days;
+}
+
+function buildSalesOverviewDatasets(payments: Array<Record<string, any>>): AdminSalesDataset[] {
+  const paidPayments = payments.filter((payment) => payment.status === "paid");
+  const totalsByDate = paidPayments.reduce<Map<string, number>>((totals, payment) => {
+    const dateKey = getDateKey(payment.updated_at || payment.created_at);
+    totals.set(dateKey, (totals.get(dateKey) || 0) + toNumber(payment.amount_expected_fiat));
+    return totals;
+  }, new Map());
+  const today = new Date();
+  const todayKey = getDateKey(today);
+  const monthStart = new Date(today);
+  monthStart.setDate(1);
+  const paidDateKeys = [...totalsByDate.keys()].sort();
+  const allTimeDays = paidDateKeys.length ? paidDateKeys : [todayKey];
+
+  function pointsFor(days: string[]) {
+    return days.map((dateKey) => ({
+      key: dateKey,
+      label: formatSalesPointLabel(dateKey),
+      value: totalsByDate.get(dateKey) || 0,
+    }));
   }
 
-  if (status === "pending") {
-    return "Queued";
-  }
-
-  if (status === "failed") {
-    return "Needs attention";
-  }
-
-  if (status === "not_configured") {
-    return "Not configured";
-  }
-
-  return status.replace(/_/g, " ");
+  return [
+    {
+      key: "today",
+      label: "Today",
+      description: "Confirmed payment value for today.",
+      points: pointsFor([todayKey]),
+    },
+    {
+      key: "last7",
+      label: "Last 7 days",
+      description: "Confirmed payment value across the last 7 days.",
+      points: pointsFor(getDateRange(shiftDate(today, -6), today)),
+    },
+    {
+      key: "last30",
+      label: "Last 30 days",
+      description: "Confirmed payment value across the last 30 days.",
+      points: pointsFor(getDateRange(shiftDate(today, -29), today)),
+    },
+    {
+      key: "month",
+      label: "This month",
+      description: "Confirmed payment value for the current month.",
+      points: pointsFor(getDateRange(monthStart, today)),
+    },
+    {
+      key: "all",
+      label: "All time",
+      description: "Confirmed payment value across all available payment records.",
+      points: pointsFor(allTimeDays),
+    },
+  ];
 }
 
 export default async function AdminPage() {
-  const { role, isOwner } = await requireManagementUser();
+  await requireManagementUser();
+
   let orders: Array<Record<string, any>> = [];
   let payments: Array<Record<string, any>> = [];
   let profiles: Array<Record<string, any>> = [];
-  let adminError = "";
+  let products: CatalogProduct[] = [];
+  const loadErrors: string[] = [];
 
   try {
     const admin = createSupabaseAdminClient();
@@ -85,330 +167,193 @@ export default async function AdminPage() {
     payments = paymentsResult.data || [];
     profiles = profilesResult.data || [];
 
-    adminError =
-      ordersResult.error?.message || paymentsResult.error?.message || profilesResult.error?.message || "";
+    [ordersResult.error?.message, paymentsResult.error?.message, profilesResult.error?.message]
+      .filter(Boolean)
+      .forEach((error) => loadErrors.push(error as string));
   } catch (error) {
-    adminError = getErrorMessage(error, "Unable to load the management data right now.");
+    loadErrors.push(getErrorMessage(error, "Unable to load admin dashboard data right now."));
   }
 
+  try {
+    products = await loadAdminCatalogProducts();
+  } catch (error) {
+    loadErrors.push(getErrorMessage(error, "Unable to load product inventory right now."));
+  }
+
+  const lowStockProducts = products.filter((product) => getProductStock(product) <= 2);
+  const recentOrders = orders.slice(0, 5);
+  const topProducts = products.slice(0, 5);
+  const salesDatasets = buildSalesOverviewDatasets(payments);
+  const persistedNotifications = await loadAdminNotificationCenterRows();
+  const notifications = [
+    ...loadErrors.map((error, index) => ({
+      id: `load-error-${index}`,
+      title: "Admin data warning",
+      copy: error,
+    })),
+    ...persistedNotifications,
+  ];
+
   return (
-    <section className="vh-page-shell">
-      <div className="vh-data-card">
-        <p className="vh-mvp-eyebrow">Store Management</p>
-        <h1 className="vh-mvp-title">Orders, payments, and customer access controls.</h1>
-        <p className="vh-mvp-copy">
-          This area is protected on the server. Effective role: {role}. Use it to review live payment records, inspect
-          the allocation ledger, adjust order status when needed, manage product launches, and manage admin access.
-        </p>
-        {adminError ? <div className="vh-status vh-status--error">{adminError}</div> : null}
-        <div className="vh-actions">
-          <Link className="vh-button" href="/admin/products">
-            Manage Products
-          </Link>
-          <Link className="vh-button vh-button--ghost" href="/admin/orders">
-            Open Order Operations
-          </Link>
-          <Link className="vh-button" href="/admin/ledger">
-            Open Allocation Ledger
-          </Link>
-          <Link className="vh-button vh-button--ghost" href="/dashboard">
-            Back To Dashboard
-          </Link>
-          <LogoutButton />
-        </div>
-      </div>
+    <div className="vh-admin-page">
+      <AdminPageHeader title="Welcome back, Vione! 👋" subtitle="Here's what's happening with your store today.">
+        <AdminNotificationsMenu notifications={notifications} />
+        <AdminLiveRefresh />
+      </AdminPageHeader>
 
-      <section className="vh-data-card" style={{ marginTop: "2rem" }}>
-        <p className="vh-mvp-eyebrow">Product Launches</p>
-        <h2 className="h3 u-margin-b--sm">Add new products without touching frontend code.</h2>
-        <p className="vh-mvp-copy" style={{ marginTop: 0 }}>
-          Use the product manager to upload images, save drafts, publish products, and control Shop, New Arrivals, and
-          Featured Items placement from one admin screen.
-        </p>
-        <div className="vh-actions">
-          <Link className="vh-button vh-button--ghost" href="/admin/products">
-            Open Product Manager
-          </Link>
+      {loadErrors.length ? (
+        <div className="vh-admin-alert">
+          {loadErrors.map((error) => (
+            <p key={error}>{error}</p>
+          ))}
         </div>
-      </section>
+      ) : null}
 
-      <section className="vh-data-card" style={{ marginTop: "2rem" }}>
-        <p className="vh-mvp-eyebrow">Live Monitoring</p>
-        <h2 className="h3 u-margin-b--sm">Fund allocation now has its own admin dashboard.</h2>
-        <p className="vh-mvp-copy" style={{ marginTop: 0 }}>
-          Open the allocation ledger to watch successful payments stream in, inspect source-of-funds metadata, review
-          the live payment-distribution split, and keep the VHL token-allocation framework visible in the same view.
-        </p>
-        <div className="vh-actions">
-          <Link className="vh-button vh-button--ghost" href="/admin/ledger">
-            Go To Ledger
-          </Link>
-        </div>
-      </section>
+      <AdminDashboardSummary
+        orders={orders.map((order) => ({
+          id: order.id,
+          status: order.status,
+          email: order.email,
+          customer_name: order.customer_name,
+          created_at: order.created_at,
+        }))}
+        payments={payments.map((payment) => ({
+          status: payment.status,
+          amount_expected_fiat: payment.amount_expected_fiat,
+          created_at: payment.created_at,
+          updated_at: payment.updated_at,
+        }))}
+        profiles={profiles.map((profile) => ({
+          id: profile.id,
+          created_at: profile.created_at,
+        }))}
+      />
 
-      <div className="vh-admin-columns vh-dashboard-history" style={{ marginTop: "2rem" }}>
-        <section className="vh-data-card vh-dashboard-history__column">
-          <div className="vh-dashboard-history__heading">
+      <div className="vh-admin-dashboard-grid">
+        <AdminSalesOverview datasets={salesDatasets} />
+
+        <section className="vh-admin-panel">
+          <div className="vh-admin-panel__header">
             <div>
-              <h2 className="h3 u-margin-b--sm">All Orders</h2>
-              <p className="vh-dashboard-history__meta">Keep order status, customer details, and totals aligned in one view.</p>
+              <h2>Top Products</h2>
+              <p>Current catalog priority.</p>
             </div>
-            {orders?.length ? <span className="vh-dashboard-history__count">{orders.length} item{orders.length === 1 ? "" : "s"}</span> : null}
+            <Link href="/admin/products">View all</Link>
           </div>
-          <div className="vh-list vh-dashboard-history__list">
-            {orders?.length ? (
-              orders.map((order) => (
-                <article key={order.id} className="vh-history-item">
-                  <div className="vh-history-card">
-                    <div className="vh-history-card__header">
-                      <div className="vh-history-card__identity">
-                        <p className="vh-history-card__label">Order</p>
-                        <p className="vh-history-card__id">{order.order_number || order.id}</p>
-                        <p className="vh-history-card__timestamp">{formatDateTime(order.created_at)}</p>
-                      </div>
-                      <div className="vh-history-card__status">
-                        <span className={`vh-badge ${getHistoryBadgeClass(order.status)}`}>
-                          {getHistoryStatusLabel(order.status)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="vh-history-card__metrics">
-                      <div className="vh-history-metric vh-history-metric--focus">
-                        <span className="vh-history-metric__label">Checkout Total</span>
-                        <strong className="vh-history-metric__value">
-                          {formatAmountWithUnit(order.amount, order.currency)}
-                        </strong>
-                      </div>
-                      <div className="vh-history-metric">
-                        <span className="vh-history-metric__label">Shipping</span>
-                        <strong className="vh-history-metric__value">
-                          {[order.shipping_method, order.shipping_fee ? formatAmountWithUnit(order.shipping_fee, "PHP") : null]
-                            .filter(Boolean)
-                            .join(" · ") || "Not set"}
-                        </strong>
-                      </div>
-                      <div className="vh-history-metric">
-                        <span className="vh-history-metric__label">Confirmation Email</span>
-                        <strong className="vh-history-metric__value">{getConfirmationEmailLabel(order.confirmation_email_status)}</strong>
-                      </div>
-                    </div>
-
-                    <div className="vh-history-card__sections">
-                      <section className="vh-history-card__section">
-                        <p className="vh-history-card__section-title">Customer / Order Summary</p>
-                        <div className="vh-history-card__detail-grid">
-                          <div className="vh-history-card__detail">
-                            <span className="vh-history-card__detail-label">Customer</span>
-                            <p className="vh-history-card__detail-value">{order.customer_name || "Not set"}</p>
-                          </div>
-                          <div className="vh-history-card__detail">
-                            <span className="vh-history-card__detail-label">Email</span>
-                            <p className="vh-history-card__detail-value">{order.email || "No email recorded"}</p>
-                          </div>
-                          <div className="vh-history-card__detail">
-                            <span className="vh-history-card__detail-label">Phone</span>
-                            <p className="vh-history-card__detail-value">{order.phone || "Not set"}</p>
-                          </div>
-                          <div className="vh-history-card__detail">
-                            <span className="vh-history-card__detail-label">Item Summary</span>
-                            <p className="vh-history-card__detail-value">
-                              {order.product_name
-                                ? `${order.product_name}${order.quantity ? ` · Qty ${order.quantity}` : ""}`
-                                : "No product summary recorded"}
-                            </p>
-                          </div>
-                          <div className="vh-history-card__detail vh-history-card__detail--full">
-                            <span className="vh-history-card__detail-label">Shipping Address</span>
-                            <p className="vh-history-card__detail-value">{order.shipping_address || "Not set"}</p>
-                          </div>
-                        </div>
-                      </section>
-                    </div>
-
-                    <div className="vh-history-card__action">
-                      <AdminOrderStatusForm orderId={order.id} initialStatus={order.status} />
-                    </div>
+          <div className="vh-admin-product-list">
+            {topProducts.length ? (
+              topProducts.map((product) => (
+                <Link href="/admin/products" key={product.id} className="vh-admin-product-row">
+                  <img src={product.image} alt={product.name} />
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>{formatAmountWithUnit(product.pricePhpCents / 100, "PHP")}</span>
                   </div>
-                </article>
+                  <small>
+                    Stock
+                    <b>{getProductStock(product)}</b>
+                  </small>
+                </Link>
               ))
             ) : (
-              <div className="vh-empty">No orders yet.</div>
+              <EmptyAdminState title="No products yet" copy="Products will appear here after they are created." />
             )}
           </div>
         </section>
 
-        <section className="vh-data-card vh-dashboard-history__column">
-          <div className="vh-dashboard-history__heading">
+        <section className="vh-admin-panel vh-admin-panel--activity">
+          <div className="vh-admin-panel__header">
             <div>
-              <h2 className="h3 u-margin-b--sm">All Payments</h2>
-              <p className="vh-dashboard-history__meta">Review payment amount, status, and on-chain details without the list taking over the page.</p>
+              <h2>Activity Feed</h2>
+              <p>Latest operational movement.</p>
             </div>
-            {payments?.length ? <span className="vh-dashboard-history__count">{payments.length} item{payments.length === 1 ? "" : "s"}</span> : null}
           </div>
-          <div className="vh-list vh-dashboard-history__list">
-            {payments?.length ? (
-              <>
-                <div className="vh-history-helper">
-                  <strong>Manual On-Chain Check</strong>
-                  <p>
-                    Compare expected vs received amount, confirm the recipient wallet matches the merchant wallet, then
-                    use the tx hash in Etherscan to inspect the transfer externally.
-                  </p>
-                </div>
-                {payments.map((payment) => (
-                  <article key={payment.id} className="vh-history-item">
-                    <div className="vh-history-card">
-                      <div className="vh-history-card__header">
-                        <div className="vh-history-card__identity">
-                          <p className="vh-history-card__label">Payment</p>
-                          <p className="vh-history-card__id">{payment.id}</p>
-                          <p className="vh-history-card__timestamp">{formatDateTime(payment.created_at)}</p>
-                        </div>
-                        <div className="vh-history-card__status">
-                          <span className={`vh-badge ${getHistoryBadgeClass(payment.status)}`}>
-                            {getHistoryStatusLabel(payment.status)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="vh-history-card__metrics">
-                        <div className="vh-history-metric vh-history-metric--focus">
-                          <span className="vh-history-metric__label">Expected Amount</span>
-                          <strong className="vh-history-metric__value">
-                            {formatAmountWithUnit(payment.amount_expected, getPaymentMethodLabel(payment.payment_method))}
-                          </strong>
-                        </div>
-                        <div className="vh-history-metric vh-history-metric--focus">
-                          <span className="vh-history-metric__label">Received Amount</span>
-                          <strong className="vh-history-metric__value">
-                            {payment.amount_received
-                              ? formatAmountWithUnit(payment.amount_received, getPaymentMethodLabel(payment.payment_method))
-                              : payment.status === "failed"
-                                ? "Payment attempt failed"
-                                : "Waiting for on-chain confirmation"}
-                          </strong>
-                        </div>
-                        <div className="vh-history-metric">
-                          <span className="vh-history-metric__label">Checkout Total</span>
-                          <strong className="vh-history-metric__value">
-                            {payment.amount_expected_fiat && payment.fiat_currency
-                              ? formatAmountWithUnit(payment.amount_expected_fiat, payment.fiat_currency)
-                              : "Not set"}
-                          </strong>
-                        </div>
-                        <div className="vh-history-metric">
-                          <span className="vh-history-metric__label">Payment Method</span>
-                          <strong className="vh-history-metric__value">
-                            {getPaymentMethodLabel(payment.payment_method)}
-                          </strong>
-                        </div>
-                      </div>
-
-                      <div className="vh-history-card__sections">
-                        <section className="vh-history-card__section">
-                          <p className="vh-history-card__section-title">Payment Details</p>
-                          <div className="vh-history-card__detail-grid">
-                            <div className="vh-history-card__detail">
-                              <span className="vh-history-card__detail-label">Order ID</span>
-                              <p className="vh-history-card__detail-value">{payment.order_id || "Not linked"}</p>
-                            </div>
-                            <div className="vh-history-card__detail">
-                              <span className="vh-history-card__detail-label">Locked Rate</span>
-                              <p className="vh-history-card__detail-value">
-                                {payment.conversion_rate
-                                  ? `${formatAmountWithUnit(payment.conversion_rate, "PHP")} / ETH`
-                                  : "Not set"}
-                              </p>
-                            </div>
-                          </div>
-                        </section>
-
-                        <section className="vh-history-card__section">
-                          <p className="vh-history-card__section-title">Wallet / On-Chain Details</p>
-                          <div className="vh-history-card__detail-grid">
-                            <div className="vh-history-card__detail vh-history-card__detail--full">
-                              <span className="vh-history-card__detail-label">Recipient Wallet</span>
-                              <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                                {payment.recipient_address ? (
-                                  <a
-                                    className="vh-inline-link"
-                                    href={getAddressExplorerUrl(payment.recipient_address) || undefined}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {payment.recipient_address}
-                                  </a>
-                                ) : (
-                                  "Not submitted"
-                                )}
-                              </p>
-                            </div>
-                            <div className="vh-history-card__detail vh-history-card__detail--full">
-                              <span className="vh-history-card__detail-label">Tx Hash</span>
-                              <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                                {payment.tx_hash ? (
-                                  <a
-                                    className="vh-inline-link"
-                                    href={getTransactionExplorerUrl(payment.tx_hash) || undefined}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {payment.tx_hash}
-                                  </a>
-                                ) : (
-                                  "Not submitted"
-                                )}
-                              </p>
-                            </div>
-                            <div className="vh-history-card__detail vh-history-card__detail--full">
-                              <span className="vh-history-card__detail-label">Payer Wallet</span>
-                              <p className="vh-history-card__detail-value vh-history-card__detail-value--mono">
-                                {payment.wallet_address ? (
-                                  <a
-                                    className="vh-inline-link"
-                                    href={getAddressExplorerUrl(payment.wallet_address) || undefined}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {payment.wallet_address}
-                                  </a>
-                                ) : (
-                                  "Not submitted"
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        </section>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </>
+          <div className="vh-admin-activity-feed">
+            {recentOrders.length ? (
+              recentOrders.map((order) => (
+                <Link key={order.id} href="/admin/orders" className="vh-admin-activity-item">
+                  <span aria-hidden="true" />
+                  <div>
+                    <strong>Order {order.order_number || order.id}</strong>
+                    <p>{getCustomerName(order)} · {formatDateTime(order.created_at)}</p>
+                  </div>
+                </Link>
+              ))
             ) : (
-              <div className="vh-empty">No payments yet.</div>
+              <EmptyAdminState title="No activity yet" copy="New orders and payments will appear here." />
+            )}
+          </div>
+        </section>
+
+        <section className="vh-admin-panel">
+          <div className="vh-admin-panel__header">
+            <div>
+              <h2>Recent Orders</h2>
+              <p>Newest customer order records.</p>
+            </div>
+            <Link href="/admin/orders">View all orders</Link>
+          </div>
+          <div className="vh-admin-table-scroll">
+            <table className="vh-admin-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Customer</th>
+                  <th>Date</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td>
+                      <Link href="/admin/orders">#{order.order_number || order.id}</Link>
+                    </td>
+                    <td>{getCustomerName(order)}</td>
+                    <td>{formatDateTime(order.created_at)}</td>
+                    <td>{formatAmountWithUnit(order.amount, order.currency)}</td>
+                    <td>
+                      <AdminStatusBadge tone={getStatusTone(order.status)}>{order.status}</AdminStatusBadge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="vh-admin-panel">
+          <div className="vh-admin-panel__header">
+            <div>
+              <h2>Low Stock Products</h2>
+              <p>Items that need inventory attention.</p>
+            </div>
+            <Link href="/admin/products">View all</Link>
+          </div>
+          <div className="vh-admin-product-list">
+            {lowStockProducts.length ? (
+              lowStockProducts.slice(0, 5).map((product) => (
+                <Link href="/admin/products" key={product.id} className="vh-admin-product-row">
+                  <img src={product.image} alt={product.name} />
+                  <div>
+                    <strong>{product.name}</strong>
+                    <span>SKU: {product.id}</span>
+                  </div>
+                  <small>
+                    Stock
+                    <b>{getProductStock(product)}</b>
+                  </small>
+                </Link>
+              ))
+            ) : (
+              <EmptyAdminState title="Inventory looks clear" copy="No products are currently at the low-stock threshold." />
             )}
           </div>
         </section>
       </div>
 
-      <section className="vh-data-card" style={{ marginTop: "2rem" }}>
-        <h2 className="h3 u-margin-b--lg">Profiles</h2>
-        <div className="vh-list">
-          {profiles?.length ? (
-            profiles.map((profile) => (
-              <article key={profile.id} className="vh-history-item">
-                <strong>{profile.email || "No email"}</strong>
-                <p className="u-margin-b--none">Role: {profile.role}</p>
-                <p className="u-margin-b--none">Wallet: {profile.wallet_address || "Not set"}</p>
-                {isOwner && profile.role !== "owner" ? <ProfileRoleForm profileId={profile.id} initialRole={profile.role} /> : null}
-              </article>
-            ))
-          ) : (
-            <div className="vh-empty">No profiles yet.</div>
-          )}
-        </div>
-      </section>
-    </section>
+      <footer className="vh-admin-copyright">© 2026 Vione Hernal. All rights reserved.</footer>
+    </div>
   );
 }

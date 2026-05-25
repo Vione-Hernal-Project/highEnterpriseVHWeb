@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { Database } from "@/lib/database.types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   type AdminCashOutBreakdownRow,
@@ -26,6 +27,8 @@ import {
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { PAYMENT_METHOD_VALUES, getPaymentMethodConfig, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
 import { getSupabaseTableErrorMessage } from "@/lib/supabase/errors";
+import { formatDateTime, formatTransactionHash, formatWalletAddress } from "@/lib/utils";
+import { getPaymentAddressExplorerUrl, getPaymentTransactionExplorerUrl, getTransactionExplorerUrl } from "@/lib/web3/network";
 
 type BucketMeta = {
   allocationRuleId: string | null;
@@ -34,6 +37,87 @@ type BucketMeta = {
   color: string;
   displayOrder: number;
 };
+
+type LoadAllocationLedgerOptions = {
+  date?: string | null;
+};
+
+type SupabaseAdminClient = ReturnType<typeof createSupabaseAdminClient>;
+type OrderItemRow = Database["public"]["Tables"]["order_items"]["Row"];
+type ProductImageRow = Pick<
+  Database["public"]["Tables"]["products"]["Row"],
+  "id" | "name" | "main_image_url" | "hover_image_url" | "gallery_image_urls"
+>;
+
+const LEDGER_TIME_ZONE = "Asia/Manila";
+
+function formatLedgerDateKey(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: LEDGER_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeLedgerDateKey(value: string | null | undefined) {
+  const trimmedValue = (value || "").trim();
+
+  if (trimmedValue.toLowerCase() === "all") {
+    return "all";
+  }
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmedValue) ? trimmedValue : formatLedgerDateKey(new Date());
+}
+
+function formatLedgerDateLabel(value: string) {
+  if (value === "all") {
+    return "All Transactions";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: LEDGER_TIME_ZONE,
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(`${value}T00:00:00+08:00`));
+}
+
+function isOnLedgerDate(timestamp: string | null | undefined, dateKey: string) {
+  if (dateKey === "all") {
+    return Boolean(timestamp);
+  }
+
+  if (!timestamp) {
+    return false;
+  }
+
+  return formatLedgerDateKey(new Date(timestamp)) === dateKey;
+}
+
+function resolvePaymentChainLabel(payment: PaymentRow) {
+  const config = getPaymentMethodConfig(payment.payment_method);
+
+  if (config?.network === "solana") {
+    return payment.network || "Solana Mainnet";
+  }
+
+  return payment.chain_id ? `Ethereum Mainnet · Chain ${payment.chain_id}` : "Ethereum Mainnet";
+}
+
+function resolvePaymentReference(payment: PaymentRow) {
+  return payment.signature || payment.tx_hash || "";
+}
+
+function resolvePaymentWalletLabel(payment: PaymentRow) {
+  return formatWalletAddress(payment.sender_wallet_address || payment.wallet_address);
+}
 
 function normalizeLookupKey(value: string | null | undefined) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -132,8 +216,10 @@ function addAmount(target: Map<string, number>, code: string | null | undefined,
   target.set(normalizedCode, roundAmount((target.get(normalizedCode) || 0) + amount));
 }
 
-export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSnapshot> {
+export async function loadAllocationLedgerSnapshot(options: LoadAllocationLedgerOptions = {}): Promise<AllocationLedgerSnapshot> {
   const admin = createSupabaseAdminClient();
+  const selectedDateKey = normalizeLedgerDateKey(options.date);
+  const todayDateKey = formatLedgerDateKey(new Date());
   const [rulesResult, paymentsResult, allocationsResult, cashOutsResult, cashOutBreakdownsResult] = await Promise.all([
     admin.from("fund_allocation_rules").select("*").order("display_order", { ascending: true }),
     admin.from("payments").select("*").eq("status", "paid").order("updated_at", { ascending: false }),
@@ -481,8 +567,7 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
     })
     .sort((left, right) => right.grossAmount - left.grossAmount || left.currency.localeCompare(right.currency));
   const primaryCashOutAsset = cashOutAssets[0] || null;
-  const recentCashOuts = cashOuts
-    .slice(0, 8)
+  const cashOutEvents = cashOuts
     .flatMap((cashOut) => {
       const resolvedPaymentMethod = resolveCashOutPaymentMethod(cashOut);
 
@@ -598,7 +683,7 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
       ? buildSegmentBreakdown(item.amount, primaryCurrency, PAYMENT_DISTRIBUTION_DETAILS[item.code]!.subAllocations!)
       : [],
   }));
-  const latestPayments = paidPayments.slice(0, 24).map((payment) => {
+  const allLatestPayments = paidPayments.map((payment) => {
     const order = payment.order_id ? orderById.get(payment.order_id) : null;
     const source = getPaymentSourceDescriptor(payment);
     const baseAmount = resolveLedgerBaseAmount(payment);
@@ -642,6 +727,63 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
       allocations,
     };
   });
+  const latestPayments = allLatestPayments.filter((payment) => isOnLedgerDate(payment.paidAt, selectedDateKey)).slice(0, 24);
+  const ledgerTransactions = [
+    ...paidPayments.map((payment) => {
+      const order = payment.order_id ? orderById.get(payment.order_id) : null;
+      const baseAmount = resolveLedgerBaseAmount(payment);
+      const config = getPaymentMethodConfig(payment.payment_method);
+      const allocationCount = allocationsByPayment.get(payment.id)?.length || 0;
+      const reference = resolvePaymentReference(payment);
+      const title = order?.order_number
+        ? `Order ${order.order_number}`
+        : order?.product_name
+          ? order.product_name
+          : "On-chain payment";
+
+      return {
+        id: payment.id,
+        kind: "payment" as const,
+        href: `/admin/ledger/transactions/payment/${payment.id}`,
+        eyebrow: "On-chain payment",
+        title,
+        amountLabel: baseAmount.amountLabel,
+        methodLabel: getPaymentMethodLabel(payment.payment_method),
+        statusLabel: payment.status,
+        occurredAt: payment.updated_at,
+        occurredAtLabel: formatDateTime(payment.updated_at),
+        referenceLabel: reference ? formatTransactionHash(reference) : "No transaction hash",
+        chainLabel: resolvePaymentChainLabel(payment),
+        walletLabel: resolvePaymentWalletLabel(payment),
+        allocationSummary: allocationCount ? `${allocationCount} allocation${allocationCount === 1 ? "" : "s"}` : "Allocation pending",
+        allocationCount,
+        sortRank: config?.network === "solana" ? 2 : 1,
+      };
+    }),
+    ...cashOutEvents.map((cashOut) => ({
+      id: cashOut.id,
+      kind: "cash-out" as const,
+      href: `/admin/ledger/transactions/cash-out/${cashOut.id}`,
+      eyebrow: "Cash-out",
+      title: cashOut.sourceLabel,
+      amountLabel: cashOut.amountLabel,
+      methodLabel: getPaymentMethodLabel(cashOut.paymentMethod),
+      statusLabel: "recorded",
+      occurredAt: cashOut.createdAt,
+      occurredAtLabel: formatDateTime(cashOut.createdAt),
+      referenceLabel: cashOut.txHash ? formatTransactionHash(cashOut.txHash) : "No transaction hash",
+      chainLabel: cashOut.chainId ? `Chain ${cashOut.chainId}` : "On-chain",
+      walletLabel: formatWalletAddress(cashOut.destinationWalletAddress),
+      allocationSummary: cashOut.breakdowns.length
+        ? `${cashOut.breakdowns.length} deduction${cashOut.breakdowns.length === 1 ? "" : "s"}`
+        : "Proportional deduction",
+      allocationCount: cashOut.breakdowns.length,
+      sortRank: 3,
+    })),
+  ]
+    .filter((transaction) => isOnLedgerDate(transaction.occurredAt, selectedDateKey))
+    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt) || right.sortRank - left.sortRank)
+    .map(({ sortRank: _sortRank, ...transaction }) => transaction);
 
   const alerts: string[] = [];
 
@@ -668,7 +810,7 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
   }
 
   if (!merchantWalletAddress) {
-    alerts.push("Merchant wallet is not configured. Add NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS before processing an on-chain cash-out.");
+    alerts.push("Merchant wallet is not configured. Add NEXT_PUBLIC_MERCHANT_EVM_WALLET before processing an on-chain cash-out.");
   }
 
   const missingAllocationPayments = paidPayments.filter((payment) => {
@@ -691,13 +833,21 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
 
   return {
     generatedAt: new Date().toISOString(),
+    selectedDate: {
+      value: selectedDateKey,
+      label: formatLedgerDateLabel(selectedDateKey),
+      isAll: selectedDateKey === "all",
+      isToday: selectedDateKey === todayDateKey,
+      todayValue: todayDateKey,
+      transactionCount: ledgerTransactions.length,
+    },
     summary: {
       totalReceived,
       totalReceivedLabel,
       totalPayments: paidPayments.length,
       activeCategories: activeRules.length,
       activeSources: sourceTotals.size,
-      latestPaymentAt: latestPayments[0]?.paidAt || null,
+      latestPaymentAt: allLatestPayments[0]?.paidAt || null,
       primaryCurrency,
       currencyTotals: currencySummary,
       activePercentageBasisPoints,
@@ -715,7 +865,7 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
       latestCashOutAt: cashOuts[0]?.created_at || null,
       missingAllocationPaymentCount: missingAllocationPayments.length,
       assets: cashOutAssets,
-      recentEvents: recentCashOuts,
+      recentEvents: cashOutEvents.slice(0, 8),
     },
     preview: {
       baseAmount: LEDGER_PREVIEW_BASE_AMOUNT,
@@ -749,7 +899,451 @@ export async function loadAllocationLedgerSnapshot(): Promise<AllocationLedgerSn
         totalAmountLabel: formatLedgerCurrency(source.totalAmount, primaryCurrency),
       }))
       .sort((left, right) => right.totalAmount - left.totalAmount),
+    ledgerTransactions,
     latestPayments,
     alerts,
   };
+}
+
+export type LedgerTransactionDetail = {
+  id: string;
+  kind: "payment" | "cash-out";
+  title: string;
+  eyebrow: string;
+  amountLabel: string;
+  statusLabel: string;
+  methodLabel: string;
+  occurredAt: string;
+  occurredAtLabel: string;
+  referenceLabel: string;
+  referenceValue: string;
+  referenceUrl: string | null;
+  chainLabel: string;
+  walletLabel: string;
+  walletUrl: string | null;
+  overview: Array<{
+    label: string;
+    value: string | null;
+  }>;
+  sections: Array<{
+    title: string;
+    items: Array<{
+      label: string;
+      value: string | null;
+    }>;
+  }>;
+  allocations: Array<{
+    id: string;
+    name: string;
+    code: string;
+    color: string;
+    amountLabel: string;
+    percentageLabel?: string | null;
+    beforeLabel?: string | null;
+    afterLabel?: string | null;
+  }>;
+  items: Array<{
+    id: string;
+    imageUrl: string | null;
+    productName: string;
+    productMeta: string | null;
+    quantityLabel: string;
+    unitPriceLabel: string;
+    lineTotalLabel: string;
+  }>;
+};
+
+function cleanDetailValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const stringValue = String(value).trim();
+
+  return stringValue || null;
+}
+
+function getTrimmedString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function getFirstImageFromGallery(value: unknown) {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+
+  const imageUrl = value.find((entry) => getTrimmedString(entry));
+
+  return getTrimmedString(imageUrl);
+}
+
+function getProductImageUrl(product: ProductImageRow) {
+  return getTrimmedString(product.main_image_url) || getFirstImageFromGallery(product.gallery_image_urls) || getTrimmedString(product.hover_image_url);
+}
+
+function getOrderItemProductId(item: Pick<OrderItemRow, "product_id">) {
+  return getTrimmedString(item.product_id);
+}
+
+function getOrderItemLineTotal(item: OrderItemRow, order: OrderRow) {
+  const lineTotal = toNumber(item.line_total);
+
+  if (lineTotal > 0) {
+    return lineTotal;
+  }
+
+  const unitPrice = toNumber(item.unit_price);
+  const quantity = Math.max(1, toNumber(item.quantity));
+
+  if (unitPrice > 0) {
+    return unitPrice * quantity;
+  }
+
+  return toNumber(order.amount);
+}
+
+async function loadRelatedPaymentOrder(admin: SupabaseAdminClient, paymentRow: PaymentRow) {
+  const orderReference = getTrimmedString(paymentRow.order_id);
+
+  if (!orderReference) {
+    return null;
+  }
+
+  const { data: orderById, error: orderByIdError } = await admin.from("orders").select("*").eq("id", orderReference).maybeSingle();
+
+  if (orderByIdError) {
+    throw new Error(getSupabaseTableErrorMessage(orderByIdError.message, "Unable to load the related order for this payment."));
+  }
+
+  if (orderById) {
+    return orderById as OrderRow;
+  }
+
+  const { data: orderByNumber, error: orderByNumberError } = await admin.from("orders").select("*").eq("order_number", orderReference).maybeSingle();
+
+  if (orderByNumberError) {
+    throw new Error(getSupabaseTableErrorMessage(orderByNumberError.message, "Unable to load the related order for this payment."));
+  }
+
+  return orderByNumber as OrderRow | null;
+}
+
+async function loadLedgerPurchasedItems(admin: SupabaseAdminClient, order: OrderRow | null) {
+  if (!order) {
+    return [] as LedgerTransactionDetail["items"];
+  }
+
+  const { data, error } = await admin.from("order_items").select("*").eq("order_id", order.id).order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(getSupabaseTableErrorMessage(error.message, "Unable to load the order items for this payment."));
+  }
+
+  const orderItems = (data || []) as OrderItemRow[];
+  const productIds = [
+    ...orderItems.map((item) => getOrderItemProductId(item)),
+    getTrimmedString(order.product_id),
+  ].filter(Boolean);
+  const productNames = [
+    ...orderItems.map((item) => getTrimmedString(item.product_name)),
+    getTrimmedString(order.product_name),
+  ].filter(Boolean);
+  const productImagesById = new Map<string, string>();
+  const productImagesByName = new Map<string, string>();
+
+  if (productIds.length || productNames.length) {
+    const uniqueProductIds = [...new Set(productIds)];
+    const uniqueProductNames = [...new Set(productNames)];
+    const [productsByIdResult, productsByNameResult] = await Promise.all([
+      uniqueProductIds.length
+        ? admin.from("products").select("id, name, main_image_url, hover_image_url, gallery_image_urls").in("id", uniqueProductIds)
+        : Promise.resolve({ data: [], error: null }),
+      uniqueProductNames.length
+        ? admin.from("products").select("id, name, main_image_url, hover_image_url, gallery_image_urls").in("name", uniqueProductNames)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    const productError = productsByIdResult.error || productsByNameResult.error;
+
+    if (productError) {
+      throw new Error(getSupabaseTableErrorMessage(productError.message, "Unable to load product images for this payment."));
+    }
+
+    const productRows = [...(productsByIdResult.data || []), ...(productsByNameResult.data || [])].filter(
+      (product, index, allProducts) => allProducts.findIndex((match) => match.id === product.id) === index,
+    ) as ProductImageRow[];
+
+    productRows.forEach((product) => {
+      const imageUrl = getProductImageUrl(product);
+
+      if (!imageUrl) {
+        return;
+      }
+
+      productImagesById.set(product.id, imageUrl);
+
+      if (product.name) {
+        productImagesByName.set(product.name, imageUrl);
+      }
+    });
+  }
+
+  if (orderItems.length) {
+    return orderItems.map((item) => {
+      const productName = [item.product_brand, item.product_name].map((value) => getTrimmedString(value)).filter(Boolean).join(" ") || item.product_name;
+      const imageUrl = productImagesById.get(getOrderItemProductId(item)) || productImagesByName.get(item.product_name) || null;
+
+      return {
+        id: item.id,
+        imageUrl,
+        productName,
+        productMeta: item.selected_size ? `Size ${item.selected_size}` : null,
+        quantityLabel: `Qty ${item.quantity}`,
+        unitPriceLabel: formatLedgerCurrency(item.unit_price, order.currency),
+        lineTotalLabel: formatLedgerCurrency(getOrderItemLineTotal(item, order), order.currency),
+      };
+    });
+  }
+
+  if (!order.product_name) {
+    return [];
+  }
+
+  return [
+    {
+      id: order.id,
+      imageUrl: productImagesById.get(getTrimmedString(order.product_id)) || productImagesByName.get(order.product_name) || null,
+      productName: order.product_name,
+      productMeta: order.selected_size ? `Size ${order.selected_size}` : null,
+      quantityLabel: `Qty ${order.quantity}`,
+      unitPriceLabel: formatLedgerCurrency(order.unit_price, order.currency),
+      lineTotalLabel: formatLedgerCurrency(order.amount, order.currency),
+    },
+  ];
+}
+
+export async function loadLedgerTransactionDetail(kind: string, id: string): Promise<LedgerTransactionDetail | null> {
+  const admin = createSupabaseAdminClient();
+
+  if (kind === "payment") {
+    const { data: payment, error } = await admin.from("payments").select("*").eq("id", id).maybeSingle();
+
+    if (error) {
+      throw new Error(getSupabaseTableErrorMessage(error.message, "Unable to load the payment ledger transaction."));
+    }
+
+    if (!payment) {
+      return null;
+    }
+
+    const paymentRow = payment as PaymentRow;
+    const [order, allocationsResult] = await Promise.all([
+      loadRelatedPaymentOrder(admin, paymentRow),
+      admin.from("payment_allocations").select("*").eq("payment_id", paymentRow.id).order("created_at", { ascending: true }),
+    ]);
+
+    if (allocationsResult.error) {
+      throw new Error(getSupabaseTableErrorMessage(allocationsResult.error.message, "Unable to load the allocation rows for this payment."));
+    }
+
+    const items = await loadLedgerPurchasedItems(admin, order);
+    const allocations = ((allocationsResult.data || []) as PaymentAllocationRow[]).map((allocation) => ({
+      id: allocation.id,
+      name: allocation.allocation_name,
+      code: allocation.allocation_code,
+      color: allocation.allocation_color,
+      amountLabel: formatLedgerCurrency(allocation.allocated_amount, allocation.currency),
+      percentageLabel: formatPercentageBasisPoints(allocation.percentage_basis_points),
+      beforeLabel: null,
+      afterLabel: null,
+    }));
+    const baseAmount = resolveLedgerBaseAmount(paymentRow);
+    const assetAmount = resolveCashOutAssetAmount(paymentRow);
+    const reference = resolvePaymentReference(paymentRow);
+    const walletAddress = paymentRow.sender_wallet_address || paymentRow.wallet_address;
+    const title = order?.order_number ? `Order ${order.order_number}` : order?.product_name || "On-chain payment";
+
+    return {
+      id: paymentRow.id,
+      kind: "payment",
+      title,
+      eyebrow: "On-chain payment",
+      amountLabel: baseAmount.amountLabel,
+      statusLabel: paymentRow.status,
+      methodLabel: getPaymentMethodLabel(paymentRow.payment_method),
+      occurredAt: paymentRow.updated_at,
+      occurredAtLabel: formatDateTime(paymentRow.updated_at),
+      referenceLabel: reference ? formatTransactionHash(reference) : "No transaction hash",
+      referenceValue: reference || "Not submitted",
+      referenceUrl: getPaymentTransactionExplorerUrl(paymentRow.payment_method, reference),
+      chainLabel: resolvePaymentChainLabel(paymentRow),
+      walletLabel: resolvePaymentWalletLabel(paymentRow),
+      walletUrl: getPaymentAddressExplorerUrl(paymentRow.payment_method, walletAddress),
+      overview: [
+        { label: "Ledger amount", value: baseAmount.amountLabel },
+        { label: "On-chain amount", value: paymentRow.amount_received == null ? null : assetAmount.amountLabel },
+        { label: "Payment method", value: getPaymentMethodLabel(paymentRow.payment_method) },
+        { label: "Status", value: paymentRow.status },
+      ],
+      sections: [
+        {
+          title: "Payment",
+          items: [
+            { label: "Payment ID", value: paymentRow.id },
+            { label: "Payment type", value: cleanDetailValue(paymentRow.payment_type || paymentRow.payment_method) },
+            { label: "Wallet provider", value: cleanDetailValue(paymentRow.wallet_provider) },
+            { label: "Network", value: cleanDetailValue(paymentRow.network) },
+            { label: "Chain ID", value: cleanDetailValue(paymentRow.chain_id) },
+            { label: "Token type", value: cleanDetailValue(paymentRow.token_type) },
+            { label: "Token standard", value: cleanDetailValue(paymentRow.token_standard) },
+            { label: "Expected amount", value: formatLedgerCurrency(paymentRow.amount_expected, getPaymentMethodLabel(paymentRow.payment_method)) },
+            { label: "Received amount", value: paymentRow.amount_received == null ? null : formatLedgerCurrency(paymentRow.amount_received, getPaymentMethodLabel(paymentRow.payment_method)) },
+          ],
+        },
+        {
+          title: "Order",
+          items: [
+            { label: "Order ID", value: cleanDetailValue(order?.id) },
+            { label: "Order number", value: cleanDetailValue(order?.order_number) },
+            { label: "Product", value: cleanDetailValue(order?.product_name) },
+            { label: "Customer", value: cleanDetailValue(order?.customer_name) },
+            { label: "Email", value: cleanDetailValue(order?.email) },
+            { label: "Order status", value: cleanDetailValue(order?.status) },
+            { label: "Confirmation status", value: cleanDetailValue(order?.confirmation_email_status) },
+            { label: "Order total", value: order ? formatLedgerCurrency(order.amount, order.currency) : null },
+            { label: "Purchased items", value: items.length ? `${items.length} item${items.length === 1 ? "" : "s"}` : null },
+          ],
+        },
+        {
+          title: "Wallet + Transaction",
+          items: [
+            { label: "Sender wallet", value: cleanDetailValue(paymentRow.sender_wallet_address || paymentRow.wallet_address) },
+            { label: "Recipient wallet", value: cleanDetailValue(paymentRow.recipient_address) },
+            { label: "Transaction hash", value: cleanDetailValue(paymentRow.tx_hash) },
+            { label: "Solana signature", value: cleanDetailValue(paymentRow.signature) },
+            { label: "Quote expires", value: paymentRow.quote_expires_at ? formatDateTime(paymentRow.quote_expires_at) : null },
+            { label: "Created", value: formatDateTime(paymentRow.created_at) },
+            { label: "Updated", value: formatDateTime(paymentRow.updated_at) },
+          ],
+        },
+        {
+          title: "Quote",
+          items: [
+            { label: "Fiat expected", value: paymentRow.amount_expected_fiat == null ? null : formatLedgerCurrency(paymentRow.amount_expected_fiat, paymentRow.fiat_currency || "PHP") },
+            { label: "USD conversion rate", value: cleanDetailValue(paymentRow.usd_conversion_rate) },
+            { label: "CoinGecko price", value: cleanDetailValue(paymentRow.coingecko_crypto_price) },
+            { label: "Binance price", value: cleanDetailValue(paymentRow.binance_crypto_price) },
+            { label: "Price difference", value: paymentRow.price_difference_percent == null ? null : `${paymentRow.price_difference_percent}%` },
+            { label: "Slippage buffer", value: paymentRow.slippage_buffer_percent == null ? null : `${paymentRow.slippage_buffer_percent}%` },
+          ],
+        },
+      ],
+      allocations,
+      items,
+    };
+  }
+
+  if (kind === "cash-out") {
+    const { data: cashOut, error } = await admin.from("admin_cash_outs").select("*").eq("id", id).maybeSingle();
+
+    if (error) {
+      throw new Error(getSupabaseTableErrorMessage(error.message, "Unable to load the cash-out ledger transaction."));
+    }
+
+    if (!cashOut) {
+      return null;
+    }
+
+    const cashOutRow = cashOut as AdminCashOutRow;
+    const [{ data: breakdownRows, error: breakdownError }, { data: actorRows, error: actorError }] = await Promise.all([
+      admin.from("admin_cash_out_breakdowns").select("*").eq("cash_out_id", cashOutRow.id).order("created_at", { ascending: true }),
+      cashOutRow.created_by ? admin.from("profiles").select("id, email").eq("id", cashOutRow.created_by).limit(1) : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (breakdownError) {
+      throw new Error(getSupabaseTableErrorMessage(breakdownError.message, "Unable to load the cash-out breakdown rows."));
+    }
+
+    if (actorError) {
+      throw new Error(getSupabaseTableErrorMessage(actorError.message, "Unable to load the cash-out actor."));
+    }
+
+    const resolvedPaymentMethod = resolveCashOutPaymentMethod(cashOutRow) || "evm_eth";
+    const currency = resolveCashOutCurrencyLabel(cashOutRow, resolvedPaymentMethod);
+    const breakdowns = (breakdownRows || []) as AdminCashOutBreakdownRow[];
+    const actor = (actorRows || [])[0] as { id: string; email: string | null } | undefined;
+    const sourceLabel = resolveCashOutSourceLabel(cashOutRow, breakdowns);
+    const allocations = breakdowns.map((breakdown) => ({
+      id: breakdown.id,
+      name: breakdown.allocation_name,
+      code: breakdown.allocation_code,
+      color: breakdown.allocation_color,
+      amountLabel: formatLedgerCurrency(breakdown.amount, currency),
+      percentageLabel: null,
+      beforeLabel: formatLedgerCurrency(breakdown.available_before, currency),
+      afterLabel: formatLedgerCurrency(breakdown.available_after, currency),
+    }));
+
+    return {
+      id: cashOutRow.id,
+      kind: "cash-out",
+      title: sourceLabel,
+      eyebrow: "Cash-out",
+      amountLabel: formatLedgerCurrency(cashOutRow.amount, currency),
+      statusLabel: "recorded",
+      methodLabel: getPaymentMethodLabel(resolvedPaymentMethod),
+      occurredAt: cashOutRow.created_at,
+      occurredAtLabel: formatDateTime(cashOutRow.created_at),
+      referenceLabel: formatTransactionHash(cashOutRow.tx_hash),
+      referenceValue: cashOutRow.tx_hash,
+      referenceUrl: getTransactionExplorerUrl(cashOutRow.tx_hash),
+      chainLabel: cashOutRow.chain_id ? `Chain ${cashOutRow.chain_id}` : "On-chain",
+      walletLabel: formatWalletAddress(cashOutRow.destination_wallet_address),
+      walletUrl: getPaymentAddressExplorerUrl(resolvedPaymentMethod, cashOutRow.destination_wallet_address),
+      overview: [
+        { label: "Cash-out amount", value: formatLedgerCurrency(cashOutRow.amount, currency) },
+        { label: "Source", value: sourceLabel },
+        { label: "Payment method", value: getPaymentMethodLabel(resolvedPaymentMethod) },
+        { label: "Status", value: "recorded" },
+      ],
+      sections: [
+        {
+          title: "Cash-out",
+          items: [
+            { label: "Cash-out ID", value: cashOutRow.id },
+            { label: "Request ID", value: cleanDetailValue(cashOutRow.request_id) },
+            { label: "Source mode", value: cleanDetailValue(cashOutRow.source_mode) },
+            { label: "Source bucket", value: sourceLabel },
+            { label: "Amount input mode", value: cleanDetailValue(cashOutRow.amount_input_mode) },
+            { label: "PHP equivalent", value: cashOutRow.amount_php_equivalent == null ? null : formatLedgerCurrency(cashOutRow.amount_php_equivalent, "PHP") },
+            { label: "Available before", value: formatLedgerCurrency(cashOutRow.available_before, currency) },
+            { label: "Available after", value: formatLedgerCurrency(cashOutRow.available_after, currency) },
+          ],
+        },
+        {
+          title: "Wallet + Transaction",
+          items: [
+            { label: "Sender wallet", value: cleanDetailValue(cashOutRow.sender_wallet_address) },
+            { label: "Destination wallet", value: cleanDetailValue(cashOutRow.destination_wallet_address) },
+            { label: "Transaction hash", value: cleanDetailValue(cashOutRow.tx_hash) },
+            { label: "Chain ID", value: cleanDetailValue(cashOutRow.chain_id) },
+            { label: "Created by", value: cleanDetailValue(actor?.email || cashOutRow.created_by) },
+            { label: "Created", value: formatDateTime(cashOutRow.created_at) },
+            { label: "Updated", value: formatDateTime(cashOutRow.updated_at) },
+          ],
+        },
+        {
+          title: "Quote",
+          items: [
+            { label: "Quote PHP per ETH", value: cashOutRow.quote_php_per_eth == null ? null : `${formatLedgerCurrency(cashOutRow.quote_php_per_eth, "PHP")} / ETH` },
+            { label: "Quote source", value: cleanDetailValue(cashOutRow.quote_source) },
+            { label: "Quote updated", value: cashOutRow.quote_updated_at ? formatDateTime(cashOutRow.quote_updated_at) : null },
+          ],
+        },
+      ],
+      allocations,
+      items: [],
+    };
+  }
+
+  return null;
 }

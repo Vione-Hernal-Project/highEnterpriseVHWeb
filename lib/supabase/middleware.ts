@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/database.types";
 import { serverEnv } from "@/lib/env/server";
 
-const protectedRoutes = ["/dashboard", "/checkout", "/admin"];
+const protectedRoutes = ["/account", "/dashboard", "/checkout", "/admin"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({

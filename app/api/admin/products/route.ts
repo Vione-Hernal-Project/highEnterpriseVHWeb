@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 
+import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { PRODUCT_CACHE_TAG, loadAdminCatalogProducts, normalizeProductCategory, normalizeProductDepartment } from "@/lib/products";
@@ -25,6 +26,43 @@ function buildSizeInventory(rows: Array<{ size: string; stock: number }>) {
     inventory[row.size.trim()] = Math.max(0, Math.floor(row.stock));
     return inventory;
   }, {});
+}
+
+function getTotalStock(rows: Array<{ size: string; stock: number }>) {
+  return rows.reduce((total, row) => total + Math.max(0, Math.floor(row.stock)), 0);
+}
+
+async function dispatchInventoryNotification(product: { id: string; name: string }, rows: Array<{ size: string; stock: number }>) {
+  const stock = getTotalStock(rows);
+
+  if (stock <= 0) {
+    await tryDispatchAdminNotification("inventory.out_of_stock", {
+      entityId: `${product.id}:out:${stock}`,
+      title: `Out of stock: ${product.name}`,
+      message: `${product.name} has no sellable inventory left.`,
+      href: `/admin/products?inventory=out-of-stock`,
+      metadata: {
+        productId: product.id,
+        productName: product.name,
+        stock,
+      },
+    });
+    return;
+  }
+
+  if (stock <= 2) {
+    await tryDispatchAdminNotification("inventory.low_stock", {
+      entityId: `${product.id}:low:${stock}`,
+      title: `Low stock: ${product.name}`,
+      message: `${product.name} has ${stock} unit${stock === 1 ? "" : "s"} left.`,
+      href: `/admin/products?inventory=low-stock`,
+      metadata: {
+        productId: product.id,
+        productName: product.name,
+        stock,
+      },
+    });
+  }
 }
 
 function getStoragePathFromPublicUrl(url: string | null | undefined) {
@@ -169,6 +207,7 @@ export async function POST(request: Request) {
     }
 
     revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
+    await dispatchInventoryNotification({ id: data.id, name: data.name }, parsed.data.sizeInventoryRows);
 
     return NextResponse.json({ product: data });
   } catch (error) {
@@ -251,6 +290,7 @@ export async function PATCH(request: Request) {
     }
 
     revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
+    await dispatchInventoryNotification({ id: data.id, name: data.name }, parsed.data.sizeInventoryRows);
 
     return NextResponse.json({ product: data });
   } catch (error) {

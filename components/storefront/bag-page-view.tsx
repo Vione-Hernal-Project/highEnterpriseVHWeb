@@ -158,7 +158,7 @@ export function BagPageView({ products }: Props) {
               </Link>
             </div>
             <p className="vh-payment-note" style={{ marginTop: "1rem" }}>
-              Checkout now carries your full bag into one order summary, one address form, and one payment.
+              Shipping and final payment details are confirmed at checkout. Review your bag, delivery address, and payment method before placing your order.
             </p>
           </aside>
         </div>

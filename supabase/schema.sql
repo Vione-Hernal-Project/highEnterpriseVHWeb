@@ -29,6 +29,134 @@ alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles
 add constraint profiles_role_check check (role in ('user', 'staff', 'admin', 'owner'));
 
+create table if not exists public.customers (
+  id uuid primary key default gen_random_uuid(),
+  full_name text not null,
+  email text not null,
+  phone_country_code text not null default '+63',
+  phone_number text not null default '',
+  date_of_birth date null,
+  customer_type text not null default '',
+  source text not null default '',
+  customer_group text not null default '',
+  vip_level text not null default 'standard',
+  referral_by text not null default '',
+  address_line1 text not null default '',
+  address_line2 text not null default '',
+  city text not null default '',
+  state_province text not null default '',
+  postal_code text not null default '',
+  country text not null default 'Philippines',
+  account_status text not null default 'active',
+  email_verification text not null default 'unverified',
+  has_account_access boolean not null default true,
+  subscription_status text not null default 'subscribed',
+  subscribed_on date null,
+  tags jsonb not null default '[]'::jsonb,
+  notes text not null default '',
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint customers_full_name_trimmed_check check (char_length(trim(full_name)) > 0),
+  constraint customers_email_trimmed_check check (char_length(trim(email)) > 0),
+  constraint customers_account_status_check check (account_status in ('active', 'inactive', 'blocked')),
+  constraint customers_email_verification_check check (email_verification in ('verified', 'unverified')),
+  constraint customers_subscription_status_check check (subscription_status in ('subscribed', 'unsubscribed', 'pending'))
+);
+
+alter table public.customers add column if not exists id uuid default gen_random_uuid();
+alter table public.customers add column if not exists full_name text;
+alter table public.customers add column if not exists email text;
+alter table public.customers add column if not exists phone_country_code text not null default '+63';
+alter table public.customers add column if not exists phone_number text not null default '';
+alter table public.customers add column if not exists date_of_birth date null;
+alter table public.customers add column if not exists customer_type text not null default '';
+alter table public.customers add column if not exists source text not null default '';
+alter table public.customers add column if not exists customer_group text not null default '';
+alter table public.customers add column if not exists vip_level text not null default 'standard';
+alter table public.customers add column if not exists referral_by text not null default '';
+alter table public.customers add column if not exists address_line1 text not null default '';
+alter table public.customers add column if not exists address_line2 text not null default '';
+alter table public.customers add column if not exists city text not null default '';
+alter table public.customers add column if not exists state_province text not null default '';
+alter table public.customers add column if not exists postal_code text not null default '';
+alter table public.customers add column if not exists country text not null default 'Philippines';
+alter table public.customers add column if not exists account_status text not null default 'active';
+alter table public.customers add column if not exists email_verification text not null default 'unverified';
+alter table public.customers add column if not exists has_account_access boolean not null default true;
+alter table public.customers add column if not exists subscription_status text not null default 'subscribed';
+alter table public.customers add column if not exists subscribed_on date null;
+alter table public.customers add column if not exists tags jsonb not null default '[]'::jsonb;
+alter table public.customers add column if not exists notes text not null default '';
+alter table public.customers add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.customers add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.customers
+  alter column id set not null,
+  alter column full_name set not null,
+  alter column email set not null,
+  alter column phone_country_code set not null,
+  alter column phone_number set not null,
+  alter column customer_type set not null,
+  alter column source set not null,
+  alter column customer_group set not null,
+  alter column vip_level set not null,
+  alter column referral_by set not null,
+  alter column address_line1 set not null,
+  alter column address_line2 set not null,
+  alter column city set not null,
+  alter column state_province set not null,
+  alter column postal_code set not null,
+  alter column country set not null,
+  alter column account_status set not null,
+  alter column email_verification set not null,
+  alter column has_account_access set not null,
+  alter column subscription_status set not null,
+  alter column tags set not null,
+  alter column notes set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'customers_pkey'
+      and conrelid = 'public.customers'::regclass
+  ) then
+    alter table public.customers add constraint customers_pkey primary key (id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'customers_email_key'
+      and conrelid = 'public.customers'::regclass
+  ) then
+    alter table public.customers add constraint customers_email_key unique (email);
+  end if;
+end $$;
+
+alter table public.customers drop constraint if exists customers_full_name_trimmed_check;
+alter table public.customers
+add constraint customers_full_name_trimmed_check check (char_length(trim(full_name)) > 0);
+
+alter table public.customers drop constraint if exists customers_email_trimmed_check;
+alter table public.customers
+add constraint customers_email_trimmed_check check (char_length(trim(email)) > 0);
+
+alter table public.customers drop constraint if exists customers_account_status_check;
+alter table public.customers
+add constraint customers_account_status_check check (account_status in ('active', 'inactive', 'blocked'));
+
+alter table public.customers drop constraint if exists customers_email_verification_check;
+alter table public.customers
+add constraint customers_email_verification_check check (email_verification in ('verified', 'unverified'));
+
+alter table public.customers drop constraint if exists customers_subscription_status_check;
+alter table public.customers
+add constraint customers_subscription_status_check check (subscription_status in ('subscribed', 'unsubscribed', 'pending'));
+
 create table if not exists public.products (
   id text primary key,
   name text not null,
@@ -112,6 +240,346 @@ alter table public.products drop constraint if exists products_main_image_trimme
 alter table public.products
 add constraint products_main_image_trimmed_check check (char_length(trim(main_image_url)) > 0);
 
+create table if not exists public.collections (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  description text not null default '',
+  image_url text null,
+  status text not null default 'active',
+  collection_type text not null default 'manual',
+  display_order integer not null default 0,
+  is_featured boolean not null default false,
+  featured_from timestamptz null,
+  featured_until timestamptz null,
+  meta_title text not null default '',
+  meta_description text not null default '',
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint collections_name_trimmed_check check (char_length(trim(name)) > 0),
+  constraint collections_slug_trimmed_check check (char_length(trim(slug)) > 0),
+  constraint collections_status_check check (status in ('active', 'draft')),
+  constraint collections_type_check check (collection_type in ('manual', 'automatic')),
+  constraint collections_display_order_check check (display_order >= 0)
+);
+
+alter table public.collections add column if not exists id uuid default gen_random_uuid();
+alter table public.collections add column if not exists name text;
+alter table public.collections add column if not exists slug text;
+alter table public.collections add column if not exists description text not null default '';
+alter table public.collections add column if not exists image_url text null;
+alter table public.collections add column if not exists status text not null default 'active';
+alter table public.collections add column if not exists collection_type text not null default 'manual';
+alter table public.collections add column if not exists display_order integer not null default 0;
+alter table public.collections add column if not exists is_featured boolean not null default false;
+alter table public.collections add column if not exists featured_from timestamptz null;
+alter table public.collections add column if not exists featured_until timestamptz null;
+alter table public.collections add column if not exists meta_title text not null default '';
+alter table public.collections add column if not exists meta_description text not null default '';
+alter table public.collections add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.collections add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.collections
+  alter column id set not null,
+  alter column name set not null,
+  alter column slug set not null,
+  alter column description set not null,
+  alter column status set not null,
+  alter column collection_type set not null,
+  alter column display_order set not null,
+  alter column is_featured set not null,
+  alter column meta_title set not null,
+  alter column meta_description set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'collections_pkey'
+      and conrelid = 'public.collections'::regclass
+  ) then
+    alter table public.collections add constraint collections_pkey primary key (id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'collections_slug_key'
+      and conrelid = 'public.collections'::regclass
+  ) then
+    alter table public.collections add constraint collections_slug_key unique (slug);
+  end if;
+end $$;
+
+alter table public.collections drop constraint if exists collections_name_trimmed_check;
+alter table public.collections
+add constraint collections_name_trimmed_check check (char_length(trim(name)) > 0);
+
+alter table public.collections drop constraint if exists collections_slug_trimmed_check;
+alter table public.collections
+add constraint collections_slug_trimmed_check check (char_length(trim(slug)) > 0);
+
+alter table public.collections drop constraint if exists collections_status_check;
+alter table public.collections
+add constraint collections_status_check check (status in ('active', 'draft'));
+
+alter table public.collections drop constraint if exists collections_type_check;
+alter table public.collections
+add constraint collections_type_check check (collection_type in ('manual', 'automatic'));
+
+alter table public.collections drop constraint if exists collections_display_order_check;
+alter table public.collections
+add constraint collections_display_order_check check (display_order >= 0);
+
+create table if not exists public.coupons (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text not null default '',
+  description text not null default '',
+  coupon_type text not null default 'percentage',
+  discount_value numeric not null default 0,
+  minimum_purchase_amount numeric not null default 0,
+  status text not null default 'active',
+  starts_at timestamptz null,
+  ends_at timestamptz null,
+  assigned_user_id uuid null references auth.users(id) on delete set null,
+  assigned_customer_email text null,
+  usage_limit integer null,
+  usage_limit_per_customer integer null,
+  applicable_collection_slugs jsonb not null default '[]'::jsonb,
+  applicable_product_ids jsonb not null default '[]'::jsonb,
+  stackable boolean not null default false,
+  apply_to_sale_items boolean not null default true,
+  free_shipping boolean not null default false,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint coupons_code_trimmed_check check (char_length(trim(code)) > 0),
+  constraint coupons_type_check check (coupon_type in ('percentage', 'fixed_amount', 'free_shipping')),
+  constraint coupons_status_check check (status in ('active', 'disabled')),
+  constraint coupons_discount_value_check check (discount_value >= 0),
+  constraint coupons_percentage_value_check check (coupon_type <> 'percentage' or discount_value <= 100),
+  constraint coupons_minimum_purchase_check check (minimum_purchase_amount >= 0),
+  constraint coupons_usage_limit_check check (usage_limit is null or usage_limit > 0),
+  constraint coupons_usage_limit_per_customer_check check (usage_limit_per_customer is null or usage_limit_per_customer > 0)
+);
+
+alter table public.coupons add column if not exists code text;
+alter table public.coupons add column if not exists name text not null default '';
+alter table public.coupons add column if not exists description text not null default '';
+alter table public.coupons add column if not exists coupon_type text not null default 'percentage';
+alter table public.coupons add column if not exists discount_value numeric not null default 0;
+alter table public.coupons add column if not exists minimum_purchase_amount numeric not null default 0;
+alter table public.coupons add column if not exists status text not null default 'active';
+alter table public.coupons add column if not exists starts_at timestamptz null;
+alter table public.coupons add column if not exists ends_at timestamptz null;
+alter table public.coupons add column if not exists assigned_user_id uuid null references auth.users(id) on delete set null;
+alter table public.coupons add column if not exists assigned_customer_email text null;
+alter table public.coupons add column if not exists usage_limit integer null;
+alter table public.coupons add column if not exists usage_limit_per_customer integer null;
+alter table public.coupons add column if not exists applicable_collection_slugs jsonb not null default '[]'::jsonb;
+alter table public.coupons add column if not exists applicable_product_ids jsonb not null default '[]'::jsonb;
+alter table public.coupons add column if not exists stackable boolean not null default false;
+alter table public.coupons add column if not exists apply_to_sale_items boolean not null default true;
+alter table public.coupons add column if not exists free_shipping boolean not null default false;
+alter table public.coupons add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.coupons add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.coupons
+  alter column code set not null,
+  alter column name set not null,
+  alter column description set not null,
+  alter column coupon_type set not null,
+  alter column discount_value set not null,
+  alter column minimum_purchase_amount set not null,
+  alter column status set not null,
+  alter column applicable_collection_slugs set not null,
+  alter column applicable_product_ids set not null,
+  alter column stackable set not null,
+  alter column apply_to_sale_items set not null,
+  alter column free_shipping set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+alter table public.coupons drop constraint if exists coupons_code_trimmed_check;
+alter table public.coupons
+add constraint coupons_code_trimmed_check check (char_length(trim(code)) > 0);
+
+alter table public.coupons drop constraint if exists coupons_type_check;
+alter table public.coupons
+add constraint coupons_type_check check (coupon_type in ('percentage', 'fixed_amount', 'free_shipping'));
+
+alter table public.coupons drop constraint if exists coupons_status_check;
+alter table public.coupons
+add constraint coupons_status_check check (status in ('active', 'disabled'));
+
+alter table public.coupons drop constraint if exists coupons_discount_value_check;
+alter table public.coupons
+add constraint coupons_discount_value_check check (discount_value >= 0);
+
+alter table public.coupons drop constraint if exists coupons_percentage_value_check;
+alter table public.coupons
+add constraint coupons_percentage_value_check check (coupon_type <> 'percentage' or discount_value <= 100);
+
+alter table public.coupons drop constraint if exists coupons_minimum_purchase_check;
+alter table public.coupons
+add constraint coupons_minimum_purchase_check check (minimum_purchase_amount >= 0);
+
+alter table public.coupons drop constraint if exists coupons_usage_limit_check;
+alter table public.coupons
+add constraint coupons_usage_limit_check check (usage_limit is null or usage_limit > 0);
+
+alter table public.coupons drop constraint if exists coupons_usage_limit_per_customer_check;
+alter table public.coupons
+add constraint coupons_usage_limit_per_customer_check check (usage_limit_per_customer is null or usage_limit_per_customer > 0);
+
+alter table public.coupons drop constraint if exists coupons_assigned_customer_email_check;
+alter table public.coupons
+add constraint coupons_assigned_customer_email_check check (
+  assigned_customer_email is null
+  or assigned_customer_email = lower(trim(assigned_customer_email))
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'coupons_code_key'
+      and conrelid = 'public.coupons'::regclass
+  ) then
+    alter table public.coupons add constraint coupons_code_key unique (code);
+  end if;
+end $$;
+
+create table if not exists public.admin_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_by uuid null references auth.users(id) on delete set null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint admin_settings_key_trimmed_check check (char_length(trim(key)) > 0)
+);
+
+alter table public.admin_settings add column if not exists key text;
+alter table public.admin_settings add column if not exists value jsonb not null default '{}'::jsonb;
+alter table public.admin_settings add column if not exists updated_by uuid null references auth.users(id) on delete set null;
+alter table public.admin_settings add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.admin_settings add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.admin_settings
+  alter column key set not null,
+  alter column value set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+alter table public.admin_settings drop constraint if exists admin_settings_key_trimmed_check;
+alter table public.admin_settings
+add constraint admin_settings_key_trimmed_check check (char_length(trim(key)) > 0);
+
+create table if not exists public.admin_notifications (
+  id uuid primary key default gen_random_uuid(),
+  type text not null,
+  channel text not null,
+  title text not null,
+  message text not null,
+  status text not null default 'queued',
+  href text null,
+  dedupe_key text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  read_at timestamptz null,
+  delivered_at timestamptz null,
+  error_message text null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint admin_notifications_type_trimmed_check check (char_length(trim(type)) > 0),
+  constraint admin_notifications_channel_check check (channel in ('email', 'sms', 'push')),
+  constraint admin_notifications_status_check check (status in ('queued', 'sent', 'skipped', 'failed', 'delayed'))
+);
+
+create table if not exists public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  campaign_type text not null default 'email',
+  goal text not null default '',
+  description text not null default '',
+  status text not null default 'active',
+  starts_at timestamptz null,
+  ends_at timestamptz null,
+  budget_amount numeric null,
+  daily_budget_amount numeric null,
+  tags jsonb not null default '[]'::jsonb,
+  channels jsonb not null default '[]'::jsonb,
+  audience_type text not null default '',
+  audience text not null default '',
+  track_conversions boolean not null default true,
+  ab_test_enabled boolean not null default false,
+  created_by uuid null references auth.users(id) on delete set null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint campaigns_name_trimmed_check check (char_length(trim(name)) > 0),
+  constraint campaigns_type_trimmed_check check (char_length(trim(campaign_type)) > 0),
+  constraint campaigns_status_check check (status in ('draft', 'active', 'scheduled', 'paused', 'completed', 'disabled')),
+  constraint campaigns_budget_amount_check check (budget_amount is null or budget_amount >= 0),
+  constraint campaigns_daily_budget_amount_check check (daily_budget_amount is null or daily_budget_amount >= 0)
+);
+
+alter table public.campaigns add column if not exists name text;
+alter table public.campaigns add column if not exists campaign_type text not null default 'email';
+alter table public.campaigns add column if not exists goal text not null default '';
+alter table public.campaigns add column if not exists description text not null default '';
+alter table public.campaigns add column if not exists status text not null default 'active';
+alter table public.campaigns add column if not exists starts_at timestamptz null;
+alter table public.campaigns add column if not exists ends_at timestamptz null;
+alter table public.campaigns add column if not exists budget_amount numeric null;
+alter table public.campaigns add column if not exists daily_budget_amount numeric null;
+alter table public.campaigns add column if not exists tags jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists channels jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists audience_type text not null default '';
+alter table public.campaigns add column if not exists audience text not null default '';
+alter table public.campaigns add column if not exists track_conversions boolean not null default true;
+alter table public.campaigns add column if not exists ab_test_enabled boolean not null default false;
+alter table public.campaigns add column if not exists created_by uuid null references auth.users(id) on delete set null;
+alter table public.campaigns add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.campaigns add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.campaigns
+  alter column name set not null,
+  alter column campaign_type set not null,
+  alter column goal set not null,
+  alter column description set not null,
+  alter column status set not null,
+  alter column tags set not null,
+  alter column channels set not null,
+  alter column audience_type set not null,
+  alter column audience set not null,
+  alter column track_conversions set not null,
+  alter column ab_test_enabled set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+alter table public.campaigns drop constraint if exists campaigns_name_trimmed_check;
+alter table public.campaigns
+add constraint campaigns_name_trimmed_check check (char_length(trim(name)) > 0);
+
+alter table public.campaigns drop constraint if exists campaigns_type_trimmed_check;
+alter table public.campaigns
+add constraint campaigns_type_trimmed_check check (char_length(trim(campaign_type)) > 0);
+
+alter table public.campaigns drop constraint if exists campaigns_status_check;
+alter table public.campaigns
+add constraint campaigns_status_check check (status in ('draft', 'active', 'scheduled', 'paused', 'completed', 'disabled'));
+
+alter table public.campaigns drop constraint if exists campaigns_budget_amount_check;
+alter table public.campaigns
+add constraint campaigns_budget_amount_check check (budget_amount is null or budget_amount >= 0);
+
+alter table public.campaigns drop constraint if exists campaigns_daily_budget_amount_check;
+alter table public.campaigns
+add constraint campaigns_daily_budget_amount_check check (daily_budget_amount is null or daily_budget_amount >= 0);
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_number text unique,
@@ -133,7 +601,28 @@ create table if not exists public.orders (
   shipping_zone text null,
   shipping_method text null,
   shipping_fee numeric null,
+  delivery_latitude numeric null,
+  delivery_longitude numeric null,
+  delivery_place_id text null,
+  delivery_map_provider text null,
+  delivery_address_components jsonb not null default '{}'::jsonb,
   subtotal_amount numeric null,
+  tax_amount numeric null,
+  tax_rate_label text null,
+  tax_rate_percent numeric null,
+  tax_breakdown jsonb not null default '{}'::jsonb,
+  coupon_id uuid null references public.coupons(id) on delete set null,
+  coupon_code text null,
+  discount_amount numeric not null default 0,
+  discount_breakdown jsonb not null default '{}'::jsonb,
+  source text null,
+  medium text null,
+  campaign_id text null,
+  campaign_name text null,
+  utm_source text null,
+  utm_medium text null,
+  utm_campaign text null,
+  attribution_data jsonb not null default '{}'::jsonb,
   amount numeric not null,
   currency text not null default 'USD',
   status text not null default 'pending',
@@ -169,7 +658,28 @@ alter table public.orders add column if not exists shipping_country text null;
 alter table public.orders add column if not exists shipping_zone text null;
 alter table public.orders add column if not exists shipping_method text null;
 alter table public.orders add column if not exists shipping_fee numeric null;
+alter table public.orders add column if not exists delivery_latitude numeric null;
+alter table public.orders add column if not exists delivery_longitude numeric null;
+alter table public.orders add column if not exists delivery_place_id text null;
+alter table public.orders add column if not exists delivery_map_provider text null;
+alter table public.orders add column if not exists delivery_address_components jsonb not null default '{}'::jsonb;
 alter table public.orders add column if not exists subtotal_amount numeric null;
+alter table public.orders add column if not exists tax_amount numeric null;
+alter table public.orders add column if not exists tax_rate_label text null;
+alter table public.orders add column if not exists tax_rate_percent numeric null;
+alter table public.orders add column if not exists tax_breakdown jsonb not null default '{}'::jsonb;
+alter table public.orders add column if not exists coupon_id uuid null references public.coupons(id) on delete set null;
+alter table public.orders add column if not exists coupon_code text null;
+alter table public.orders add column if not exists discount_amount numeric not null default 0;
+alter table public.orders add column if not exists discount_breakdown jsonb not null default '{}'::jsonb;
+alter table public.orders add column if not exists source text null;
+alter table public.orders add column if not exists medium text null;
+alter table public.orders add column if not exists campaign_id text null;
+alter table public.orders add column if not exists campaign_name text null;
+alter table public.orders add column if not exists utm_source text null;
+alter table public.orders add column if not exists utm_medium text null;
+alter table public.orders add column if not exists utm_campaign text null;
+alter table public.orders add column if not exists attribution_data jsonb not null default '{}'::jsonb;
 alter table public.orders add column if not exists amount numeric not null default 0;
 alter table public.orders add column if not exists currency text not null default 'USD';
 alter table public.orders add column if not exists status text not null default 'pending';
@@ -193,6 +703,22 @@ alter table public.orders
 add constraint orders_confirmation_email_status_check check (
   confirmation_email_status in ('pending', 'sent', 'failed', 'not_configured')
 );
+
+alter table public.orders drop constraint if exists orders_delivery_latitude_check;
+alter table public.orders
+add constraint orders_delivery_latitude_check check (delivery_latitude is null or (delivery_latitude >= -90 and delivery_latitude <= 90));
+
+alter table public.orders drop constraint if exists orders_delivery_longitude_check;
+alter table public.orders
+add constraint orders_delivery_longitude_check check (delivery_longitude is null or (delivery_longitude >= -180 and delivery_longitude <= 180));
+
+alter table public.orders drop constraint if exists orders_discount_amount_check;
+alter table public.orders
+add constraint orders_discount_amount_check check (discount_amount >= 0);
+
+alter table public.orders drop constraint if exists orders_tax_amount_check;
+alter table public.orders
+add constraint orders_tax_amount_check check (tax_amount is null or tax_amount >= 0);
 
 do $$
 begin
@@ -253,6 +779,513 @@ alter table public.order_items drop constraint if exists order_items_line_total_
 alter table public.order_items
 add constraint order_items_line_total_check check (line_total >= 0);
 
+create table if not exists public.coupon_redemptions (
+  id uuid primary key default gen_random_uuid(),
+  coupon_id uuid not null references public.coupons(id) on delete cascade,
+  coupon_code text not null,
+  order_id uuid null references public.orders(id) on delete set null,
+  user_id uuid null references auth.users(id) on delete set null,
+  customer_email text null,
+  discount_amount numeric not null default 0,
+  product_discount_amount numeric not null default 0,
+  shipping_discount_amount numeric not null default 0,
+  order_subtotal_amount numeric not null default 0,
+  order_total_before_discount numeric not null default 0,
+  order_total_after_discount numeric not null default 0,
+  status text not null default 'applied',
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint coupon_redemptions_discount_check check (discount_amount >= 0),
+  constraint coupon_redemptions_product_discount_check check (product_discount_amount >= 0),
+  constraint coupon_redemptions_shipping_discount_check check (shipping_discount_amount >= 0),
+  constraint coupon_redemptions_status_check check (status in ('applied', 'cancelled', 'refunded'))
+);
+
+alter table public.coupon_redemptions add column if not exists coupon_id uuid references public.coupons(id) on delete cascade;
+alter table public.coupon_redemptions add column if not exists coupon_code text not null default '';
+alter table public.coupon_redemptions add column if not exists order_id uuid null references public.orders(id) on delete set null;
+alter table public.coupon_redemptions add column if not exists user_id uuid null references auth.users(id) on delete set null;
+alter table public.coupon_redemptions add column if not exists customer_email text null;
+alter table public.coupon_redemptions add column if not exists discount_amount numeric not null default 0;
+alter table public.coupon_redemptions add column if not exists product_discount_amount numeric not null default 0;
+alter table public.coupon_redemptions add column if not exists shipping_discount_amount numeric not null default 0;
+alter table public.coupon_redemptions add column if not exists order_subtotal_amount numeric not null default 0;
+alter table public.coupon_redemptions add column if not exists order_total_before_discount numeric not null default 0;
+alter table public.coupon_redemptions add column if not exists order_total_after_discount numeric not null default 0;
+alter table public.coupon_redemptions add column if not exists status text not null default 'applied';
+alter table public.coupon_redemptions add column if not exists metadata jsonb not null default '{}'::jsonb;
+alter table public.coupon_redemptions add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.coupon_redemptions add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.coupon_redemptions
+  alter column coupon_id set not null,
+  alter column coupon_code set not null,
+  alter column discount_amount set not null,
+  alter column product_discount_amount set not null,
+  alter column shipping_discount_amount set not null,
+  alter column order_subtotal_amount set not null,
+  alter column order_total_before_discount set not null,
+  alter column order_total_after_discount set not null,
+  alter column status set not null,
+  alter column metadata set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+alter table public.coupon_redemptions drop constraint if exists coupon_redemptions_discount_check;
+alter table public.coupon_redemptions
+add constraint coupon_redemptions_discount_check check (discount_amount >= 0);
+
+alter table public.coupon_redemptions drop constraint if exists coupon_redemptions_product_discount_check;
+alter table public.coupon_redemptions
+add constraint coupon_redemptions_product_discount_check check (product_discount_amount >= 0);
+
+alter table public.coupon_redemptions drop constraint if exists coupon_redemptions_shipping_discount_check;
+alter table public.coupon_redemptions
+add constraint coupon_redemptions_shipping_discount_check check (shipping_discount_amount >= 0);
+
+alter table public.coupon_redemptions drop constraint if exists coupon_redemptions_status_check;
+alter table public.coupon_redemptions
+add constraint coupon_redemptions_status_check check (status in ('applied', 'cancelled', 'refunded'));
+
+create unique index if not exists coupon_redemptions_applied_order_coupon_key
+on public.coupon_redemptions (order_id, coupon_id)
+where status = 'applied' and order_id is not null;
+
+create table if not exists public.reviews (
+  id uuid primary key default gen_random_uuid(),
+  product_id text not null references public.products(id) on delete cascade,
+  order_id uuid null references public.orders(id) on delete set null,
+  customer_key text not null,
+  customer_name text not null,
+  customer_email text null,
+  title text not null default '',
+  content text not null,
+  rating integer not null,
+  status text not null default 'pending',
+  is_featured boolean not null default false,
+  is_verified_purchase boolean not null default false,
+  name_display text not null default 'first_name',
+  media_urls jsonb not null default '[]'::jsonb,
+  submitted_at timestamptz not null default timezone('utc', now()),
+  moderation_notes text not null default '',
+  experience_feedback text not null default '',
+  source text not null default 'admin',
+  review_request_sent_at timestamptz null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint reviews_rating_check check (rating between 1 and 5),
+  constraint reviews_status_check check (status in ('approved', 'pending', 'rejected')),
+  constraint reviews_name_display_check check (name_display in ('first_name', 'full_name', 'anonymous')),
+  constraint reviews_source_check check (source in ('admin', 'customer')),
+  constraint reviews_featured_approved_check check (not is_featured or status = 'approved'),
+  constraint reviews_customer_name_trimmed_check check (char_length(trim(customer_name)) > 0),
+  constraint reviews_content_trimmed_check check (char_length(trim(content)) > 0)
+);
+
+alter table public.reviews add column if not exists id uuid default gen_random_uuid();
+alter table public.reviews add column if not exists product_id text references public.products(id) on delete cascade;
+alter table public.reviews add column if not exists order_id uuid null references public.orders(id) on delete set null;
+alter table public.reviews add column if not exists customer_key text;
+alter table public.reviews add column if not exists customer_name text;
+alter table public.reviews add column if not exists customer_email text null;
+alter table public.reviews add column if not exists title text not null default '';
+alter table public.reviews add column if not exists content text;
+alter table public.reviews add column if not exists rating integer;
+alter table public.reviews add column if not exists status text not null default 'pending';
+alter table public.reviews add column if not exists is_featured boolean not null default false;
+alter table public.reviews add column if not exists is_verified_purchase boolean not null default false;
+alter table public.reviews add column if not exists name_display text not null default 'first_name';
+alter table public.reviews add column if not exists media_urls jsonb not null default '[]'::jsonb;
+alter table public.reviews add column if not exists submitted_at timestamptz not null default timezone('utc', now());
+alter table public.reviews add column if not exists moderation_notes text not null default '';
+alter table public.reviews add column if not exists experience_feedback text not null default '';
+alter table public.reviews add column if not exists source text not null default 'admin';
+alter table public.reviews add column if not exists review_request_sent_at timestamptz null;
+alter table public.reviews add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.reviews add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.reviews
+  alter column id set not null,
+  alter column product_id set not null,
+  alter column customer_key set not null,
+  alter column customer_name set not null,
+  alter column title set not null,
+  alter column content set not null,
+  alter column rating set not null,
+  alter column status set not null,
+  alter column is_featured set not null,
+  alter column is_verified_purchase set not null,
+  alter column name_display set not null,
+  alter column media_urls set not null,
+  alter column submitted_at set not null,
+  alter column moderation_notes set not null,
+  alter column experience_feedback set not null,
+  alter column source set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'reviews_pkey'
+      and conrelid = 'public.reviews'::regclass
+  ) then
+    alter table public.reviews add constraint reviews_pkey primary key (id);
+  end if;
+end $$;
+
+alter table public.reviews drop constraint if exists reviews_rating_check;
+alter table public.reviews
+add constraint reviews_rating_check check (rating between 1 and 5);
+
+alter table public.reviews drop constraint if exists reviews_status_check;
+alter table public.reviews
+add constraint reviews_status_check check (status in ('approved', 'pending', 'rejected'));
+
+alter table public.reviews drop constraint if exists reviews_name_display_check;
+alter table public.reviews
+add constraint reviews_name_display_check check (name_display in ('first_name', 'full_name', 'anonymous'));
+
+alter table public.reviews drop constraint if exists reviews_source_check;
+alter table public.reviews
+add constraint reviews_source_check check (source in ('admin', 'customer'));
+
+alter table public.reviews drop constraint if exists reviews_featured_approved_check;
+alter table public.reviews
+add constraint reviews_featured_approved_check check (not is_featured or status = 'approved');
+
+alter table public.reviews drop constraint if exists reviews_customer_name_trimmed_check;
+alter table public.reviews
+add constraint reviews_customer_name_trimmed_check check (char_length(trim(customer_name)) > 0);
+
+alter table public.reviews drop constraint if exists reviews_content_trimmed_check;
+alter table public.reviews
+add constraint reviews_content_trimmed_check check (char_length(trim(content)) > 0);
+
+create table if not exists public.blog_posts (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  slug text not null unique,
+  excerpt text not null default '',
+  featured_image_url text null,
+  content text not null default '',
+  status text not null default 'draft',
+  visibility text not null default 'public',
+  categories jsonb not null default '[]'::jsonb,
+  tags jsonb not null default '[]'::jsonb,
+  author_name text not null default 'Admin',
+  publish_at timestamptz null,
+  meta_title text not null default '',
+  meta_description text not null default '',
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint blog_posts_title_trimmed_check check (char_length(trim(title)) > 0),
+  constraint blog_posts_slug_trimmed_check check (char_length(trim(slug)) > 0),
+  constraint blog_posts_content_trimmed_check check (char_length(trim(content)) > 0),
+  constraint blog_posts_status_check check (status in ('published', 'draft', 'archived')),
+  constraint blog_posts_visibility_check check (visibility in ('public', 'private', 'password'))
+);
+
+alter table public.blog_posts add column if not exists id uuid default gen_random_uuid();
+alter table public.blog_posts add column if not exists title text;
+alter table public.blog_posts add column if not exists slug text;
+alter table public.blog_posts add column if not exists excerpt text not null default '';
+alter table public.blog_posts add column if not exists featured_image_url text null;
+alter table public.blog_posts add column if not exists content text not null default '';
+alter table public.blog_posts add column if not exists status text not null default 'draft';
+alter table public.blog_posts add column if not exists visibility text not null default 'public';
+alter table public.blog_posts add column if not exists categories jsonb not null default '[]'::jsonb;
+alter table public.blog_posts add column if not exists tags jsonb not null default '[]'::jsonb;
+alter table public.blog_posts add column if not exists author_name text not null default 'Admin';
+alter table public.blog_posts add column if not exists publish_at timestamptz null;
+alter table public.blog_posts add column if not exists meta_title text not null default '';
+alter table public.blog_posts add column if not exists meta_description text not null default '';
+alter table public.blog_posts add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.blog_posts add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.blog_posts
+  alter column id set not null,
+  alter column title set not null,
+  alter column slug set not null,
+  alter column excerpt set not null,
+  alter column content set not null,
+  alter column status set not null,
+  alter column visibility set not null,
+  alter column categories set not null,
+  alter column tags set not null,
+  alter column author_name set not null,
+  alter column meta_title set not null,
+  alter column meta_description set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'blog_posts_pkey'
+      and conrelid = 'public.blog_posts'::regclass
+  ) then
+    alter table public.blog_posts add constraint blog_posts_pkey primary key (id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'blog_posts_slug_key'
+      and conrelid = 'public.blog_posts'::regclass
+  ) then
+    alter table public.blog_posts add constraint blog_posts_slug_key unique (slug);
+  end if;
+end $$;
+
+alter table public.blog_posts drop constraint if exists blog_posts_title_trimmed_check;
+alter table public.blog_posts
+add constraint blog_posts_title_trimmed_check check (char_length(trim(title)) > 0);
+
+alter table public.blog_posts drop constraint if exists blog_posts_slug_trimmed_check;
+alter table public.blog_posts
+add constraint blog_posts_slug_trimmed_check check (char_length(trim(slug)) > 0);
+
+alter table public.blog_posts drop constraint if exists blog_posts_content_trimmed_check;
+alter table public.blog_posts
+add constraint blog_posts_content_trimmed_check check (char_length(trim(content)) > 0);
+
+alter table public.blog_posts drop constraint if exists blog_posts_status_check;
+alter table public.blog_posts
+add constraint blog_posts_status_check check (status in ('published', 'draft', 'archived'));
+
+alter table public.blog_posts drop constraint if exists blog_posts_visibility_check;
+alter table public.blog_posts
+add constraint blog_posts_visibility_check check (visibility in ('public', 'private', 'password'));
+
+create table if not exists public.site_pages (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  slug text not null unique,
+  page_type text not null default 'Custom Page',
+  parent_page_id uuid null references public.site_pages(id) on delete set null,
+  meta_description text not null default '',
+  content text not null default '',
+  featured_image_url text null,
+  status text not null default 'draft',
+  visibility text not null default 'public',
+  template text not null default 'Default Template',
+  show_in_navigation boolean not null default true,
+  display_order integer not null default 0,
+  meta_title text not null default '',
+  meta_keywords text not null default '',
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint site_pages_title_trimmed_check check (char_length(trim(title)) > 0),
+  constraint site_pages_slug_trimmed_check check (char_length(trim(slug)) > 0),
+  constraint site_pages_content_trimmed_check check (char_length(trim(content)) > 0),
+  constraint site_pages_status_check check (status in ('published', 'draft', 'archived')),
+  constraint site_pages_visibility_check check (visibility in ('public', 'private', 'password')),
+  constraint site_pages_display_order_check check (display_order >= 0)
+);
+
+alter table public.site_pages add column if not exists id uuid default gen_random_uuid();
+alter table public.site_pages add column if not exists title text;
+alter table public.site_pages add column if not exists slug text;
+alter table public.site_pages add column if not exists page_type text not null default 'Custom Page';
+alter table public.site_pages add column if not exists parent_page_id uuid null references public.site_pages(id) on delete set null;
+alter table public.site_pages add column if not exists meta_description text not null default '';
+alter table public.site_pages add column if not exists content text not null default '';
+alter table public.site_pages add column if not exists featured_image_url text null;
+alter table public.site_pages add column if not exists status text not null default 'draft';
+alter table public.site_pages add column if not exists visibility text not null default 'public';
+alter table public.site_pages add column if not exists template text not null default 'Default Template';
+alter table public.site_pages add column if not exists show_in_navigation boolean not null default true;
+alter table public.site_pages add column if not exists display_order integer not null default 0;
+alter table public.site_pages add column if not exists meta_title text not null default '';
+alter table public.site_pages add column if not exists meta_keywords text not null default '';
+alter table public.site_pages add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.site_pages add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.site_pages
+  alter column id set not null,
+  alter column title set not null,
+  alter column slug set not null,
+  alter column page_type set not null,
+  alter column meta_description set not null,
+  alter column content set not null,
+  alter column status set not null,
+  alter column visibility set not null,
+  alter column template set not null,
+  alter column show_in_navigation set not null,
+  alter column display_order set not null,
+  alter column meta_title set not null,
+  alter column meta_keywords set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'site_pages_pkey'
+      and conrelid = 'public.site_pages'::regclass
+  ) then
+    alter table public.site_pages add constraint site_pages_pkey primary key (id);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'site_pages_slug_key'
+      and conrelid = 'public.site_pages'::regclass
+  ) then
+    alter table public.site_pages add constraint site_pages_slug_key unique (slug);
+  end if;
+end $$;
+
+alter table public.site_pages drop constraint if exists site_pages_title_trimmed_check;
+alter table public.site_pages
+add constraint site_pages_title_trimmed_check check (char_length(trim(title)) > 0);
+
+alter table public.site_pages drop constraint if exists site_pages_slug_trimmed_check;
+alter table public.site_pages
+add constraint site_pages_slug_trimmed_check check (char_length(trim(slug)) > 0);
+
+alter table public.site_pages drop constraint if exists site_pages_content_trimmed_check;
+alter table public.site_pages
+add constraint site_pages_content_trimmed_check check (char_length(trim(content)) > 0);
+
+alter table public.site_pages drop constraint if exists site_pages_status_check;
+alter table public.site_pages
+add constraint site_pages_status_check check (status in ('published', 'draft', 'archived'));
+
+alter table public.site_pages drop constraint if exists site_pages_visibility_check;
+alter table public.site_pages
+add constraint site_pages_visibility_check check (visibility in ('public', 'private', 'password'));
+
+alter table public.site_pages drop constraint if exists site_pages_display_order_check;
+alter table public.site_pages
+add constraint site_pages_display_order_check check (display_order >= 0);
+
+create table if not exists public.banners (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  banner_type text not null default 'Homepage Hero',
+  link_url text null,
+  link_target text not null default 'same_window',
+  priority integer not null default 1,
+  display_order integer not null default 0,
+  image_url text null,
+  mobile_image_url text null,
+  heading text not null default '',
+  subheading text not null default '',
+  description text not null default '',
+  button_text text not null default '',
+  button_style text not null default 'Primary',
+  status text not null default 'draft',
+  visibility text not null default 'public',
+  display_on text not null default 'All Locations',
+  device text not null default 'All Devices',
+  starts_at timestamptz null,
+  ends_at timestamptz null,
+  show_homepage_only boolean not null default false,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  constraint banners_title_trimmed_check check (char_length(trim(title)) > 0),
+  constraint banners_status_check check (status in ('active', 'inactive', 'draft')),
+  constraint banners_visibility_check check (visibility in ('public', 'logged_in', 'password')),
+  constraint banners_link_target_check check (link_target in ('same_window', 'new_tab')),
+  constraint banners_priority_check check (priority >= 1),
+  constraint banners_display_order_check check (display_order >= 0),
+  constraint banners_date_range_check check (starts_at is null or ends_at is null or starts_at <= ends_at)
+);
+
+alter table public.banners add column if not exists id uuid default gen_random_uuid();
+alter table public.banners add column if not exists title text;
+alter table public.banners add column if not exists banner_type text not null default 'Homepage Hero';
+alter table public.banners add column if not exists link_url text null;
+alter table public.banners add column if not exists link_target text not null default 'same_window';
+alter table public.banners add column if not exists priority integer not null default 1;
+alter table public.banners add column if not exists display_order integer not null default 0;
+alter table public.banners add column if not exists image_url text null;
+alter table public.banners add column if not exists mobile_image_url text null;
+alter table public.banners add column if not exists heading text not null default '';
+alter table public.banners add column if not exists subheading text not null default '';
+alter table public.banners add column if not exists description text not null default '';
+alter table public.banners add column if not exists button_text text not null default '';
+alter table public.banners add column if not exists button_style text not null default 'Primary';
+alter table public.banners add column if not exists status text not null default 'draft';
+alter table public.banners add column if not exists visibility text not null default 'public';
+alter table public.banners add column if not exists display_on text not null default 'All Locations';
+alter table public.banners add column if not exists device text not null default 'All Devices';
+alter table public.banners add column if not exists starts_at timestamptz null;
+alter table public.banners add column if not exists ends_at timestamptz null;
+alter table public.banners add column if not exists show_homepage_only boolean not null default false;
+alter table public.banners add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table public.banners add column if not exists updated_at timestamptz not null default timezone('utc', now());
+
+alter table public.banners
+  alter column id set not null,
+  alter column title set not null,
+  alter column banner_type set not null,
+  alter column link_target set not null,
+  alter column priority set not null,
+  alter column display_order set not null,
+  alter column heading set not null,
+  alter column subheading set not null,
+  alter column description set not null,
+  alter column button_text set not null,
+  alter column button_style set not null,
+  alter column status set not null,
+  alter column visibility set not null,
+  alter column display_on set not null,
+  alter column device set not null,
+  alter column show_homepage_only set not null,
+  alter column created_at set not null,
+  alter column updated_at set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'banners_pkey'
+      and conrelid = 'public.banners'::regclass
+  ) then
+    alter table public.banners add constraint banners_pkey primary key (id);
+  end if;
+end $$;
+
+alter table public.banners drop constraint if exists banners_title_trimmed_check;
+alter table public.banners
+add constraint banners_title_trimmed_check check (char_length(trim(title)) > 0);
+
+alter table public.banners drop constraint if exists banners_status_check;
+alter table public.banners
+add constraint banners_status_check check (status in ('active', 'inactive', 'draft'));
+
+alter table public.banners drop constraint if exists banners_visibility_check;
+alter table public.banners
+add constraint banners_visibility_check check (visibility in ('public', 'logged_in', 'password'));
+
+alter table public.banners drop constraint if exists banners_link_target_check;
+alter table public.banners
+add constraint banners_link_target_check check (link_target in ('same_window', 'new_tab'));
+
+alter table public.banners drop constraint if exists banners_priority_check;
+alter table public.banners
+add constraint banners_priority_check check (priority >= 1);
+
+alter table public.banners drop constraint if exists banners_display_order_check;
+alter table public.banners
+add constraint banners_display_order_check check (display_order >= 0);
+
+alter table public.banners drop constraint if exists banners_date_range_check;
+alter table public.banners
+add constraint banners_date_range_check check (starts_at is null or ends_at is null or starts_at <= ends_at);
+
 create table if not exists public.fund_allocation_rules (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
@@ -306,16 +1339,31 @@ create table if not exists public.payments (
   order_id uuid references public.orders(id) on delete cascade,
   user_id uuid null references auth.users(id) on delete set null,
   payment_method text not null default 'mock',
+  payment_type text null,
+  wallet_provider text null,
+  network text null,
+  token_type text null,
+  token_standard text null,
   tx_hash text null,
+  signature text null,
   wallet_address text null,
+  sender_wallet_address text null,
   recipient_address text null,
   chain_id bigint null,
   amount_expected numeric not null,
   amount_expected_fiat numeric null,
   fiat_currency text null,
   conversion_rate numeric null,
+  usd_conversion_rate numeric null,
+  coingecko_crypto_price numeric null,
+  binance_crypto_price numeric null,
+  price_difference_percent numeric null,
+  slippage_buffer_percent numeric null,
+  base_crypto_amount numeric null,
+  slippage_buffer_amount numeric null,
   quote_source text null,
   quote_updated_at timestamptz null,
+  quote_expires_at timestamptz null,
   amount_received numeric null,
   status text not null default 'pending',
   created_at timestamptz not null default timezone('utc', now()),
@@ -326,16 +1374,31 @@ create table if not exists public.payments (
 alter table public.payments add column if not exists order_id uuid references public.orders(id) on delete cascade;
 alter table public.payments add column if not exists user_id uuid null references auth.users(id) on delete set null;
 alter table public.payments add column if not exists payment_method text not null default 'mock';
+alter table public.payments add column if not exists payment_type text null;
+alter table public.payments add column if not exists wallet_provider text null;
+alter table public.payments add column if not exists network text null;
+alter table public.payments add column if not exists token_type text null;
+alter table public.payments add column if not exists token_standard text null;
 alter table public.payments add column if not exists tx_hash text null;
+alter table public.payments add column if not exists signature text null;
 alter table public.payments add column if not exists wallet_address text null;
+alter table public.payments add column if not exists sender_wallet_address text null;
 alter table public.payments add column if not exists recipient_address text null;
 alter table public.payments add column if not exists chain_id bigint null;
 alter table public.payments add column if not exists amount_expected numeric not null default 0;
 alter table public.payments add column if not exists amount_expected_fiat numeric null;
 alter table public.payments add column if not exists fiat_currency text null;
 alter table public.payments add column if not exists conversion_rate numeric null;
+alter table public.payments add column if not exists usd_conversion_rate numeric null;
+alter table public.payments add column if not exists coingecko_crypto_price numeric null;
+alter table public.payments add column if not exists binance_crypto_price numeric null;
+alter table public.payments add column if not exists price_difference_percent numeric null;
+alter table public.payments add column if not exists slippage_buffer_percent numeric null;
+alter table public.payments add column if not exists base_crypto_amount numeric null;
+alter table public.payments add column if not exists slippage_buffer_amount numeric null;
 alter table public.payments add column if not exists quote_source text null;
 alter table public.payments add column if not exists quote_updated_at timestamptz null;
+alter table public.payments add column if not exists quote_expires_at timestamptz null;
 alter table public.payments add column if not exists amount_received numeric null;
 alter table public.payments add column if not exists status text not null default 'pending';
 alter table public.payments add column if not exists created_at timestamptz not null default timezone('utc', now());
@@ -344,6 +1407,41 @@ alter table public.payments add column if not exists updated_at timestamptz not 
 alter table public.payments drop constraint if exists payments_status_check;
 alter table public.payments
 add constraint payments_status_check check (status in ('pending', 'paid', 'cancelled', 'failed'));
+
+alter table public.payments drop constraint if exists payments_payment_type_check;
+alter table public.payments
+add constraint payments_payment_type_check check (
+  payment_type is null
+  or payment_type in ('evm_eth', 'evm_usdc', 'evm_usdt', 'sol_sol', 'sol_usdc', 'sol_usdt')
+);
+
+alter table public.payments drop constraint if exists payments_wallet_provider_check;
+alter table public.payments
+add constraint payments_wallet_provider_check check (
+  wallet_provider is null
+  or wallet_provider in ('metamask', 'phantom')
+);
+
+alter table public.payments drop constraint if exists payments_network_check;
+alter table public.payments
+add constraint payments_network_check check (
+  network is null
+  or network in ('ethereum-mainnet', 'mainnet-beta')
+);
+
+alter table public.payments drop constraint if exists payments_token_type_check;
+alter table public.payments
+add constraint payments_token_type_check check (
+  token_type is null
+  or token_type in ('ETH', 'SOL', 'USDC', 'USDT')
+);
+
+alter table public.payments drop constraint if exists payments_token_standard_check;
+alter table public.payments
+add constraint payments_token_standard_check check (
+  token_standard is null
+  or token_standard in ('native', 'erc20', 'spl')
+);
 
 create table if not exists public.payment_allocations (
   id uuid primary key default gen_random_uuid(),
@@ -534,14 +1632,52 @@ add constraint admin_cash_out_breakdowns_amount_check check (amount > 0);
 
 create index if not exists profiles_role_idx on public.profiles (role);
 create index if not exists profiles_wallet_address_idx on public.profiles (wallet_address);
+create index if not exists customers_created_idx on public.customers (created_at desc);
+create index if not exists customers_account_status_idx on public.customers (account_status, created_at desc);
+create index if not exists customers_subscription_status_idx on public.customers (subscription_status, created_at desc);
 create index if not exists products_status_published_idx on public.products (status, published_at desc, created_at desc);
 create index if not exists products_featured_idx on public.products (show_in_featured, published_at desc);
 create index if not exists products_new_arrivals_idx on public.products (show_in_new_arrivals, published_at desc);
+create index if not exists collections_status_order_idx on public.collections (status, display_order, created_at desc);
+create index if not exists collections_featured_idx on public.collections (is_featured, display_order, created_at desc);
+create index if not exists admin_settings_key_idx on public.admin_settings (key);
+create unique index if not exists admin_notifications_dedupe_channel_idx
+on public.admin_notifications (dedupe_key, channel);
+create index if not exists admin_notifications_created_at_idx on public.admin_notifications (created_at desc);
+create index if not exists admin_notifications_read_at_idx on public.admin_notifications (read_at);
+create index if not exists campaigns_status_created_idx on public.campaigns (status, created_at desc);
+create index if not exists campaigns_type_created_idx on public.campaigns (campaign_type, created_at desc);
+create index if not exists campaigns_channels_idx on public.campaigns using gin (channels);
+create index if not exists campaigns_tags_idx on public.campaigns using gin (tags);
+create index if not exists coupons_code_idx on public.coupons (code);
+create index if not exists coupons_status_validity_idx on public.coupons (status, starts_at, ends_at, created_at desc);
+create index if not exists coupons_assigned_user_idx on public.coupons (assigned_user_id);
+create index if not exists coupons_assigned_customer_email_idx on public.coupons (assigned_customer_email);
 create index if not exists orders_order_number_idx on public.orders (order_number);
 create index if not exists orders_user_created_idx on public.orders (user_id, created_at desc);
 create index if not exists orders_status_idx on public.orders (status);
+create index if not exists orders_coupon_id_idx on public.orders (coupon_id);
+create index if not exists orders_coupon_code_idx on public.orders (coupon_code);
+create index if not exists orders_attribution_idx on public.orders (source, utm_source, campaign_name, utm_campaign);
 create index if not exists order_items_order_id_idx on public.order_items (order_id, created_at asc);
 create index if not exists order_items_product_id_idx on public.order_items (product_id);
+create index if not exists coupon_redemptions_coupon_created_idx on public.coupon_redemptions (coupon_id, created_at desc);
+create index if not exists coupon_redemptions_order_id_idx on public.coupon_redemptions (order_id);
+create index if not exists coupon_redemptions_user_coupon_idx on public.coupon_redemptions (user_id, coupon_id);
+create index if not exists coupon_redemptions_email_coupon_idx on public.coupon_redemptions (customer_email, coupon_id);
+create index if not exists reviews_product_status_idx on public.reviews (product_id, status, is_featured desc, submitted_at desc);
+create index if not exists reviews_status_idx on public.reviews (status, submitted_at desc);
+create index if not exists reviews_order_id_idx on public.reviews (order_id);
+create index if not exists reviews_customer_key_idx on public.reviews (customer_key, submitted_at desc);
+create index if not exists blog_posts_slug_idx on public.blog_posts (slug);
+create index if not exists blog_posts_status_publish_idx on public.blog_posts (status, visibility, publish_at desc, created_at desc);
+create index if not exists blog_posts_categories_idx on public.blog_posts using gin (categories);
+create index if not exists blog_posts_tags_idx on public.blog_posts using gin (tags);
+create index if not exists site_pages_slug_idx on public.site_pages (slug);
+create index if not exists site_pages_status_order_idx on public.site_pages (status, visibility, display_order, created_at desc);
+create index if not exists site_pages_parent_idx on public.site_pages (parent_page_id);
+create index if not exists banners_status_order_idx on public.banners (status, visibility, priority, display_order, created_at desc);
+create index if not exists banners_display_on_idx on public.banners (display_on, device, priority, display_order);
 create index if not exists fund_allocation_rules_active_order_idx on public.fund_allocation_rules (is_active, display_order);
 create index if not exists payments_user_created_idx on public.payments (user_id, created_at desc);
 create index if not exists payments_order_id_idx on public.payments (order_id);
@@ -636,9 +1772,34 @@ create trigger profiles_set_updated_at
 before update on public.profiles
 for each row execute function public.set_updated_at();
 
+drop trigger if exists customers_set_updated_at on public.customers;
+create trigger customers_set_updated_at
+before update on public.customers
+for each row execute function public.set_updated_at();
+
 drop trigger if exists products_set_updated_at on public.products;
 create trigger products_set_updated_at
 before update on public.products
+for each row execute function public.set_updated_at();
+
+drop trigger if exists collections_set_updated_at on public.collections;
+create trigger collections_set_updated_at
+before update on public.collections
+for each row execute function public.set_updated_at();
+
+drop trigger if exists admin_settings_set_updated_at on public.admin_settings;
+create trigger admin_settings_set_updated_at
+before update on public.admin_settings
+for each row execute function public.set_updated_at();
+
+drop trigger if exists admin_notifications_set_updated_at on public.admin_notifications;
+create trigger admin_notifications_set_updated_at
+before update on public.admin_notifications
+for each row execute function public.set_updated_at();
+
+drop trigger if exists campaigns_set_updated_at on public.campaigns;
+create trigger campaigns_set_updated_at
+before update on public.campaigns
 for each row execute function public.set_updated_at();
 
 drop trigger if exists orders_set_updated_at on public.orders;
@@ -649,6 +1810,26 @@ for each row execute function public.set_updated_at();
 drop trigger if exists order_items_set_updated_at on public.order_items;
 create trigger order_items_set_updated_at
 before update on public.order_items
+for each row execute function public.set_updated_at();
+
+drop trigger if exists reviews_set_updated_at on public.reviews;
+create trigger reviews_set_updated_at
+before update on public.reviews
+for each row execute function public.set_updated_at();
+
+drop trigger if exists blog_posts_set_updated_at on public.blog_posts;
+create trigger blog_posts_set_updated_at
+before update on public.blog_posts
+for each row execute function public.set_updated_at();
+
+drop trigger if exists site_pages_set_updated_at on public.site_pages;
+create trigger site_pages_set_updated_at
+before update on public.site_pages
+for each row execute function public.set_updated_at();
+
+drop trigger if exists banners_set_updated_at on public.banners;
+create trigger banners_set_updated_at
+before update on public.banners
 for each row execute function public.set_updated_at();
 
 drop trigger if exists payments_set_updated_at on public.payments;
@@ -839,6 +2020,121 @@ begin
   return new;
 end;
 $$;
+
+create or replace function public.finalize_verified_payment(
+  p_payment_id uuid,
+  p_tx_hash text,
+  p_wallet_address text,
+  p_recipient_address text,
+  p_chain_id bigint,
+  p_amount_received numeric
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  payment_record public.payments%rowtype;
+  order_record public.orders%rowtype;
+  payment_payload jsonb;
+  order_payload jsonb;
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'Service role access required.';
+  end if;
+
+  if p_payment_id is null then
+    raise exception 'Payment ID is invalid.';
+  end if;
+
+  if nullif(trim(coalesce(p_tx_hash, '')), '') is null then
+    raise exception 'Transaction hash is invalid.';
+  end if;
+
+  if nullif(trim(coalesce(p_wallet_address, '')), '') is null then
+    raise exception 'Wallet address is invalid.';
+  end if;
+
+  if nullif(trim(coalesce(p_recipient_address, '')), '') is null then
+    raise exception 'Recipient address is invalid.';
+  end if;
+
+  if p_chain_id is null or p_chain_id <= 0 then
+    raise exception 'Chain ID is invalid.';
+  end if;
+
+  if p_amount_received is null or p_amount_received <= 0 then
+    raise exception 'Received amount is invalid.';
+  end if;
+
+  select *
+  into payment_record
+  from public.payments
+  where id = p_payment_id
+  for update;
+
+  if not found then
+    raise exception 'Payment not found.';
+  end if;
+
+  if payment_record.order_id is null then
+    raise exception 'Payment is not attached to an order.';
+  end if;
+
+  select *
+  into order_record
+  from public.orders
+  where id = payment_record.order_id
+  for update;
+
+  if not found then
+    raise exception 'Order not found.';
+  end if;
+
+  if order_record.status = 'cancelled' then
+    raise exception 'Cancelled orders cannot be paid.';
+  end if;
+
+  if exists (
+    select 1
+    from public.payments
+    where id <> p_payment_id
+      and tx_hash = trim(p_tx_hash)
+  ) then
+    raise exception 'This transaction hash is already attached to another payment.';
+  end if;
+
+  update public.payments
+  set
+    tx_hash = trim(p_tx_hash),
+    wallet_address = trim(p_wallet_address),
+    recipient_address = trim(p_recipient_address),
+    chain_id = p_chain_id,
+    amount_received = p_amount_received,
+    status = 'paid'
+  where id = p_payment_id
+  returning * into payment_record;
+
+  update public.orders
+  set status = 'paid'
+  where id = order_record.id
+  returning * into order_record;
+
+  perform public.rebuild_payment_allocations(payment_record.id);
+
+  payment_payload := to_jsonb(payment_record);
+  order_payload := to_jsonb(order_record);
+
+  return jsonb_build_object(
+    'payment', payment_payload,
+    'order', order_payload
+  );
+end;
+$$;
+
+revoke execute on function public.finalize_verified_payment(uuid, text, text, text, bigint, numeric) from public, anon, authenticated;
+grant execute on function public.finalize_verified_payment(uuid, text, text, text, bigint, numeric) to service_role;
 
 create or replace function public.record_admin_cash_out_transfer(
   p_amount numeric,
@@ -1410,6 +2706,40 @@ on conflict (id) do update set
   published_at = coalesce(products.published_at, excluded.published_at),
   updated_at = timezone('utc', now());
 
+insert into public.collections (
+  name,
+  slug,
+  description,
+  image_url,
+  status,
+  collection_type,
+  display_order,
+  is_featured,
+  created_at,
+  updated_at
+)
+select
+  category_label as name,
+  lower(trim(both '-' from regexp_replace(category_label, '[^a-zA-Z0-9]+', '-', 'g'))) as slug,
+  count(*)::text || ' product' || case when count(*) = 1 then '' else 's' end || ' assigned to this collection.' as description,
+  min(main_image_url) as image_url,
+  'active' as status,
+  'manual' as collection_type,
+  (row_number() over (order by category_label) - 1)::integer as display_order,
+  bool_or(status = 'published' and show_in_featured) as is_featured,
+  min(created_at) as created_at,
+  max(updated_at) as updated_at
+from public.products
+where char_length(trim(category_label)) > 0
+  and lower(trim(category_label)) not in ('collection', 'uncategorized')
+group by category_label
+on conflict (slug) do update set
+  name = excluded.name,
+  description = excluded.description,
+  image_url = coalesce(public.collections.image_url, excluded.image_url),
+  is_featured = public.collections.is_featured or excluded.is_featured,
+  updated_at = timezone('utc', now());
+
 do $$
 declare
   existing_payment record;
@@ -1424,9 +2754,20 @@ begin
 end $$;
 
 alter table public.profiles enable row level security;
+alter table public.customers enable row level security;
 alter table public.products enable row level security;
+alter table public.collections enable row level security;
+alter table public.admin_settings enable row level security;
+alter table public.admin_notifications enable row level security;
+alter table public.campaigns enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
+alter table public.reviews enable row level security;
+alter table public.blog_posts enable row level security;
+alter table public.site_pages enable row level security;
+alter table public.banners enable row level security;
+alter table public.coupons enable row level security;
+alter table public.coupon_redemptions enable row level security;
 alter table public.payments enable row level security;
 alter table public.fund_allocation_rules enable row level security;
 alter table public.payment_allocations enable row level security;
@@ -1447,6 +2788,25 @@ using (public.is_management_user());
 
 drop policy if exists "profiles_insert_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
+
+drop policy if exists "customers_select_management" on public.customers;
+create policy "customers_select_management"
+on public.customers
+for select
+using (public.is_management_user());
+
+drop policy if exists "customers_insert_management" on public.customers;
+create policy "customers_insert_management"
+on public.customers
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "customers_update_management" on public.customers;
+create policy "customers_update_management"
+on public.customers
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
 
 drop policy if exists "products_select_published" on public.products;
 create policy "products_select_published"
@@ -1469,6 +2829,88 @@ with check (public.is_management_user());
 drop policy if exists "products_update_management" on public.products;
 create policy "products_update_management"
 on public.products
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "collections_select_active" on public.collections;
+create policy "collections_select_active"
+on public.collections
+for select
+using (status = 'active');
+
+drop policy if exists "collections_select_management" on public.collections;
+create policy "collections_select_management"
+on public.collections
+for select
+using (public.is_management_user());
+
+drop policy if exists "collections_insert_management" on public.collections;
+create policy "collections_insert_management"
+on public.collections
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "collections_update_management" on public.collections;
+create policy "collections_update_management"
+on public.collections
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "admin_settings_select_management" on public.admin_settings;
+create policy "admin_settings_select_management"
+on public.admin_settings
+for select
+using (public.is_management_user());
+
+drop policy if exists "admin_settings_insert_management" on public.admin_settings;
+create policy "admin_settings_insert_management"
+on public.admin_settings
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "admin_settings_update_management" on public.admin_settings;
+create policy "admin_settings_update_management"
+on public.admin_settings
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "admin_notifications_select_management" on public.admin_notifications;
+create policy "admin_notifications_select_management"
+on public.admin_notifications
+for select
+using (public.is_management_user());
+
+drop policy if exists "admin_notifications_insert_management" on public.admin_notifications;
+create policy "admin_notifications_insert_management"
+on public.admin_notifications
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "admin_notifications_update_management" on public.admin_notifications;
+create policy "admin_notifications_update_management"
+on public.admin_notifications
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "campaigns_select_management" on public.campaigns;
+create policy "campaigns_select_management"
+on public.campaigns
+for select
+using (public.is_management_user());
+
+drop policy if exists "campaigns_insert_management" on public.campaigns;
+create policy "campaigns_insert_management"
+on public.campaigns
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "campaigns_update_management" on public.campaigns;
+create policy "campaigns_update_management"
+on public.campaigns
 for update
 using (public.is_management_user())
 with check (public.is_management_user());
@@ -1501,6 +2943,168 @@ using (
 drop policy if exists "order_items_select_management" on public.order_items;
 create policy "order_items_select_management"
 on public.order_items
+for select
+using (public.is_management_user());
+
+drop policy if exists "reviews_select_approved" on public.reviews;
+create policy "reviews_select_approved"
+on public.reviews
+for select
+using (status = 'approved');
+
+drop policy if exists "reviews_select_management" on public.reviews;
+create policy "reviews_select_management"
+on public.reviews
+for select
+using (public.is_management_user());
+
+drop policy if exists "reviews_insert_management" on public.reviews;
+create policy "reviews_insert_management"
+on public.reviews
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "reviews_update_management" on public.reviews;
+create policy "reviews_update_management"
+on public.reviews
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "blog_posts_select_published" on public.blog_posts;
+create policy "blog_posts_select_published"
+on public.blog_posts
+for select
+using (
+  status = 'published'
+  and visibility = 'public'
+  and (publish_at is null or publish_at <= now())
+);
+
+drop policy if exists "blog_posts_select_management" on public.blog_posts;
+create policy "blog_posts_select_management"
+on public.blog_posts
+for select
+using (public.is_management_user());
+
+drop policy if exists "blog_posts_insert_management" on public.blog_posts;
+create policy "blog_posts_insert_management"
+on public.blog_posts
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "blog_posts_update_management" on public.blog_posts;
+create policy "blog_posts_update_management"
+on public.blog_posts
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "site_pages_select_published" on public.site_pages;
+create policy "site_pages_select_published"
+on public.site_pages
+for select
+using (status = 'published' and visibility = 'public');
+
+drop policy if exists "site_pages_select_management" on public.site_pages;
+create policy "site_pages_select_management"
+on public.site_pages
+for select
+using (public.is_management_user());
+
+drop policy if exists "site_pages_insert_management" on public.site_pages;
+create policy "site_pages_insert_management"
+on public.site_pages
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "site_pages_update_management" on public.site_pages;
+create policy "site_pages_update_management"
+on public.site_pages
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "banners_select_public_active" on public.banners;
+create policy "banners_select_public_active"
+on public.banners
+for select
+using (
+  status = 'active'
+  and visibility = 'public'
+  and (starts_at is null or starts_at <= now())
+  and (ends_at is null or ends_at >= now())
+);
+
+drop policy if exists "banners_select_authenticated_active" on public.banners;
+create policy "banners_select_authenticated_active"
+on public.banners
+for select
+to authenticated
+using (
+  status = 'active'
+  and visibility in ('public', 'logged_in')
+  and (starts_at is null or starts_at <= now())
+  and (ends_at is null or ends_at >= now())
+);
+
+drop policy if exists "banners_select_management" on public.banners;
+create policy "banners_select_management"
+on public.banners
+for select
+using (public.is_management_user());
+
+drop policy if exists "banners_insert_management" on public.banners;
+create policy "banners_insert_management"
+on public.banners
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "banners_update_management" on public.banners;
+create policy "banners_update_management"
+on public.banners
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "coupons_select_active" on public.coupons;
+create policy "coupons_select_active"
+on public.coupons
+for select
+using (
+  status = 'active'
+  and (starts_at is null or starts_at <= now())
+  and (ends_at is null or ends_at >= now())
+);
+
+drop policy if exists "coupons_select_management" on public.coupons;
+create policy "coupons_select_management"
+on public.coupons
+for select
+using (public.is_management_user());
+
+drop policy if exists "coupons_insert_management" on public.coupons;
+create policy "coupons_insert_management"
+on public.coupons
+for insert
+with check (public.is_management_user());
+
+drop policy if exists "coupons_update_management" on public.coupons;
+create policy "coupons_update_management"
+on public.coupons
+for update
+using (public.is_management_user())
+with check (public.is_management_user());
+
+drop policy if exists "coupon_redemptions_select_own" on public.coupon_redemptions;
+create policy "coupon_redemptions_select_own"
+on public.coupon_redemptions
+for select
+using (auth.uid() = user_id);
+
+drop policy if exists "coupon_redemptions_select_management" on public.coupon_redemptions;
+create policy "coupon_redemptions_select_management"
+on public.coupon_redemptions
 for select
 using (public.is_management_user());
 
@@ -1544,9 +3148,26 @@ grant select on public.fund_allocation_rules to authenticated;
 grant select on public.payment_allocations to authenticated;
 grant select on public.admin_cash_outs to authenticated;
 grant select on public.admin_cash_out_breakdowns to authenticated;
+grant select on public.customers to authenticated;
+grant select on public.admin_settings to authenticated;
+grant select, insert, update on public.admin_notifications to authenticated;
+grant select on public.campaigns to authenticated;
 grant select on public.order_items to authenticated;
+grant select on public.reviews to anon;
+grant select on public.reviews to authenticated;
+grant select on public.blog_posts to anon;
+grant select on public.blog_posts to authenticated;
+grant select on public.site_pages to anon;
+grant select on public.site_pages to authenticated;
+grant select on public.banners to anon;
+grant select on public.banners to authenticated;
+grant select on public.coupons to anon;
+grant select on public.coupons to authenticated;
+grant select on public.coupon_redemptions to authenticated;
 grant select on public.products to anon;
 grant select on public.products to authenticated;
+grant select on public.collections to anon;
+grant select on public.collections to authenticated;
 grant execute on function public.record_admin_cash_out_transfer(numeric, text, uuid, uuid, bigint, text, text, text, numeric, numeric, text, timestamptz, text, text, text) to authenticated;
 revoke insert, update, delete on public.profiles from anon, authenticated;
 

@@ -17,11 +17,28 @@ type OrderConfirmationInput = {
   shippingAddress: string;
   shippingMethodLabel?: string | null;
   shippingFee?: string | number | null;
+  taxLabel?: string | null;
+  taxAmount?: string | number | null;
 };
 
 type EmailResult = {
   status: "sent" | "failed" | "not_configured";
   sentAt?: string;
+};
+
+type EmailDeliverySettings = {
+  fromName: string;
+  fromEmail: string;
+  replyToEmail: string;
+  emailProvider: string;
+  emailSslEnabled: boolean;
+};
+
+type SmtpTransportCandidate = {
+  port: number;
+  secure: boolean;
+  requireTLS: boolean;
+  label: string;
 };
 
 let transporter: nodemailer.Transporter | null = null;
@@ -258,21 +275,252 @@ function renderEmailShell(options: {
   `;
 }
 
+function getSmtpSecurityOptions(secureConnection: boolean, port = serverEnv.smtpPort) {
+  const isImplicitTlsPort = port === 465;
+
+  return {
+    secure: isImplicitTlsPort,
+    requireTLS: secureConnection && !isImplicitTlsPort,
+  };
+}
+
+function getSmtpTransportCandidates(secureConnection: boolean) {
+  const primarySecurityOptions = getSmtpSecurityOptions(secureConnection);
+  const candidates: SmtpTransportCandidate[] = [
+    {
+      port: serverEnv.smtpPort,
+      secure: primarySecurityOptions.secure,
+      requireTLS: primarySecurityOptions.requireTLS,
+      label: `configured:${serverEnv.smtpPort}`,
+    },
+  ];
+
+  if (primarySecurityOptions.requireTLS) {
+    candidates.push({
+      port: serverEnv.smtpPort,
+      secure: false,
+      requireTLS: false,
+      label: `configured:${serverEnv.smtpPort}:plain-starttls-optional`,
+    });
+  }
+
+  if (serverEnv.smtpHost.toLowerCase() === "smtp.resend.com" && serverEnv.smtpPort !== 465) {
+    candidates.push({
+      port: 465,
+      secure: true,
+      requireTLS: false,
+      label: "resend:465",
+    });
+  }
+
+  return candidates.filter(
+    (candidate, index, list) =>
+      list.findIndex(
+        (item) =>
+          item.port === candidate.port &&
+          item.secure === candidate.secure &&
+          item.requireTLS === candidate.requireTLS,
+      ) === index,
+  );
+}
+
+function createSmtpTransporter(secureConnection: boolean, candidate?: SmtpTransportCandidate) {
+  if (!isSmtpConfigured()) {
+    return null;
+  }
+
+  const securityOptions = candidate ?? {
+    port: serverEnv.smtpPort,
+    ...getSmtpSecurityOptions(secureConnection),
+  };
+
+  return nodemailer.createTransport({
+    host: serverEnv.smtpHost,
+    port: securityOptions.port,
+    secure: securityOptions.secure,
+    requireTLS: securityOptions.requireTLS,
+    auth: serverEnv.smtpUser || serverEnv.smtpPass ? { user: serverEnv.smtpUser, pass: serverEnv.smtpPass } : undefined,
+  });
+}
+
 function getTransporter() {
   if (!isSmtpConfigured()) {
     return null;
   }
 
   if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: serverEnv.smtpHost,
-      port: serverEnv.smtpPort,
-      secure: serverEnv.smtpSecure,
-      auth: serverEnv.smtpUser || serverEnv.smtpPass ? { user: serverEnv.smtpUser, pass: serverEnv.smtpPass } : undefined,
-    });
+    transporter = createSmtpTransporter(serverEnv.smtpSecure);
   }
 
   return transporter;
+}
+
+function formatEmailAddress(name: string, email: string) {
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim();
+
+  return trimmedName ? { name: trimmedName, address: trimmedEmail } : trimmedEmail;
+}
+
+function isRecoverableSmtpSecurityError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+
+  return (
+    message.includes("wrong version number") ||
+    message.includes("ssl3_get_record") ||
+    message.includes("ESOCKET") ||
+    message.includes("Greeting never received")
+  );
+}
+
+async function sendMailWithSmtpFallback(
+  mailOptions: Parameters<nodemailer.Transporter["sendMail"]>[0],
+  secureConnection: boolean,
+) {
+  let lastError: unknown = null;
+
+  for (const candidate of getSmtpTransportCandidates(secureConnection)) {
+    const activeTransporter = createSmtpTransporter(secureConnection, candidate);
+
+    if (!activeTransporter) {
+      continue;
+    }
+
+    try {
+      await activeTransporter.sendMail(mailOptions);
+      return;
+    } catch (error) {
+      lastError = error;
+
+      if (!isRecoverableSmtpSecurityError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error("SMTP email is not configured. Add SMTP_HOST, SMTP_PORT, and SMTP_FROM in the server environment.");
+}
+
+export async function sendAdminTestEmail(input: {
+  to: string;
+  settings: EmailDeliverySettings;
+}): Promise<EmailResult> {
+  if (!isSmtpConfigured()) {
+    throw new Error("SMTP email is not configured. Add SMTP_HOST, SMTP_PORT, and SMTP_FROM in the server environment.");
+  }
+
+  const sentAt = new Date().toISOString();
+  const providerLabel = input.settings.emailProvider.trim() || "SMTP";
+  const fromEmail = input.settings.fromEmail.trim() || serverEnv.smtpFrom;
+  const replyToEmail = input.settings.replyToEmail.trim() || fromEmail;
+  const html = renderEmailShell({
+    eyebrow: "Email Settings Test",
+    title: "Your Vione Hernal email settings are connected.",
+    introHtml: `
+      <p style="margin:0 0 14px;">This test message was sent from the Admin Email Settings page.</p>
+      <p style="margin:0;">
+        Provider: ${escapeHtml(providerLabel)}<br />
+        SSL/TLS: ${input.settings.emailSslEnabled ? "Enabled" : "Disabled"}<br />
+        Sent: ${escapeHtml(sentAt)}
+      </p>
+    `,
+    summaryCardsHtml: renderDetailCard("Configuration", [
+      { label: "From", value: `${input.settings.fromName || "Vione Hernal"} <${fromEmail}>` },
+      { label: "Reply To", value: replyToEmail },
+      { label: "Provider", value: providerLabel },
+      { label: "SSL/TLS", value: input.settings.emailSslEnabled ? "Enabled" : "Disabled" },
+    ]),
+    secondaryNote: "If this email reached your inbox, the server-side mail transport is working.",
+  });
+
+  await sendMailWithSmtpFallback({
+    from: formatEmailAddress(input.settings.fromName || "Vione Hernal", fromEmail),
+    to: input.to,
+    replyTo: replyToEmail,
+    subject: "Vione Hernal email settings test",
+    text: [
+      "Your Vione Hernal email settings are connected.",
+      "",
+      `Provider: ${providerLabel}`,
+      `SSL/TLS: ${input.settings.emailSslEnabled ? "Enabled" : "Disabled"}`,
+      `From: ${input.settings.fromName || "Vione Hernal"} <${fromEmail}>`,
+      `Reply To: ${replyToEmail}`,
+      `Sent: ${sentAt}`,
+    ].join("\n"),
+    html,
+  }, input.settings.emailSslEnabled);
+
+  return {
+    status: "sent",
+    sentAt,
+  };
+}
+
+export async function sendAdminNotificationEmail(input: {
+  to: string;
+  title: string;
+  message: string;
+  href?: string | null;
+  eventType: string;
+}): Promise<EmailResult> {
+  if (!input.to || !isSmtpConfigured()) {
+    return {
+      status: "not_configured",
+    };
+  }
+
+  const sentAt = new Date().toISOString();
+  const html = renderEmailShell({
+    eyebrow: "Admin Notification",
+    title: input.title,
+    introHtml: `
+      <p style="margin:0 0 14px;">${escapeHtml(input.message)}</p>
+      <p style="margin:0;">Event: ${escapeHtml(input.eventType)}<br />Sent: ${escapeHtml(sentAt)}</p>
+    `,
+    summaryCardsHtml: renderDetailCard("Notification", [
+      { label: "Event Type", value: input.eventType },
+      { label: "Message", value: input.message },
+    ]),
+    ctaHref: input.href || undefined,
+    ctaLabel: input.href ? "Open Admin" : undefined,
+    secondaryNote: "Notification delivery is controlled by Admin Settings > Notifications.",
+  });
+
+  try {
+    await sendMailWithSmtpFallback({
+      from: serverEnv.smtpFrom,
+      to: input.to,
+      subject: `Vione Hernal admin notification: ${input.title}`,
+      text: [
+        input.title,
+        "",
+        input.message,
+        "",
+        `Event: ${input.eventType}`,
+        input.href ? `Open admin: ${input.href}` : null,
+        `Sent: ${sentAt}`,
+      ].filter(Boolean).join("\n"),
+      html,
+    }, true);
+
+    return {
+      status: "sent",
+      sentAt,
+    };
+  } catch (error) {
+    console.warn("[email:admin-notification]", {
+      eventType: input.eventType,
+      message: error instanceof Error ? error.message : String(error),
+    });
+
+    return {
+      status: "failed",
+    };
+  }
 }
 
 export async function sendOrderConfirmationEmail(input: OrderConfirmationInput): Promise<EmailResult> {
@@ -298,6 +546,9 @@ export async function sendOrderConfirmationEmail(input: OrderConfirmationInput):
     `Shipping address: ${input.shippingAddress}`,
     input.shippingMethodLabel ? `Shipping method: ${input.shippingMethodLabel}` : null,
     input.shippingFee !== null && input.shippingFee !== undefined ? `Shipping fee: ${formatAmountWithUnit(input.shippingFee, "PHP")}` : null,
+    input.taxLabel && input.taxAmount !== null && input.taxAmount !== undefined
+      ? `Tax (${input.taxLabel}): ${formatAmountWithUnit(input.taxAmount, "PHP")}`
+      : null,
     input.itemLines?.length ? `Items:\n${input.itemLines.map((line) => `- ${line}`).join("\n")}` : null,
     input.notes ? `Notes: ${input.notes}` : null,
   ]
@@ -332,6 +583,13 @@ export async function sendOrderConfirmationEmail(input: OrderConfirmationInput):
             input.shippingFee !== null && input.shippingFee !== undefined
               ? formatAmountWithUnit(input.shippingFee, "PHP")
               : "Not set",
+        },
+        {
+          label: input.taxLabel ? `Tax (${input.taxLabel})` : "Tax",
+          value:
+            input.taxLabel && input.taxAmount !== null && input.taxAmount !== undefined
+              ? formatAmountWithUnit(input.taxAmount, "PHP")
+              : "Not applied",
         },
       ]),
       input.itemLines?.length ? renderItemSection("Ordered Pieces", input.itemLines) : "",
@@ -372,6 +630,13 @@ export async function sendOrderConfirmationEmail(input: OrderConfirmationInput):
             input.shippingFee !== null && input.shippingFee !== undefined
               ? formatAmountWithUnit(input.shippingFee, "PHP")
               : "Not set",
+        },
+        {
+          label: input.taxLabel ? `Tax (${input.taxLabel})` : "Tax",
+          value:
+            input.taxLabel && input.taxAmount !== null && input.taxAmount !== undefined
+              ? formatAmountWithUnit(input.taxAmount, "PHP")
+              : "Not applied",
         },
         { label: "Notes", value: input.notes || "No note added." },
       ]),

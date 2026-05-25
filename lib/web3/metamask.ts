@@ -19,7 +19,9 @@ type InjectedEthereum = Eip1193Provider & {
   isBraveWallet?: boolean;
   isCoinbaseWallet?: boolean;
   isPhantom?: boolean;
-  _metamask?: unknown;
+  _metamask?: {
+    isUnlocked?: () => Promise<boolean>;
+  };
   on?: (event: "accountsChanged" | "chainChanged", listener: (...args: unknown[]) => void) => void;
   removeListener?: (event: "accountsChanged" | "chainChanged", listener: (...args: unknown[]) => void) => void;
   providers?: InjectedEthereum[];
@@ -66,6 +68,7 @@ const METAMASK_MOBILE_ACTION_QUERY_PARAM = "vh_wallet_action";
 const METAMASK_MOBILE_CONNECT_ACTION = "connect";
 const WALLET_DISCONNECT_OVERRIDE_KEY = "vh.wallet.disconnectOverride";
 const WALLET_CONNECTED_PREFERENCE_KEY = "vh.wallet.connectedPreference";
+const WALLET_BALANCE_TIMEOUT_MS = 1_500;
 const METAMASK_CONNECT_MOBILE_REQUIRED_MESSAGE =
   "Mobile wallet approval needs MetaMask Connect so the original browser can receive the wallet session. Add NEXT_PUBLIC_METAMASK_CONNECT_RPC_URL and try again.";
 
@@ -256,6 +259,35 @@ function canUseMetaMaskConnectMobile() {
   return !getInjectedEthereum() && isLikelyMobileBrowser() && !isMetaMaskMobileBrowser() && Boolean(METAMASK_CONNECT_PUBLIC_RPC_URL);
 }
 
+async function isMetaMaskLocked(provider: InjectedEthereum) {
+  if (!provider._metamask?.isUnlocked) {
+    return false;
+  }
+
+  try {
+    return !(await provider._metamask.isUnlocked());
+  } catch {
+    return false;
+  }
+}
+
+async function getVhlBalanceWithoutBlockingConnect(address: string, provider?: BrowserProvider | null) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race<string | null>([
+      getVhlBalance(address, provider).catch(() => null),
+      new Promise<null>((resolve) => {
+        timeoutId = setTimeout(() => resolve(null), WALLET_BALANCE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 async function getMetaMaskConnectClient() {
   if (!canUseMetaMaskConnectMobile()) {
     return null;
@@ -429,6 +461,12 @@ export async function connectWallet(options?: { allowMobileDeeplink?: boolean })
   const ethereum = getInjectedEthereum();
 
   if (ethereum) {
+    if (await isMetaMaskLocked(ethereum)) {
+      throw Object.assign(new Error("MetaMask is locked. Unlock MetaMask from the extension, then choose Ethereum again."), {
+        code: "METAMASK_LOCKED",
+      });
+    }
+
     const accounts = (await ethereum.request({
       method: "eth_requestAccounts",
     })) as string[];
@@ -628,7 +666,7 @@ export async function getWalletSnapshot(options?: { eager?: boolean }): Promise<
     const chainSnapshot = await checkChain(provider);
     chainId = chainSnapshot.chainId;
     isSupportedChain = chainSnapshot.isSupportedChain;
-    vhlBalance = isSupportedChain ? await getVhlBalance(account, provider) : null;
+    vhlBalance = isSupportedChain ? await getVhlBalanceWithoutBlockingConnect(account, provider) : null;
   }
 
   return {

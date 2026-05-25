@@ -88,7 +88,7 @@ function formatInputAmount(value: number, fractionDigits: number) {
 export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
   const wallet = useVhlWallet();
   const [cashOutPaymentMethod, setCashOutPaymentMethod] = useState(
-    snapshot.cashOut.assets[0]?.paymentMethod || snapshot.cashOut.primaryPaymentMethod || "eth",
+    snapshot.cashOut.assets[0]?.paymentMethod || snapshot.cashOut.primaryPaymentMethod || "evm_eth",
   );
   const [cashOutSource, setCashOutSource] = useState(PROPORTIONAL_CASH_OUT_SOURCE);
   const [cashOutAmount, setCashOutAmount] = useState("");
@@ -136,7 +136,7 @@ export function LedgerCashOutPanel({ snapshot, onSnapshotUpdate }: Props) {
 
   const selectedAsset =
     snapshot.cashOut.assets.find((asset) => asset.paymentMethod === cashOutPaymentMethod) || snapshot.cashOut.assets[0] || null;
-  const isEthCashOut = selectedAsset?.paymentMethod === "eth";
+  const isEthCashOut = selectedAsset?.paymentMethod === "evm_eth";
 
   useEffect(() => {
     if (isEthCashOut) {

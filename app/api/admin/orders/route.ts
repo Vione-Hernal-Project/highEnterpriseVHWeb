@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { rebuildPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
@@ -151,6 +152,22 @@ export async function PATCH(request: Request) {
       }
 
       await rebuildPaymentAllocations(payment.id);
+    }
+
+    if (nextStatus === "cancelled") {
+      await tryDispatchAdminNotification("order.cancelled", {
+        entityId: updatedOrder.id,
+        title: `Order cancelled ${updatedOrder.order_number || updatedOrder.id}`,
+        message: `${updatedOrder.customer_name || updatedOrder.email || "An order"} was cancelled by an admin.`,
+        href: `/admin/orders/${updatedOrder.id}`,
+        customerEmail: updatedOrder.email,
+        customerName: updatedOrder.customer_name,
+        metadata: {
+          orderId: updatedOrder.id,
+          orderNumber: updatedOrder.order_number,
+          updatedBy: user.id,
+        },
+      });
     }
 
     return NextResponse.json({ order: updatedOrder });

@@ -127,7 +127,10 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
                 <Link href="/new">New</Link>
               </li>
               <li>
-                <Link href="/shop">Womens</Link>
+                <Link href="/">Womens</Link>
+              </li>
+              <li>
+                <Link href="/men">Mens</Link>
               </li>
               <li>
                 <Link href="/about">About</Link>
@@ -146,7 +149,7 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
           <p className="vh-mobile-drawer__label">Account</p>
           <div className="vh-mobile-drawer__account">
             <Link className="vh-button vh-button--ghost" href={signedIn ? "/dashboard" : "/sign-in"}>
-              {signedIn ? "Open Dashboard" : "Sign In"}
+              {signedIn ? "Open Account" : "Sign In"}
             </Link>
             {signedIn ? (
               <LogoutButton redirectTo="/" variant="button">
@@ -160,8 +163,10 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
           </div>
           {isManagementUser ? (
             <div className="vh-mobile-drawer__management">
-              <Link href="/admin">Admin</Link>
-              <Link href="/admin/ledger">Ledger</Link>
+              <Link href="/admin">Admin Panel</Link>
+              <Link href="/admin/orders">Orders</Link>
+              <Link href="/admin/products">Products</Link>
+              <Link href="/admin/customers">Customers</Link>
             </div>
           ) : null}
         </div>

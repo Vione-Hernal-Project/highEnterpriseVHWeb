@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
+import { getConfiguredOwnerEmails } from "@/lib/env/server";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { buildRateLimitHeaders, applyRateLimit, clearRateLimit, getClientIp } from "@/lib/security/rate-limit";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseRouteHandlerClient } from "@/lib/supabase/route-handler";
 
 const SIGN_IN_WINDOW_MS = 10 * 60_000;
@@ -38,6 +41,21 @@ function resolveNextPath(value: string | undefined) {
   }
 
   return requestedPath;
+}
+
+async function isManagementEmail(email: string) {
+  if (getConfiguredOwnerEmails().includes(email)) {
+    return true;
+  }
+
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin.from("profiles").select("role").eq("email", email).maybeSingle();
+
+    return data?.role === "owner" || data?.role === "admin" || data?.role === "staff";
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(request: Request) {
@@ -106,6 +124,20 @@ export async function POST(request: Request) {
     });
 
     if (error) {
+      if (await isManagementEmail(normalizedEmail)) {
+        await tryDispatchAdminNotification("security.failed_admin_login", {
+          entityId: `${normalizedEmail}:${Date.now()}`,
+          title: "Failed admin login",
+          message: `A failed sign-in attempt was detected for ${normalizedEmail}.`,
+          href: "/admin/settings/notifications",
+          metadata: {
+            email: normalizedEmail,
+            ipAddress,
+            reason: getSafeSignInErrorMessage(error.message),
+          },
+        });
+      }
+
       console.info("[auth:sign-in]", {
         phase: "failed",
         status: error.message.toLowerCase().includes("email not confirmed") ? 403 : 401,
@@ -152,6 +184,20 @@ export async function POST(request: Request) {
 
     await clearRateLimit(ipRateLimitKey);
     await clearRateLimit(emailRateLimitKey);
+
+    if (await isManagementEmail(normalizedEmail)) {
+      await tryDispatchAdminNotification("security.admin_login", {
+        entityId: `${data.user.id}:${Date.now()}`,
+        title: "Admin login detected",
+        message: `${normalizedEmail} signed in to the admin system.`,
+        href: "/admin",
+        metadata: {
+          userId: data.user.id,
+          email: normalizedEmail,
+          ipAddress,
+        },
+      });
+    }
 
     console.info("[auth:sign-in]", {
       phase: "completed",

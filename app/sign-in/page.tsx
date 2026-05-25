@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { SignInForm } from "@/components/auth/sign-in-form";
+import { getCurrentUserContext } from "@/lib/auth";
 import { getPublicSupabaseEnvError, logPublicSupabaseEnvStatus } from "@/lib/env/public";
 
 type Props = {
@@ -23,10 +25,28 @@ function resolveNextPath(value: string | undefined) {
   return requestedPath;
 }
 
+function resolveAuthenticatedPath(value: string | undefined) {
+  const nextPath = resolveNextPath(value);
+
+  if (nextPath === "/sign-in" || nextPath.startsWith("/sign-in?") || nextPath === "/sign-up") {
+    return "/account";
+  }
+
+  return nextPath === "/dashboard" ? "/account" : nextPath;
+}
+
 export default async function SignInPage({ searchParams }: Props) {
   logPublicSupabaseEnvStatus("sign-in-page");
 
-  const { devError, next, error, reset, confirmed } = await searchParams;
+  const [{ devError, next, error, reset, confirmed }, { user }] = await Promise.all([
+    searchParams,
+    getCurrentUserContext(),
+  ]);
+
+  if (user) {
+    redirect(resolveAuthenticatedPath(next));
+  }
+
   const configError =
     getPublicSupabaseEnvError() ||
     (devError === "supabase_config_missing"

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ProductGrid } from "@/components/storefront/product-grid";
-import { loadPublishedCatalogProducts } from "@/lib/products";
+import { MenEditorialOverlayMotion } from "@/components/site/men-editorial-overlay-motion";
 import { breadcrumbJsonLd, createSeoMetadata, JsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = createSeoMetadata({
@@ -11,32 +10,52 @@ export const metadata: Metadata = createSeoMetadata({
   path: "/men",
 });
 
-export default async function MenPage() {
-  const products = (await loadPublishedCatalogProducts()).filter((product) => product.department === "Mens");
-
+export default function MenPage() {
   return (
-    <section className="storefront-app-view">
+    <section className="storefront-app-view vh-men-page">
       <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Men", path: "/men" }])} />
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
         <span>Men</span>
       </nav>
-      <div className="storefront-app-hero">
-        <p className="u-text--sm u-uppercase u-margin-b--sm">Men</p>
-        <h1 className="h2 u-margin-b--md">Men</h1>
-        <p className="u-margin-b--none">Luxury streetwear and blockchain fashion edits from Vione Hernal.</p>
-      </div>
-      {products.length ? (
-        <ProductGrid products={products} showCta={false} />
-      ) : (
-        <div className="storefront-app-empty">
-          <p className="u-margin-b--lg">Menswear edits are coming soon.</p>
-          <Link className="vh-button" href="/shop">
-            Browse Shop
-          </Link>
+
+      <div className="vh-men-editorial" aria-label="Vione Hernal menswear editorial preview">
+        <MenEditorialOverlayMotion />
+        <figure className="vh-men-editorial__panel vh-men-editorial__panel--brand">
+          <img src="/assets/images/men/vione-hernal-liquid-graphic-clean.png" alt="" width="1085" height="1449" />
+          <figcaption className="vh-men-editorial__brand-overlay" aria-hidden="true">
+            <span>Vione Hernal</span>
+            <strong>#VioneHernal</strong>
+          </figcaption>
+        </figure>
+
+        <div className="vh-men-editorial__grid">
+          <figure className="vh-men-editorial__panel vh-men-editorial__panel--city">
+            <img src="/assets/images/men/men-city-noir-look.jpg" alt="" width="485" height="621" />
+            <figcaption className="vh-men-editorial__overlay">
+              <span>City Form</span>
+              <strong>Refined Utility</strong>
+            </figcaption>
+          </figure>
+          <figure className="vh-men-editorial__panel vh-men-editorial__panel--portrait">
+            <img src="/assets/images/men/men-golf-resort-look.jpg" alt="" width="611" height="960" />
+            <figcaption className="vh-men-editorial__overlay vh-men-editorial__overlay--center">
+              <span>Off Duty</span>
+              <strong>Elevated Ease</strong>
+            </figcaption>
+          </figure>
+          <figure className="vh-men-editorial__panel vh-men-editorial__panel--wide">
+            <img src="/assets/images/men/men-studio-cap-editorial.png" alt="" width="1537" height="1023" />
+            <figcaption className="vh-men-editorial__overlay vh-men-editorial__overlay--cap">
+              <span>Everyday Luxury</span>
+              <strong>Understated by Design</strong>
+            </figcaption>
+          </figure>
         </div>
-      )}
+
+        <section className="vh-men-featured" aria-label="Featured menswear" />
+      </div>
     </section>
   );
 }

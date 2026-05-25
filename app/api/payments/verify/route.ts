@@ -1,18 +1,27 @@
 import { NextResponse } from "next/server";
 import { getAddress, isAddress } from "ethers";
 
+import { isPaymentPendingTooLong, tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { ensureConfirmedOnChainPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
 import { getCurrentUserContext } from "@/lib/auth";
-import { getEthereumMainnetRpcEnvError, serverEnv } from "@/lib/env/server";
+import {
+  assertCouponCanBeRedeemedForOrder,
+  isMissingCouponsTableError,
+  recordPaidCouponRedemptionForOrder,
+} from "@/lib/coupons";
+import { getEthereumMainnetRpcEnvError, getSolanaRpcEnvError, serverEnv } from "@/lib/env/server";
 import type { Database } from "@/lib/database.types";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
-import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
+import { resolveMerchantWalletAddress, resolveSolanaMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
+import { getPaymentMethodConfig } from "@/lib/payments/options";
 import { verifyEthereumMainnetPayment } from "@/lib/payments/verify";
+import { verifySolanaPayment } from "@/lib/payments/verify-solana";
+import { normalizeSolanaAddress } from "@/lib/solana/network";
 import { applyRateLimit, buildRateLimitHeaders, getClientIp } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { verifyPaymentSchema } from "@/lib/validations/order";
-import { ETHEREUM_MAINNET_CHAIN_ID, isEthereumMainnetChain } from "@/lib/web3/network";
+import { ETHEREUM_MAINNET_CHAIN_ID, isEthereumMainnetChain, SOLANA_MAINNET_CHAIN_ID } from "@/lib/web3/network";
 
 type OrderEmailRecord = {
   id: string;
@@ -26,6 +35,10 @@ type OrderEmailRecord = {
 
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
+type FinalizedPaymentPayload = {
+  payment?: PaymentRow;
+  order?: OrderRow;
+};
 
 const PAYMENT_VERIFY_WINDOW_MS = 5 * 60_000;
 const PAYMENT_VERIFY_IP_LIMIT = 60;
@@ -60,6 +73,66 @@ function resolveBoundWalletAddress(storedWalletAddress: string | null | undefine
   }
 
   return normalizedStoredWallet || normalizedRequestedWallet || null;
+}
+
+function resolveBoundPaymentWalletAddress(
+  paymentMethod: string,
+  storedWalletAddress: string | null | undefined,
+  requestedWalletAddress: string | null | undefined,
+) {
+  const paymentConfig = getPaymentMethodConfig(paymentMethod);
+
+  if (paymentConfig?.network === "solana") {
+    const normalizedStoredWallet = storedWalletAddress?.trim()
+      ? normalizeSolanaAddress(storedWalletAddress, "Saved Solana payer wallet is invalid.")
+      : null;
+    const normalizedRequestedWallet = requestedWalletAddress?.trim()
+      ? normalizeSolanaAddress(requestedWalletAddress, "Submitted Solana payer wallet is invalid.")
+      : null;
+
+    if (normalizedStoredWallet && normalizedRequestedWallet && normalizedStoredWallet !== normalizedRequestedWallet) {
+      throw new Error("Reconnect the Solana wallet that was originally bound to this order before verifying the payment.");
+    }
+
+    return normalizedStoredWallet || normalizedRequestedWallet || null;
+  }
+
+  return resolveBoundWalletAddress(storedWalletAddress, requestedWalletAddress);
+}
+
+function isEvmTransactionHash(value: string) {
+  return /^0x([A-Fa-f0-9]{64})$/.test(value.trim());
+}
+
+function isSolanaSignature(value: string) {
+  return /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(value.trim());
+}
+
+function resolvePaymentFinalizationStatus(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("payment id is invalid") ||
+    normalizedMessage.includes("transaction hash is invalid") ||
+    normalizedMessage.includes("wallet address is invalid") ||
+    normalizedMessage.includes("recipient address is invalid") ||
+    normalizedMessage.includes("chain id is invalid") ||
+    normalizedMessage.includes("received amount is invalid") ||
+    normalizedMessage.includes("payment is not attached") ||
+    normalizedMessage.includes("cancelled orders cannot be paid")
+  ) {
+    return 400;
+  }
+
+  if (normalizedMessage.includes("payment not found") || normalizedMessage.includes("order not found")) {
+    return 404;
+  }
+
+  if (normalizedMessage.includes("already attached to another payment") || normalizedMessage.includes("duplicate key")) {
+    return 409;
+  }
+
+  return 500;
 }
 
 async function loadEarlierMatchingPendingPayment(
@@ -320,12 +393,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const rpcSetupError = getEthereumMainnetRpcEnvError();
-
-    if (rpcSetupError) {
-      return NextResponse.json({ error: rpcSetupError }, { status: 400 });
-    }
-
     const admin = createSupabaseAdminClient();
     const { data: payment, error: paymentError } = await admin
       .from("payments")
@@ -366,6 +433,19 @@ export async function POST(request: Request) {
 
       await ensureConfirmedOnChainPaymentAllocations(payment.id);
 
+      await tryDispatchAdminNotification("payment.confirmed", {
+        entityId: payment.id,
+        title: `Payment already confirmed ${payment.id}`,
+        message: `A paid payment record was reviewed for order ${existingOrder?.order_number || payment.order_id}.`,
+        href: payment.order_id ? `/admin/orders/${payment.order_id}` : "/admin/payments",
+        amount: payment.amount_expected_fiat,
+        metadata: {
+          paymentId: payment.id,
+          orderId: payment.order_id,
+          paymentMethod: payment.payment_method,
+        },
+      });
+
       return NextResponse.json({
         verificationStatus: "paid",
         message: "This payment is already confirmed.",
@@ -377,14 +457,64 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Payment is not attached to an order." }, { status: 400 });
     }
 
+    const paymentConfig = getPaymentMethodConfig(payment.payment_method);
+
+    if (!paymentConfig) {
+      return NextResponse.json({ error: "Unsupported token for this chain." }, { status: 400 });
+    }
+
+    if (payment.payment_type && payment.payment_type !== payment.payment_method) {
+      return NextResponse.json({ error: "Payment type does not match this payment record." }, { status: 400 });
+    }
+
+    if (payment.wallet_provider && payment.wallet_provider !== paymentConfig.walletProvider) {
+      return NextResponse.json({ error: "Payment wallet provider does not match this payment type." }, { status: 400 });
+    }
+
+    if (payment.token_type && payment.token_type !== paymentConfig.tokenType) {
+      return NextResponse.json({ error: "Unsupported token for this chain." }, { status: 400 });
+    }
+
+    const isSolanaPayment = paymentConfig?.network === "solana";
+    const expectedNetwork = isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet";
+
+    if (payment.network && payment.network !== expectedNetwork) {
+      return NextResponse.json(
+        {
+          error: isSolanaPayment
+            ? "Wrong network selected. Please switch to Solana mainnet."
+            : "Wrong network selected. Please switch to Ethereum mainnet.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (payment.token_standard && payment.token_standard !== paymentConfig.tokenStandard) {
+      return NextResponse.json({ error: "Unsupported token for this chain." }, { status: 400 });
+    }
+
+    const rpcSetupError = isSolanaPayment ? getSolanaRpcEnvError() : getEthereumMainnetRpcEnvError();
+
+    if (rpcSetupError) {
+      return NextResponse.json({ error: rpcSetupError }, { status: 400 });
+    }
+
     const txHash = parsed.data.txHash || payment.tx_hash;
-    const walletAddress = resolveBoundWalletAddress(payment.wallet_address, parsed.data.walletAddress);
-    const merchantWallet = await resolveMerchantWalletAddress();
+    const walletAddress = resolveBoundPaymentWalletAddress(payment.payment_method, payment.wallet_address, parsed.data.walletAddress);
+    const merchantWallet = isSolanaPayment ? await resolveSolanaMerchantWalletAddress() : await resolveMerchantWalletAddress();
     const recipientAddress = payment.recipient_address || merchantWallet.address;
-    const chainId = payment.chain_id || ETHEREUM_MAINNET_CHAIN_ID;
+    const chainId = payment.chain_id || (isSolanaPayment ? SOLANA_MAINNET_CHAIN_ID : ETHEREUM_MAINNET_CHAIN_ID);
 
     if (!txHash) {
       return NextResponse.json({ error: "No transaction hash was submitted for this payment yet." }, { status: 400 });
+    }
+
+    if (isSolanaPayment && !isSolanaSignature(txHash)) {
+      return NextResponse.json({ error: "Solana payments require a valid Solana transaction signature." }, { status: 400 });
+    }
+
+    if (!isSolanaPayment && !isEvmTransactionHash(txHash)) {
+      return NextResponse.json({ error: "Ethereum payments require a valid EVM transaction hash." }, { status: 400 });
     }
 
     if (!walletAddress) {
@@ -407,10 +537,19 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!isEthereumMainnetChain(chainId)) {
+    if (!isSolanaPayment && !isEthereumMainnetChain(chainId)) {
       return NextResponse.json(
         {
-          error: `This payment is configured for chain ID ${chainId}, but only Ethereum Mainnet (${ETHEREUM_MAINNET_CHAIN_ID}) is supported.`,
+          error: "Wrong network selected. Please switch to Ethereum mainnet.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (isSolanaPayment && Number(chainId) !== SOLANA_MAINNET_CHAIN_ID) {
+      return NextResponse.json(
+        {
+          error: "Wrong network selected. Please switch to Solana mainnet.",
         },
         { status: 400 },
       );
@@ -460,9 +599,16 @@ export async function POST(request: Request) {
       .from("payments")
       .update({
         tx_hash: txHash,
+        signature: isSolanaPayment ? txHash : null,
         wallet_address: walletAddress,
+        sender_wallet_address: walletAddress,
         recipient_address: recipientAddress,
         chain_id: chainId,
+        payment_type: payment.payment_method,
+        wallet_provider: paymentConfig.walletProvider,
+        network: isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet",
+        token_type: paymentConfig.tokenType,
+        token_standard: paymentConfig.tokenStandard,
       })
       .eq("id", payment.id);
 
@@ -470,33 +616,71 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: bindPaymentError.message || "Unable to bind the payment wallet." }, { status: 500 });
     }
 
-    const verification = await verifyEthereumMainnetPayment({
-      payment: {
-        ...payment,
-        tx_hash: txHash,
-        wallet_address: walletAddress,
-        recipient_address: recipientAddress,
-        chain_id: chainId,
-      },
-      txHash,
-      walletAddress,
-      expectedRecipientAddress: recipientAddress,
-      expectedChainId: chainId,
-    });
+    const paymentForVerification = {
+      ...payment,
+      tx_hash: txHash,
+      signature: isSolanaPayment ? txHash : null,
+      wallet_address: walletAddress,
+      sender_wallet_address: walletAddress,
+      recipient_address: recipientAddress,
+      chain_id: chainId,
+      payment_type: payment.payment_method,
+      wallet_provider: paymentConfig.walletProvider,
+      network: isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet",
+      token_type: paymentConfig.tokenType,
+      token_standard: paymentConfig.tokenStandard,
+    };
+    const verification = isSolanaPayment
+      ? await verifySolanaPayment({
+          payment: paymentForVerification,
+          txHash,
+          walletAddress,
+          expectedRecipientAddress: recipientAddress,
+        })
+      : await verifyEthereumMainnetPayment({
+          payment: paymentForVerification,
+          txHash,
+          walletAddress,
+          expectedRecipientAddress: recipientAddress,
+          expectedChainId: chainId,
+        });
 
     if (verification.status === "pending") {
       const { data: updatedPayment } = await admin
         .from("payments")
         .update({
           tx_hash: verification.txHash,
+          signature: isSolanaPayment ? verification.txHash : null,
           wallet_address: verification.walletAddress,
+          sender_wallet_address: verification.walletAddress,
           recipient_address: recipientAddress,
           chain_id: chainId,
+          payment_type: payment.payment_method,
+          wallet_provider: paymentConfig.walletProvider,
+          network: isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet",
+          token_type: paymentConfig.tokenType,
+          token_standard: paymentConfig.tokenStandard,
           status: "pending",
         })
         .eq("id", payment.id)
         .select("*")
         .single();
+
+      if (isPaymentPendingTooLong(payment.created_at)) {
+        await tryDispatchAdminNotification("payment.pending_too_long", {
+          entityId: payment.id,
+          title: `Payment pending too long ${payment.id}`,
+          message: `Payment for order ${order.order_number || order.id} is still waiting for confirmation.`,
+          href: `/admin/orders/${order.id}`,
+          amount: payment.amount_expected_fiat,
+          metadata: {
+            paymentId: payment.id,
+            orderId: order.id,
+            orderNumber: order.order_number,
+            paymentMethod: payment.payment_method,
+          },
+        });
+      }
 
       return NextResponse.json(
         {
@@ -517,19 +701,92 @@ export async function POST(request: Request) {
         .from("payments")
         .update({
           tx_hash: verification.txHash,
+          signature: isSolanaPayment ? verification.txHash : null,
           wallet_address: verification.walletAddress,
+          sender_wallet_address: verification.walletAddress,
           recipient_address: recipientAddress,
           chain_id: chainId,
+          payment_type: payment.payment_method,
+          wallet_provider: paymentConfig.walletProvider,
+          network: isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet",
+          token_type: paymentConfig.tokenType,
+          token_standard: paymentConfig.tokenStandard,
           status: "failed",
         })
         .eq("id", payment.id)
         .select("*")
         .single();
 
+      await tryDispatchAdminNotification("payment.failed", {
+        entityId: payment.id,
+        title: `Payment failed ${payment.id}`,
+        message: verification.message,
+        href: `/admin/orders/${order.id}`,
+        amount: payment.amount_expected_fiat,
+        metadata: {
+          paymentId: payment.id,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          paymentMethod: payment.payment_method,
+          reason: verification.message,
+        },
+      });
+
       return NextResponse.json(
         {
           verificationStatus: "invalid",
           error: verification.message,
+          payment: updatedPayment ?? {
+            ...payment,
+            tx_hash: verification.txHash,
+            wallet_address: verification.walletAddress,
+            status: "failed",
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    if (payment.quote_expires_at && Date.parse(verification.observedBlockAt) > Date.parse(payment.quote_expires_at)) {
+      const { data: updatedPayment } = await admin
+        .from("payments")
+        .update({
+          tx_hash: verification.txHash,
+          signature: isSolanaPayment ? verification.txHash : null,
+          wallet_address: verification.walletAddress,
+          sender_wallet_address: verification.walletAddress,
+          recipient_address: recipientAddress,
+          chain_id: chainId,
+          payment_type: payment.payment_method,
+          wallet_provider: paymentConfig.walletProvider,
+          network: isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet",
+          token_type: paymentConfig.tokenType,
+          token_standard: paymentConfig.tokenStandard,
+          status: "failed",
+        })
+        .eq("id", payment.id)
+        .select("*")
+        .single();
+
+      await tryDispatchAdminNotification("payment.failed", {
+        entityId: payment.id,
+        title: `Payment failed ${payment.id}`,
+        message: `Payment for order ${order.order_number || order.id} confirmed after the locked quote expired.`,
+        href: `/admin/orders/${order.id}`,
+        amount: payment.amount_expected_fiat,
+        metadata: {
+          paymentId: payment.id,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          paymentMethod: payment.payment_method,
+          reason: "quote_expired",
+        },
+      });
+
+      return NextResponse.json(
+        {
+          verificationStatus: "invalid",
+          error: "This payment was confirmed after the locked quote expired. Refresh the quote and create a new payment.",
           payment: updatedPayment ?? {
             ...payment,
             tx_hash: verification.txHash,
@@ -555,14 +812,36 @@ export async function POST(request: Request) {
         .from("payments")
         .update({
           tx_hash: verification.txHash,
+          signature: isSolanaPayment ? verification.txHash : null,
           wallet_address: verification.walletAddress,
+          sender_wallet_address: verification.walletAddress,
           recipient_address: recipientAddress,
           chain_id: chainId,
+          payment_type: payment.payment_method,
+          wallet_provider: paymentConfig.walletProvider,
+          network: isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet",
+          token_type: paymentConfig.tokenType,
+          token_standard: paymentConfig.tokenStandard,
           status: "failed",
         })
         .eq("id", payment.id)
         .select("*")
         .single();
+
+      await tryDispatchAdminNotification("payment.failed", {
+        entityId: payment.id,
+        title: `Payment failed ${payment.id}`,
+        message: bindingError,
+        href: `/admin/orders/${order.id}`,
+        amount: payment.amount_expected_fiat,
+        metadata: {
+          paymentId: payment.id,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          paymentMethod: payment.payment_method,
+          reason: bindingError,
+        },
+      });
 
       return NextResponse.json(
         {
@@ -579,35 +858,37 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: updatedPayment, error: updatePaymentError } = await admin
-      .from("payments")
-      .update({
-        tx_hash: verification.txHash,
-        wallet_address: verification.walletAddress,
-        recipient_address: recipientAddress,
-        chain_id: chainId,
-        amount_received: verification.amountReceived,
-        status: "paid",
-      })
-      .eq("id", payment.id)
-      .select("*")
-      .single();
-
-    if (updatePaymentError || !updatedPayment) {
-      return NextResponse.json({ error: updatePaymentError?.message || "Unable to update payment." }, { status: 500 });
+    try {
+      await assertCouponCanBeRedeemedForOrder(admin, order);
+    } catch (couponError) {
+      return NextResponse.json(
+        { error: getErrorMessage(couponError, "This coupon can no longer be redeemed for this order.") },
+        { status: 409 },
+      );
     }
 
-    const { data: updatedOrder, error: updateOrderError } = await admin
-      .from("orders")
-      .update({
-        status: "paid",
-      })
-      .eq("id", order.id)
-      .select("*")
-      .single();
+    const { data: finalizedPaymentData, error: finalizePaymentError } = await admin.rpc("finalize_verified_payment", {
+      p_payment_id: payment.id,
+      p_tx_hash: verification.txHash,
+      p_wallet_address: verification.walletAddress,
+      p_recipient_address: recipientAddress,
+      p_chain_id: chainId,
+      p_amount_received: verification.amountReceived,
+    });
 
-    if (updateOrderError || !updatedOrder) {
-      return NextResponse.json({ error: updateOrderError?.message || "Unable to update order." }, { status: 500 });
+    if (finalizePaymentError) {
+      return NextResponse.json(
+        { error: finalizePaymentError.message || "Unable to finalize this payment." },
+        { status: resolvePaymentFinalizationStatus(finalizePaymentError.message || "") },
+      );
+    }
+
+    const finalizedPaymentPayload = finalizedPaymentData as FinalizedPaymentPayload | null;
+    const updatedPayment = finalizedPaymentPayload?.payment;
+    const updatedOrder = finalizedPaymentPayload?.order;
+
+    if (!updatedPayment || !updatedOrder) {
+      return NextResponse.json({ error: "Payment finalization did not return the updated records." }, { status: 500 });
     }
 
     const orderWithConfirmation = await sendPaidOrderConfirmationEmail(
@@ -616,7 +897,51 @@ export async function POST(request: Request) {
       updatedPayment.id,
     );
 
+    try {
+      await recordPaidCouponRedemptionForOrder(admin, {
+        order: updatedOrder,
+        paymentId: updatedPayment.id,
+      });
+    } catch (couponRedemptionError) {
+      if (!isMissingCouponsTableError(couponRedemptionError)) {
+        console.warn("Unable to write coupon redemption history after payment confirmation.", {
+          orderId: updatedOrder.id,
+          paymentId: updatedPayment.id,
+          error: getErrorMessage(couponRedemptionError, "Unknown coupon redemption error."),
+        });
+      }
+    }
+
     await ensureConfirmedOnChainPaymentAllocations(updatedPayment.id);
+
+    await tryDispatchAdminNotification("payment.confirmed", {
+      entityId: updatedPayment.id,
+      title: `Payment confirmed ${updatedOrder.order_number || updatedOrder.id}`,
+      message: `On-chain payment was confirmed for order ${updatedOrder.order_number || updatedOrder.id}.`,
+      href: `/admin/orders/${updatedOrder.id}`,
+      amount: updatedPayment.amount_expected_fiat,
+      metadata: {
+        paymentId: updatedPayment.id,
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.order_number,
+        paymentMethod: updatedPayment.payment_method,
+        txHash: updatedPayment.tx_hash,
+      },
+    });
+    await tryDispatchAdminNotification("payment.onchain_confirmed", {
+      entityId: updatedPayment.id,
+      title: `On-chain payment confirmed ${updatedOrder.order_number || updatedOrder.id}`,
+      message: `${updatedPayment.payment_method.toUpperCase()} payment confirmed on-chain.`,
+      href: `/admin/orders/${updatedOrder.id}`,
+      amount: updatedPayment.amount_expected_fiat,
+      metadata: {
+        paymentId: updatedPayment.id,
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.order_number,
+        paymentMethod: updatedPayment.payment_method,
+        txHash: updatedPayment.tx_hash,
+      },
+    });
 
     return NextResponse.json({
       verificationStatus: "paid",

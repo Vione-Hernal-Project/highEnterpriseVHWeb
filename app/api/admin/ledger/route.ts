@@ -4,7 +4,7 @@ import { getCurrentUserContext } from "@/lib/auth";
 import { loadAllocationLedgerSnapshot } from "@/lib/admin/allocation-ledger";
 import { getErrorMessage } from "@/lib/http";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { user, isManagementUser } = await getCurrentUserContext();
 
@@ -16,7 +16,10 @@ export async function GET() {
       return NextResponse.json({ error: "Management access required." }, { status: 403 });
     }
 
-    const snapshot = await loadAllocationLedgerSnapshot();
+    const { searchParams } = new URL(request.url);
+    const snapshot = await loadAllocationLedgerSnapshot({
+      date: searchParams.get("date"),
+    });
 
     return NextResponse.json(
       { snapshot },

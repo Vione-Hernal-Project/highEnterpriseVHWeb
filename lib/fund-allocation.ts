@@ -1,5 +1,5 @@
 import type { Database } from "@/lib/database.types";
-import { formatAmountWithUnit, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
+import { formatAmountWithUnit, getPaymentMethodConfig, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
 import { formatTransactionHash, formatWalletAddress } from "@/lib/utils";
 
 export type FundAllocationRuleRow = Database["public"]["Tables"]["fund_allocation_rules"]["Row"];
@@ -29,6 +29,14 @@ type SnapshotBreakdownItem = {
 
 export type AllocationLedgerSnapshot = {
   generatedAt: string;
+  selectedDate: {
+    value: string;
+    label: string;
+    isAll: boolean;
+    isToday: boolean;
+    todayValue: string;
+    transactionCount: number;
+  };
   summary: {
     totalReceived: number;
     totalReceivedLabel: string;
@@ -179,6 +187,23 @@ export type AllocationLedgerSnapshot = {
     lastPaymentAt: string | null;
     latestReference: string;
   }>;
+  ledgerTransactions: Array<{
+    id: string;
+    kind: "payment" | "cash-out";
+    href: string;
+    eyebrow: string;
+    title: string;
+    amountLabel: string;
+    methodLabel: string;
+    statusLabel: string;
+    occurredAt: string;
+    occurredAtLabel: string;
+    referenceLabel: string;
+    chainLabel: string;
+    walletLabel: string;
+    allocationSummary: string;
+    allocationCount: number;
+  }>;
   latestPayments: Array<{
     id: string;
     orderId: string | null;
@@ -264,10 +289,10 @@ export const PAYMENT_DISTRIBUTION_DETAILS: Record<
 };
 export const CURRENT_PAYMENT_MODE_OVERVIEW = [
   {
-    code: "metamask_wallet_checkout",
-    title: "MetaMask Wallet Checkout",
+    code: "multichain_wallet_checkout",
+    title: "MetaMask + Phantom Checkout",
     status: "Live",
-    description: "Current storefront checkout mode. A customer pays from MetaMask, the transfer is verified on-chain, and the ledger updates after the payment succeeds.",
+    description: "Current storefront checkout mode. A customer selects ETH, ERC-20 USDC/USDT, SOL, or SPL USDC/USDT, then the correct chain verifies before the ledger updates.",
   },
   {
     code: "admin_recorded_settlement",
@@ -433,16 +458,21 @@ export function resolveCashOutAssetAmount(payment: Pick<PaymentRow, "amount_expe
 }
 
 export function getPaymentSourceDescriptor(
-  payment: Pick<PaymentRow, "payment_method" | "tx_hash" | "wallet_address" | "recipient_address">,
+  payment: Pick<PaymentRow, "payment_method" | "tx_hash" | "signature" | "wallet_address" | "sender_wallet_address" | "recipient_address" | "wallet_provider">,
 ) {
   const methodLabel = getPaymentMethodLabel(payment.payment_method);
-  const hasWalletTrace = Boolean(payment.tx_hash || payment.wallet_address);
-  const channel = hasWalletTrace ? "MetaMask" : payment.payment_method === "mock" ? "Manual" : "Recorded";
+  const config = getPaymentMethodConfig(payment.payment_method);
+  const configuredProvider = config?.walletProvider === "phantom" ? "Phantom" : config?.walletProvider === "metamask" ? "MetaMask" : null;
+  const recordedProvider = payment.wallet_provider === "phantom" ? "Phantom" : payment.wallet_provider === "metamask" ? "MetaMask" : null;
+  const hasWalletTrace = Boolean(payment.tx_hash || payment.signature || payment.wallet_address || payment.sender_wallet_address);
+  const channel = hasWalletTrace ? recordedProvider || configuredProvider || "Wallet" : payment.payment_method === "mock" ? "Manual" : "Recorded";
   const title = `${channel} · ${methodLabel}`;
-  const detail = payment.wallet_address
-    ? formatWalletAddress(payment.wallet_address)
-    : payment.tx_hash
-      ? formatTransactionHash(payment.tx_hash)
+  const walletAddress = payment.sender_wallet_address || payment.wallet_address;
+  const reference = payment.signature || payment.tx_hash;
+  const detail = walletAddress
+    ? formatWalletAddress(walletAddress)
+    : reference
+      ? formatTransactionHash(reference)
       : payment.recipient_address
         ? `To ${formatWalletAddress(payment.recipient_address)}`
         : "No wallet trace";

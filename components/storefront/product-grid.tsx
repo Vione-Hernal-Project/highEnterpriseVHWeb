@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { memo, useEffect, useMemo } from "react";
 
 import { WishlistToggleButton } from "@/components/storefront/wishlist-toggle-button";
-import { featuredProducts, getCatalogPriceLabel, getCatalogProductPageHref, type CatalogProduct } from "@/lib/catalog";
+import { getCatalogPriceLabel, getCatalogProductPageHref, type CatalogProduct } from "@/lib/catalog";
 
 type Props = {
   ctaLabel?: string;
@@ -14,7 +14,7 @@ type Props = {
   showCta?: boolean;
 };
 
-function ProductGridComponent({ ctaLabel = "View This Piece", products = featuredProducts, showCta = true }: Props) {
+function ProductGridComponent({ ctaLabel = "View This Piece", products = [], showCta = true }: Props) {
   const router = useRouter();
   const productHrefs = useMemo(() => products.map((product) => getCatalogProductPageHref(product.id)), [products]);
 

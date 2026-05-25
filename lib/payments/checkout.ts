@@ -1,11 +1,12 @@
 import {
-  convertEthToPhpCents,
-  convertPhpCentsToEthAmount,
+  convertCryptoToPhpCents,
+  convertPhpCentsToCryptoAmount,
   formatPhpCurrencyFromCents,
-  isEthAmountAtLeast,
+  isCryptoAmountAtLeast,
   normalizePaymentAmount,
   parsePhpInputToCents,
 } from "@/lib/payments/amounts";
+import { getPaymentMethodConfig, getPaymentMethodLabel, type PaymentMethod } from "@/lib/payments/options";
 
 export type CheckoutAmountMode = "php" | "eth";
 
@@ -18,6 +19,10 @@ type CheckoutPricingLike = {
   totalPhpLabel?: string;
   phpPerEth: number;
   requiredEth: string;
+  cryptoSymbol?: string;
+  cryptoDecimals?: number;
+  phpPerCrypto?: number;
+  requiredCryptoAmount?: string;
 };
 
 export type CheckoutInputResolution =
@@ -28,6 +33,8 @@ export type CheckoutInputResolution =
       enteredPhpCents: number;
       enteredEthAmount: string;
       payableEthAmount: string;
+      enteredCryptoAmount: string;
+      payableCryptoAmount: string;
     }
   | {
       ok: false;
@@ -35,17 +42,23 @@ export type CheckoutInputResolution =
     };
 
 export function getDefaultCheckoutInput(mode: CheckoutAmountMode, pricing: CheckoutPricingLike) {
-  return mode === "php" ? pricing.totalPhp || pricing.subtotalPhp : pricing.requiredEth;
+  return mode === "php" ? pricing.totalPhp || pricing.subtotalPhp : pricing.requiredCryptoAmount || pricing.requiredEth;
 }
 
 export function resolveCheckoutInput(params: {
   amountMode: CheckoutAmountMode;
   enteredAmount: string | number;
   pricing: CheckoutPricingLike;
+  paymentMethod?: PaymentMethod | string;
 }): CheckoutInputResolution {
   const normalizedAmount = normalizePaymentAmount(params.enteredAmount);
   const payablePhpCents = params.pricing.totalPhpCents ?? params.pricing.subtotalPhpCents;
   const payablePhpLabel = params.pricing.totalPhpLabel ?? params.pricing.subtotalPhpLabel;
+  const config = getPaymentMethodConfig(params.paymentMethod || "evm_eth");
+  const symbol = params.pricing.cryptoSymbol || getPaymentMethodLabel(params.paymentMethod || "evm_eth");
+  const decimals = params.pricing.cryptoDecimals ?? config?.decimals ?? 18;
+  const phpPerCrypto = params.pricing.phpPerCrypto ?? params.pricing.phpPerEth;
+  const requiredCryptoAmount = params.pricing.requiredCryptoAmount ?? params.pricing.requiredEth;
 
   if (params.amountMode === "php") {
     const enteredPhpCents = parsePhpInputToCents(normalizedAmount);
@@ -53,11 +66,14 @@ export function resolveCheckoutInput(params: {
     if (enteredPhpCents < payablePhpCents) {
       return {
         ok: false,
-        error: `Insufficient payment amount. Please send at least ${payablePhpLabel} or ${params.pricing.requiredEth} ETH.`,
+        error: `Insufficient payment amount. Please send at least ${payablePhpLabel} or ${requiredCryptoAmount} ${symbol}.`,
       };
     }
 
-    const enteredEthAmount = convertPhpCentsToEthAmount(enteredPhpCents, params.pricing.phpPerEth);
+    const enteredEthAmount = convertPhpCentsToCryptoAmount(enteredPhpCents, phpPerCrypto, decimals);
+    const payableCryptoAmount = isCryptoAmountAtLeast(enteredEthAmount, requiredCryptoAmount, decimals)
+      ? enteredEthAmount
+      : requiredCryptoAmount;
 
     return {
       ok: true,
@@ -65,25 +81,31 @@ export function resolveCheckoutInput(params: {
       enteredAmountLabel: formatPhpCurrencyFromCents(enteredPhpCents),
       enteredPhpCents,
       enteredEthAmount,
-      payableEthAmount: enteredEthAmount,
+      payableEthAmount: payableCryptoAmount,
+      enteredCryptoAmount: enteredEthAmount,
+      payableCryptoAmount,
     };
   }
 
-  if (!isEthAmountAtLeast(normalizedAmount, params.pricing.requiredEth)) {
+  const amountIsEnough = isCryptoAmountAtLeast(normalizedAmount, requiredCryptoAmount, decimals);
+
+  if (!amountIsEnough) {
     return {
       ok: false,
-      error: `Insufficient payment amount. Please send at least ${params.pricing.requiredEth} ETH.`,
+      error: `Insufficient payment amount. Please send at least ${requiredCryptoAmount} ${symbol}.`,
     };
   }
 
-  const enteredPhpCents = convertEthToPhpCents(normalizedAmount, params.pricing.phpPerEth);
+  const enteredPhpCents = convertCryptoToPhpCents(normalizedAmount, phpPerCrypto);
 
   return {
     ok: true,
     enteredAmount: normalizedAmount,
-    enteredAmountLabel: `${normalizedAmount} ETH`,
+    enteredAmountLabel: `${normalizedAmount} ${symbol}`,
     enteredPhpCents,
     enteredEthAmount: normalizedAmount,
     payableEthAmount: normalizedAmount,
+    enteredCryptoAmount: normalizedAmount,
+    payableCryptoAmount: normalizedAmount,
   };
 }

@@ -178,6 +178,10 @@ export async function verifyEthereumMainnetTransfer(input: {
     throw new Error(setupError || "Unsupported payment method.");
   }
 
+  if (config.network !== "ethereum" || config.walletProvider !== "metamask") {
+    throw new Error("Please use Phantom for Solana payments.");
+  }
+
   const provider = await getEthereumMainnetProvider();
   const senderAddress = normalizeAddress(input.expectedSenderAddress, "Merchant wallet address is invalid.");
   const recipientAddress = normalizeAddress(input.expectedRecipientAddress, "Destination wallet address is invalid.");
@@ -274,7 +278,7 @@ export async function verifyEthereumMainnetTransfer(input: {
 
   const tokenAddress = normalizeAddress(
     config.tokenAddress || "",
-    `${config.label} token address is invalid. Update NEXT_PUBLIC_${config.label}_TOKEN_ADDRESS in .env.local.`,
+    `${config.label} token address is invalid. Update NEXT_PUBLIC_${config.label}_EVM_CONTRACT in .env.local.`,
   );
   const tokenContract = new Contract(tokenAddress, ERC20_PAYMENT_ABI, provider);
   const decimals = Number((await tokenContract.decimals().catch(() => config.decimals)) ?? config.decimals);
@@ -348,10 +352,14 @@ export async function verifyEthereumMainnetPayment(input: {
     throw new Error(setupError || "Unsupported payment method.");
   }
 
+  if (config.network !== "ethereum" || config.walletProvider !== "metamask") {
+    throw new Error("Please use Phantom for Solana payments.");
+  }
+
   const provider = await getEthereumMainnetProvider();
   const merchantAddress = normalizeAddress(
     input.expectedRecipientAddress || input.payment.recipient_address || serverEnv.merchantWalletAddress,
-    "Merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_WALLET_ADDRESS in .env.local.",
+    "Merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_EVM_WALLET in .env.local.",
   );
   const txHash = input.txHash.trim();
   const { transaction, receipt } = await loadTransactionState(provider, txHash);
@@ -409,19 +417,19 @@ export async function verifyEthereumMainnetPayment(input: {
     };
   }
 
+  if (input.expectedChainId && transaction.chainId && Number(transaction.chainId) !== input.expectedChainId) {
+    return {
+      status: "invalid",
+      txHash,
+      walletAddress: submittedWallet,
+      message: "Wrong network selected. Please switch to Ethereum mainnet.",
+      observedBlockAt,
+    };
+  }
+
   if (config.kind === "native") {
     const expectedAmount = parseUnits(normalizedExpectedAmount, config.decimals);
     const txRecipient = transaction.to ? normalizeAddress(transaction.to, "Transaction recipient is invalid.") : null;
-
-    if (input.expectedChainId && transaction.chainId && Number(transaction.chainId) !== input.expectedChainId) {
-      return {
-        status: "invalid",
-        txHash,
-        walletAddress: submittedWallet,
-        message: "This payment was not submitted on the expected Ethereum Mainnet chain.",
-        observedBlockAt,
-      };
-    }
 
     if (txRecipient !== merchantAddress) {
       logPaymentDebug("verify-invalid", {
@@ -457,7 +465,7 @@ export async function verifyEthereumMainnetPayment(input: {
       };
     }
 
-    if ((transaction.value ?? 0n) !== expectedAmount) {
+    if ((transaction.value ?? 0n) < expectedAmount) {
       logPaymentDebug("verify-invalid", {
         paymentId: input.payment.id,
         reason: "amount_mismatch",
@@ -469,7 +477,7 @@ export async function verifyEthereumMainnetPayment(input: {
         status: "invalid",
         txHash,
         walletAddress: submittedWallet,
-        message: `The transaction amount did not exactly match the amount required for this order's ${config.label} payment.`,
+        message: `The transaction did not send enough ${config.label} for this order.`,
         observedBlockAt,
       };
     }
@@ -495,7 +503,7 @@ export async function verifyEthereumMainnetPayment(input: {
 
   const tokenAddress = normalizeAddress(
     config.tokenAddress || "",
-    `${config.label} token address is invalid. Update NEXT_PUBLIC_${config.label}_TOKEN_ADDRESS in .env.local.`,
+    `${config.label} token address is invalid. Update NEXT_PUBLIC_${config.label}_EVM_CONTRACT in .env.local.`,
   );
   const tokenContract = new Contract(tokenAddress, ERC20_PAYMENT_ABI, provider);
   const decimals = Number((await tokenContract.decimals().catch(() => config.decimals)) ?? config.decimals);
@@ -562,7 +570,7 @@ export async function verifyEthereumMainnetPayment(input: {
     return total + nextValue;
   }, 0n);
 
-  if (transferredValue !== expectedAmount) {
+  if (transferredValue < expectedAmount) {
     logPaymentDebug("verify-invalid", {
       paymentId: input.payment.id,
       reason: "amount_mismatch",
@@ -575,7 +583,7 @@ export async function verifyEthereumMainnetPayment(input: {
       status: "invalid",
       txHash,
       walletAddress: submittedWallet,
-      message: `The transaction amount did not exactly match the amount required for this order's ${config.label} payment.`,
+      message: `The transaction did not send enough ${config.label} for this order.`,
       observedBlockAt,
     };
   }

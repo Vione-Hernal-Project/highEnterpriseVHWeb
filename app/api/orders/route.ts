@@ -1,23 +1,25 @@
 import { NextResponse } from "next/server";
 import { getAddress } from "ethers";
+import { PublicKey } from "@solana/web3.js";
 
 import { getCurrentUserContext } from "@/lib/auth";
-import { getEthereumMainnetRpcEnvError } from "@/lib/env/server";
+import { getEthereumMainnetRpcEnvError, getSolanaRpcEnvError } from "@/lib/env/server";
 import { sendOrderConfirmationEmail } from "@/lib/email";
+import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { generateOrderNumber } from "@/lib/orders";
 import { phpCentsToDecimalString } from "@/lib/payments/amounts";
 import { resolveCheckoutInput } from "@/lib/payments/checkout";
 import { logPaymentDebug } from "@/lib/payments/debug";
-import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
-import { getPaymentMethodSetupError } from "@/lib/payments/options";
+import { resolveMerchantWalletAddress, resolveSolanaMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
+import { getPaymentMethodConfig, getPaymentMethodLabel, getPaymentMethodSetupError } from "@/lib/payments/options";
 import { getBagCheckoutPricing } from "@/lib/payments/quotes";
 import { applyRateLimit, getClientIp } from "@/lib/security/rate-limit";
 import { buildNormalizedShippingAddress } from "@/lib/shipping";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseTableErrorMessage } from "@/lib/supabase/errors";
 import { orderSchema } from "@/lib/validations/order";
-import { ETHEREUM_MAINNET_CHAIN_ID } from "@/lib/web3/network";
+import { ETHEREUM_MAINNET_CHAIN_ID, SOLANA_MAINNET_CHAIN_ID } from "@/lib/web3/network";
 
 const ORDER_CREATION_WINDOW_MS = 10 * 60_000;
 const ORDER_CREATION_USER_LIMIT = 6;
@@ -137,20 +139,15 @@ export async function POST(request: Request) {
       );
     }
 
-    if (parsed.data.paymentMethod !== "eth") {
-      return NextResponse.json(
-        { error: "PHP-priced live checkout is currently available for ETH payments only." },
-        { status: 400 },
-      );
-    }
-
     const paymentSetupError = getPaymentMethodSetupError(parsed.data.paymentMethod);
 
     if (paymentSetupError) {
       return NextResponse.json({ error: paymentSetupError }, { status: 400 });
     }
 
-    const rpcSetupError = getEthereumMainnetRpcEnvError();
+    const paymentConfig = getPaymentMethodConfig(parsed.data.paymentMethod);
+    const isSolanaPayment = paymentConfig?.network === "solana";
+    const rpcSetupError = isSolanaPayment ? getSolanaRpcEnvError() : getEthereumMainnetRpcEnvError();
 
     if (rpcSetupError) {
       return NextResponse.json({ error: rpcSetupError }, { status: 400 });
@@ -177,6 +174,10 @@ export async function POST(request: Request) {
     const pricing = await getBagCheckoutPricing(requestedItems, {
       shippingAddress: shippingAddressInput,
       shippingMethodCode: parsed.data.shippingMethodCode,
+      paymentMethod: parsed.data.paymentMethod,
+      couponCode: parsed.data.couponCode,
+      userId: user.id,
+      customerEmail: user.email ?? null,
     });
 
     if (!pricing.isShippingResolved || !pricing.shippingMethodCode || pricing.shippingFeePhpCents === null) {
@@ -187,15 +188,19 @@ export async function POST(request: Request) {
       amountMode: parsed.data.amountMode,
       enteredAmount: parsed.data.enteredAmount,
       pricing,
+      paymentMethod: parsed.data.paymentMethod,
     });
 
     if (!resolvedInput.ok) {
       return NextResponse.json({ error: resolvedInput.error }, { status: 400 });
     }
 
-    const merchantWallet = await resolveMerchantWalletAddress();
+    const merchantWallet = isSolanaPayment ? await resolveSolanaMerchantWalletAddress() : await resolveMerchantWalletAddress();
     const admin = createSupabaseAdminClient();
-    const payerWalletAddress = getAddress(parsed.data.payerWalletAddress);
+    const payerWalletAddress = isSolanaPayment
+      ? new PublicKey(parsed.data.payerWalletAddress).toBase58()
+      : getAddress(parsed.data.payerWalletAddress);
+    const chainId = isSolanaPayment ? SOLANA_MAINNET_CHAIN_ID : ETHEREUM_MAINNET_CHAIN_ID;
     const abuseWindow = await loadOrderAbuseWindow(admin, user.id);
 
     if (abuseWindow.pendingOrdersCount >= MAX_PENDING_ORDERS_PER_USER) {
@@ -223,6 +228,15 @@ export async function POST(request: Request) {
     const orderProductName = pricing.itemCount === 1 ? primaryItem?.product.name || null : `${pricing.itemCount} items`;
     const orderSelectedSize = pricing.itemCount === 1 ? primaryItem?.selectedSize || null : null;
     const orderUnitPrice = pricing.itemCount === 1 ? primaryItem?.product.pricePhpCents || 0 : 0;
+    const attribution = parsed.data.attribution || {};
+    const attributionSource = attribution.source || attribution.utmSource || "online_store";
+    const attributionMedium = attribution.medium || attribution.utmMedium || "checkout";
+    const attributionCampaign = attribution.campaignName || attribution.utmCampaign || attribution.campaignId || null;
+    const orderAttribution = {
+      ...attribution,
+      source: attributionSource,
+      medium: attributionMedium,
+    };
 
     logPaymentDebug("order-create", {
       orderNumber,
@@ -234,25 +248,27 @@ export async function POST(request: Request) {
       paymentMethod: parsed.data.paymentMethod,
       subtotalPhp: pricing.subtotalPhp,
       shippingFeePhp: pricing.shippingFeePhp,
+      couponCode: pricing.couponCode,
+      discountPhp: pricing.discountPhp,
+      taxLabel: pricing.taxLabel,
+      taxPhp: pricing.taxPhp,
       shippingMethodCode: pricing.shippingMethodCode,
       shippingZone: pricing.shippingZone,
       totalPhp: pricing.totalPhp,
       requiredEth: pricing.requiredEth,
       enteredAmount: parsed.data.enteredAmount,
       amountMode: parsed.data.amountMode,
-      payableEthAmount: resolvedInput.payableEthAmount,
+      payableCryptoAmount: resolvedInput.payableCryptoAmount,
       payerWalletAddress,
       recipientAddress: merchantWallet.address,
       recipientSource: merchantWallet.source,
-      chainId: ETHEREUM_MAINNET_CHAIN_ID,
+      chainId,
     });
 
     // Order creation stays server-side so the browser never gets direct write
     // access to the protected commerce tables. The route is also rate-limited
     // here so checkout abuse controls stay aligned with the live server flow.
-    const { data: order, error: orderError } = await admin
-      .from("orders")
-      .insert({
+    const orderInsertPayload = {
         order_number: orderNumber,
         user_id: user.id,
         email: user.email ?? null,
@@ -272,15 +288,75 @@ export async function POST(request: Request) {
         shipping_zone: pricing.shippingZone,
         shipping_method: pricing.shippingMethodCode,
         shipping_fee: pricing.shippingFeePhp,
+        delivery_latitude: parsed.data.deliveryLatitude,
+        delivery_longitude: parsed.data.deliveryLongitude,
+        delivery_place_id: parsed.data.deliveryPlaceId,
+        delivery_map_provider: parsed.data.deliveryMapProvider,
+        delivery_address_components: parsed.data.deliveryAddressComponents || {},
         subtotal_amount: pricing.subtotalPhp,
+        tax_amount: pricing.taxPhp,
+        tax_rate_label: pricing.taxLabel,
+        tax_rate_percent: pricing.taxRatePercent.toString(),
+        tax_breakdown: {
+          ruleId: pricing.taxRuleId,
+          label: pricing.taxLabel,
+          ratePercent: pricing.taxRatePercent,
+          taxableAmountPhpCents: pricing.taxableAmountPhpCents,
+          taxableAmountPhp: pricing.taxableAmountPhp,
+          taxPhpCents: pricing.taxPhpCents,
+        },
+        ...(pricing.couponId
+          ? {
+              coupon_id: pricing.couponId,
+              coupon_code: pricing.couponCode,
+              discount_amount: pricing.discountPhp,
+              discount_breakdown: {
+                couponLabel: pricing.couponLabel,
+                productDiscountPhpCents: pricing.productDiscountPhpCents,
+                shippingDiscountPhpCents: pricing.shippingDiscountPhpCents,
+                totalBeforeDiscountPhpCents: pricing.totalBeforeDiscountPhpCents,
+              },
+            }
+          : {}),
         amount: pricing.totalPhp,
         currency: "PHP",
         status: "pending",
         notes: parsed.data.notes,
+        source: attributionSource,
+        medium: attributionMedium,
+        campaign_id: attribution.campaignId || null,
+        campaign_name: attributionCampaign,
+        utm_source: attribution.utmSource || null,
+        utm_medium: attribution.utmMedium || null,
+        utm_campaign: attribution.utmCampaign || null,
+        attribution_data: orderAttribution,
         confirmation_email_status: "pending",
-      })
+      };
+
+    let { data: order, error: orderError } = await admin
+      .from("orders")
+      .insert(orderInsertPayload)
       .select("*")
       .single();
+
+    if (orderError && /delivery_|tax_|schema cache|Could not find/i.test(orderError.message || "")) {
+      const {
+        delivery_latitude: _deliveryLatitude,
+        delivery_longitude: _deliveryLongitude,
+        delivery_place_id: _deliveryPlaceId,
+        delivery_map_provider: _deliveryMapProvider,
+        delivery_address_components: _deliveryAddressComponents,
+        tax_amount: _taxAmount,
+        tax_rate_label: _taxRateLabel,
+        tax_rate_percent: _taxRatePercent,
+        tax_breakdown: _taxBreakdown,
+        ...legacyOrderInsertPayload
+      } = orderInsertPayload;
+
+      const retryResult = await admin.from("orders").insert(legacyOrderInsertPayload).select("*").single();
+      order = retryResult.data;
+      orderError = retryResult.error;
+    }
 
     if (orderError || !order) {
       return NextResponse.json(
@@ -317,15 +393,29 @@ export async function POST(request: Request) {
         order_id: order.id,
         user_id: user.id,
         payment_method: parsed.data.paymentMethod,
+        payment_type: parsed.data.paymentMethod,
+        wallet_provider: paymentConfig?.walletProvider || null,
+        network: isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet",
+        token_type: paymentConfig?.tokenType || null,
+        token_standard: paymentConfig?.tokenStandard || null,
+        sender_wallet_address: payerWalletAddress,
         wallet_address: payerWalletAddress,
         recipient_address: merchantWallet.address,
-        chain_id: ETHEREUM_MAINNET_CHAIN_ID,
-        amount_expected: pricing.requiredEth,
+        chain_id: chainId,
+        amount_expected: pricing.requiredCryptoAmount,
         amount_expected_fiat: pricing.totalPhp,
         fiat_currency: "PHP",
-        conversion_rate: pricing.phpPerEth.toFixed(6),
+        conversion_rate: pricing.phpPerCrypto.toFixed(6),
+        usd_conversion_rate: pricing.usdPhpRate?.toFixed(6) ?? null,
+        coingecko_crypto_price: pricing.coingeckoCryptoUsdPrice?.toFixed(12) ?? null,
+        binance_crypto_price: pricing.binanceCryptoUsdPrice?.toFixed(12) ?? null,
+        price_difference_percent: pricing.priceDifferencePercent?.toFixed(6) ?? null,
+        slippage_buffer_percent: pricing.slippageBufferPercent.toFixed(4),
+        base_crypto_amount: pricing.baseCryptoAmount,
+        slippage_buffer_amount: pricing.slippageBufferAmount,
         quote_source: pricing.quoteSource,
         quote_updated_at: pricing.quoteUpdatedAt,
+        quote_expires_at: pricing.quoteExpiresAt,
         amount_received: null,
         status: "pending",
       })
@@ -357,6 +447,8 @@ export async function POST(request: Request) {
       shippingAddress: buildNormalizedShippingAddress(pricing.normalizedShippingAddress),
       shippingMethodLabel: pricing.shippingMethodLabel,
       shippingFee: pricing.shippingFeePhp,
+      taxLabel: pricing.taxLabel,
+      taxAmount: pricing.taxPhp,
     });
 
     const { data: orderWithConfirmation } = await admin
@@ -368,6 +460,22 @@ export async function POST(request: Request) {
       .eq("id", order.id)
       .select("*")
       .single();
+
+    await tryDispatchAdminNotification("order.new", {
+      entityId: order.id,
+      title: `New order ${order.order_number || order.id}`,
+      message: `${parsed.data.customerName} placed an order for PHP ${pricing.totalPhp}.`,
+      href: `/admin/orders/${order.id}`,
+      customerEmail: user.email ?? null,
+      customerName: parsed.data.customerName,
+      amount: pricing.totalPhp,
+      metadata: {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        paymentId: payment.id,
+        paymentMethod: parsed.data.paymentMethod,
+      },
+    });
 
     return NextResponse.json({
       order: orderWithConfirmation ?? {
@@ -381,26 +489,56 @@ export async function POST(request: Request) {
         subtotalPhpLabel: pricing.subtotalPhpLabel,
         shippingFeePhp: pricing.shippingFeePhp,
         shippingFeeLabel: pricing.shippingFeeLabel,
+        couponCode: pricing.couponCode,
+        couponLabel: pricing.couponLabel,
+        couponMessage: pricing.couponMessage,
+        discountPhp: pricing.discountPhp,
+        discountPhpLabel: pricing.discountPhpLabel,
+        taxLabel: pricing.taxLabel,
+        taxPhp: pricing.taxPhp,
+        taxPhpLabel: pricing.taxPhpLabel,
         shippingMethodCode: pricing.shippingMethodCode,
         shippingMethodLabel: pricing.shippingMethodLabel,
         shippingZone: pricing.shippingZone,
         shippingZoneLabel: pricing.shippingZoneLabel,
         totalPhp: pricing.totalPhp,
         totalPhpLabel: pricing.totalPhpLabel,
-        requiredEth: pricing.requiredEth,
-        requiredEthLabel: pricing.requiredEthLabel,
-        payableEthAmount: resolvedInput.payableEthAmount,
-        payableEthLabel: `${resolvedInput.payableEthAmount} ETH`,
+        requiredEth: pricing.requiredCryptoAmount,
+        requiredEthLabel: pricing.requiredCryptoLabel,
+        payableEthAmount: resolvedInput.payableCryptoAmount,
+        payableEthLabel: `${resolvedInput.payableCryptoAmount} ${getPaymentMethodLabel(parsed.data.paymentMethod)}`,
+        requiredCryptoAmount: pricing.requiredCryptoAmount,
+        requiredCryptoLabel: pricing.requiredCryptoLabel,
+        payableCryptoAmount: resolvedInput.payableCryptoAmount,
+        payableCryptoLabel: `${resolvedInput.payableCryptoAmount} ${getPaymentMethodLabel(parsed.data.paymentMethod)}`,
         amountMode: parsed.data.amountMode,
         enteredAmount: resolvedInput.enteredAmount,
         enteredAmountLabel: resolvedInput.enteredAmountLabel,
-        phpPerEth: pricing.phpPerEth.toFixed(6),
-        phpPerEthLabel: pricing.phpPerEthLabel,
+        phpPerEth: pricing.phpPerCrypto.toFixed(6),
+        phpPerEthLabel: pricing.phpPerCryptoLabel,
+        phpPerCrypto: pricing.phpPerCrypto.toFixed(6),
+        phpPerCryptoLabel: pricing.phpPerCryptoLabel,
+        cryptoSymbol: pricing.cryptoSymbol,
         quoteSource: pricing.quoteSource,
         quoteUpdatedAt: pricing.quoteUpdatedAt,
+        estimatedUsdLabel: pricing.estimatedUsdLabel,
+        estimatedUsdValue: pricing.estimatedUsdValue,
+        usdPhpRate: pricing.usdPhpRate,
+        baseCryptoAmount: pricing.baseCryptoAmount,
+        baseCryptoLabel: pricing.baseCryptoLabel,
+        slippageBufferPercent: pricing.slippageBufferPercent,
+        slippageBufferLabel: pricing.slippageBufferLabel,
+        slippageBufferAmount: pricing.slippageBufferAmount,
+        slippageBufferAmountLabel: pricing.slippageBufferAmountLabel,
+        networkFeeEstimateAmount: pricing.networkFeeEstimateAmount,
+        networkFeeEstimateLabel: pricing.networkFeeEstimateLabel,
+        networkFeeEstimateSymbol: pricing.networkFeeEstimateSymbol,
+        estimatedTotalLabel: pricing.estimatedTotalLabel,
+        quoteExpiresAt: pricing.quoteExpiresAt,
+        quoteTtlSeconds: pricing.quoteTtlSeconds,
       },
       recipientWalletAddress: merchantWallet.address,
-      chainId: ETHEREUM_MAINNET_CHAIN_ID,
+      chainId,
     });
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error, "Unable to create the order right now.") }, { status: 500 });
