@@ -294,7 +294,7 @@ export function WalletStatus() {
       ) : null}
 
       {!account && !error ? (
-        <span className="vh-wallet-note">
+        <span className="vh-wallet-note vh-wallet-note--availability">
           {solanaAccount ? "Solana Mainnet" : hasProvider ? "Wallet options available" : "Choose Ethereum or Solana"}
           {isLoading ? " · checking wallet" : ""}
         </span>

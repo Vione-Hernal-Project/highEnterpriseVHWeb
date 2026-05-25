@@ -5859,6 +5859,10 @@ textarea {
     text-align: center;
   }
 
+  .vh-mobile-header__wallet-shell .vh-wallet-note--availability {
+    justify-self: center;
+  }
+
   .vh-mobile-header__wallet-shell .vh-wallet-actions {
     justify-content: center;
   }
