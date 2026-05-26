@@ -22,11 +22,24 @@ type Props = {
   isManagementUser: boolean;
 };
 
+type MobileAuthState = {
+  signedIn: boolean;
+  isManagementUser: boolean;
+};
+
+const HEADER_AUTH_STATE_EVENT = "vh:auth-state";
+
 export function MobileHeader({ signedIn, isManagementUser }: Props) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [mobileAuthState, setMobileAuthState] = useState<MobileAuthState>({
+    signedIn,
+    isManagementUser,
+  });
   const [bagCount, setBagCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
+  const mobileSignedIn = mobileAuthState.signedIn;
+  const mobileIsManagementUser = mobileAuthState.isManagementUser;
 
   useEffect(() => {
     function syncCounts() {
@@ -40,7 +53,45 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
   }, []);
 
   useEffect(() => {
+    setMobileAuthState({
+      signedIn,
+      isManagementUser,
+    });
+  }, [isManagementUser, signedIn]);
+
+  useEffect(() => {
+    function handleAuthStateEvent(event: Event) {
+      const detail = (event as CustomEvent<Partial<MobileAuthState>>).detail;
+
+      if (!detail || typeof detail.signedIn !== "boolean") {
+        return;
+      }
+
+      const nextSignedIn = detail.signedIn;
+
+      setMobileAuthState((currentAuthState) => ({
+        signedIn: nextSignedIn,
+        isManagementUser:
+          typeof detail.isManagementUser === "boolean" ? detail.isManagementUser : currentAuthState.isManagementUser,
+      }));
+    }
+
+    window.addEventListener(HEADER_AUTH_STATE_EVENT, handleAuthStateEvent);
+
+    return () => {
+      window.removeEventListener(HEADER_AUTH_STATE_EVENT, handleAuthStateEvent);
+    };
+  }, []);
+
+  useEffect(() => {
     setIsOpen(false);
+
+    if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+      setMobileAuthState((currentAuthState) => ({
+        ...currentAuthState,
+        signedIn: true,
+      }));
+    }
   }, [pathname]);
 
   return (
@@ -113,9 +164,9 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
             <span>My Bag</span>
             <strong>{bagCount}</strong>
           </Link>
-          <Link className="vh-mobile-drawer__summary-link" href={signedIn ? "/dashboard" : "/sign-in"}>
-            <span>{signedIn ? "Account" : "Sign In"}</span>
-            <strong>{signedIn ? "Open" : "Enter"}</strong>
+          <Link className="vh-mobile-drawer__summary-link" href={mobileSignedIn ? "/dashboard" : "/sign-in"}>
+            <span>{mobileSignedIn ? "Account" : "Sign In"}</span>
+            <strong>{mobileSignedIn ? "Open" : "Enter"}</strong>
           </Link>
         </div>
 
@@ -148,10 +199,10 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
         <div className="vh-mobile-drawer__section">
           <p className="vh-mobile-drawer__label">Account</p>
           <div className="vh-mobile-drawer__account">
-            <Link className="vh-button vh-button--ghost" href={signedIn ? "/dashboard" : "/sign-in"}>
-              {signedIn ? "Open Account" : "Sign In"}
+            <Link className="vh-button vh-button--ghost" href={mobileSignedIn ? "/dashboard" : "/sign-in"}>
+              {mobileSignedIn ? "Open Account" : "Sign In"}
             </Link>
-            {signedIn ? (
+            {mobileSignedIn ? (
               <LogoutButton redirectTo="/" variant="button">
                 Log Out
               </LogoutButton>
@@ -161,7 +212,7 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
               </Link>
             )}
           </div>
-          {isManagementUser ? (
+          {mobileIsManagementUser ? (
             <div className="vh-mobile-drawer__management">
               <Link href="/admin">Admin Panel</Link>
               <Link href="/admin/orders">Orders</Link>

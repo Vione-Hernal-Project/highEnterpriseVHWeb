@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
 
 const ADMIN_WARM_ROUTES = [
   "/admin",
@@ -62,7 +63,7 @@ export function AdminRoutePrefetcher() {
     }
 
     prefetched.current.add(href);
-    router.prefetch(href);
+    router.prefetch(href, { kind: PrefetchKind.FULL });
   }, [pathname, router]);
 
   useEffect(() => {

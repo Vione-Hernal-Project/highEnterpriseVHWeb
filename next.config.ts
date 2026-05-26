@@ -22,6 +22,14 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: process.cwd(),
+  experimental: {
+    dynamicOnHover: true,
+    optimisticRouting: true,
+    staleTimes: {
+      dynamic: 300,
+      static: 300,
+    },
+  },
   images: {
     remotePatterns: [
       {

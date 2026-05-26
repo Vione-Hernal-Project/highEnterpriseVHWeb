@@ -110,18 +110,38 @@ export async function LandingPage() {
             </Link>
           </div>
           <div className="story-hero__spring-pane" aria-hidden="true">
-            <img className="story-hero__spring-image" src="/assets/images/model-6.png" alt="" role="presentation" width="1040" height="1401" />
+            <img className="story-hero__spring-image" src="/assets/images/women-editorial-model-k.png" alt="" role="presentation" width="668" height="891.29" />
           </div>
           <div className="story-hero__spring-copy">
             <h2 className="story-hero__spring-title">
-              ELEVATED TRANSACTIONS
-              <br />
-              MADE EFFORTLESS
+              <span className="story-hero__spring-copy-desktop">
+                WHAT YOU
+                <br />
+                WEAR IS A
+                <br />
+                REFLECTION OF
+                <br />
+                YOU
+              </span>
+              <span className="story-hero__spring-copy-mobile">
+                ELEVATED TRANSACTIONS
+                <br />
+                MADE EFFORTLESS
+              </span>
             </h2>
             <p className="story-hero__spring-description">
-              From selection to confirmation,
-              <br />
-              every step is designed with clarity, security, and intention.
+              <span className="story-hero__spring-copy-desktop">
+                Every detail speaks
+                <br />
+                quiet confidence,
+                <br />
+                elevated identity.
+              </span>
+              <span className="story-hero__spring-copy-mobile">
+                From selection to confirmation,
+                <br />
+                every step is designed with clarity, security, and intention.
+              </span>
             </p>
             <Link className="story-hero__spring-link" href="/dashboard">
               View Dashboard

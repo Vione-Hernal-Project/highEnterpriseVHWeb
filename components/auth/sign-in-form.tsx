@@ -13,6 +13,8 @@ type Props = {
   configError?: string | null;
 };
 
+const HEADER_AUTH_STATE_EVENT = "vh:auth-state";
+
 export function SignInForm({ nextPath, configError = null }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -52,11 +54,10 @@ export function SignInForm({ nextPath, configError = null }: Props) {
 
       const redirectTo = payload?.redirectTo || nextPath;
 
+      window.dispatchEvent(new CustomEvent(HEADER_AUTH_STATE_EVENT, { detail: { signedIn: true } }));
       router.replace(redirectTo);
-      router.refresh();
     } catch (error) {
       setMessage(getErrorMessage(error, "Unable to sign in right now."));
-    } finally {
       setLoading(false);
     }
   }

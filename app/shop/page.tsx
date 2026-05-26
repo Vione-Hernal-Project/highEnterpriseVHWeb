@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PaginatedProductCatalog } from "@/components/storefront/paginated-product-catalog";
+import type { CatalogProduct } from "@/lib/catalog";
 import {
   PRODUCT_CATEGORY_OPTIONS,
   PRODUCT_DEPARTMENT_OPTIONS,
-  getProductFilterSlug,
-  loadPublishedCatalogProductsPage,
+  loadPublishedCatalogProducts,
   resolveCategoryFilter,
   resolveDepartmentFilter,
 } from "@/lib/products";
@@ -25,20 +25,13 @@ type Props = {
   }>;
 };
 
-function buildShopHref(filters: { department?: string | null; category?: string | null }) {
-  const params = new URLSearchParams();
+function getFilteredProducts(products: CatalogProduct[], filters: { department?: string | null; category?: string | null }) {
+  return products.filter((product) => {
+    const departmentMatches = filters.department ? product.department === filters.department : true;
+    const categoryMatches = filters.category ? product.categoryLabel === filters.category : true;
 
-  if (filters.department) {
-    params.set("department", getProductFilterSlug(filters.department));
-  }
-
-  if (filters.category) {
-    params.set("category", getProductFilterSlug(filters.category));
-  }
-
-  const query = params.toString();
-
-  return query ? `/shop?${query}` : "/shop";
+    return departmentMatches && categoryMatches;
+  });
 }
 
 export default async function ShopPage({ searchParams }: Props) {
@@ -48,9 +41,9 @@ export default async function ShopPage({ searchParams }: Props) {
   const requestedCategory = resolveCategoryFilter(rawCategory);
   const activeCategory = requestedCategory && PRODUCT_CATEGORY_OPTIONS.some((category) => category === requestedCategory) ? requestedCategory : null;
   const activeFilterLabel = [activeDepartment, activeCategory].filter(Boolean).join(" / ");
-  const initialPage = await loadPublishedCatalogProductsPage({
-    offset: 0,
-    limit: 20,
+  const pageSize = 20;
+  const products = await loadPublishedCatalogProducts();
+  const filteredProducts = getFilteredProducts(products, {
     department: activeDepartment,
     category: activeCategory,
   });
@@ -80,54 +73,15 @@ export default async function ShopPage({ searchParams }: Props) {
           title: "Shop",
           copy: "Published collection",
         }}
-        initialHasMore={initialPage.hasMore}
-        initialProducts={initialPage.products}
-        initialTotal={initialPage.total}
-        toolbar={
-          <div className="vh-shop-filters">
-            <div className="vh-shop-filter-group">
-              <span className="vh-shop-filter-label">Department</span>
-              <div className="vh-shop-filter-links">
-                <Link
-                  className={`vh-shop-filter-chip ${!activeDepartment ? "vh-shop-filter-chip--active" : ""}`}
-                  href={buildShopHref({ category: activeCategory })}
-                >
-                  All
-                </Link>
-                {PRODUCT_DEPARTMENT_OPTIONS.map((department) => (
-                  <Link
-                    key={department}
-                    className={`vh-shop-filter-chip ${activeDepartment === department ? "vh-shop-filter-chip--active" : ""}`}
-                    href={buildShopHref({ department, category: null })}
-                  >
-                    {department}
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            <div className="vh-shop-filter-group">
-              <span className="vh-shop-filter-label">Category</span>
-              <div className="vh-shop-filter-links">
-                <Link
-                  className={`vh-shop-filter-chip ${!activeCategory ? "vh-shop-filter-chip--active" : ""}`}
-                  href={buildShopHref({ department: activeDepartment })}
-                >
-                  All
-                </Link>
-                {PRODUCT_CATEGORY_OPTIONS.map((category) => (
-                  <Link
-                    key={category}
-                    className={`vh-shop-filter-chip ${activeCategory === category ? "vh-shop-filter-chip--active" : ""}`}
-                    href={buildShopHref({ department: activeDepartment, category })}
-                  >
-                    {category}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        }
+        initialHasMore={filteredProducts.length > pageSize}
+        initialProducts={filteredProducts.slice(0, pageSize)}
+        initialTotal={filteredProducts.length}
+        pageSize={pageSize}
+        clientProducts={products}
+        shopFilters={{
+          categoryOptions: PRODUCT_CATEGORY_OPTIONS,
+          departmentOptions: PRODUCT_DEPARTMENT_OPTIONS,
+        }}
       />
     </section>
   );

@@ -20,7 +20,9 @@ type HeaderAuthState = {
   isManagementUser: boolean;
 };
 
-async function loadHeaderAuthState() {
+const HEADER_AUTH_STATE_EVENT = "vh:auth-state";
+
+async function loadHeaderAuthState({ userKnown = false } = {}) {
   if (!hasPublicSupabaseEnv()) {
     return {
       signedIn: false,
@@ -29,13 +31,16 @@ async function loadHeaderAuthState() {
   }
 
   const supabase = createSupabaseBrowserClient();
-  const { data } = await supabase.auth.getUser();
 
-  if (!data.user) {
-    return {
-      signedIn: false,
-      isManagementUser: false,
-    };
+  if (!userKnown) {
+    const { data } = await supabase.auth.getUser();
+
+    if (!data.user) {
+      return {
+        signedIn: false,
+        isManagementUser: false,
+      };
+    }
   }
 
   const profileResponse = await fetch("/api/profile", {
@@ -63,26 +68,73 @@ export function SiteHeader({ signedIn = false, isManagementUser = false }: Props
     }
 
     let cancelled = false;
+    let authRequestId = 0;
     const supabase = createSupabaseBrowserClient();
+    const resolveAuthState = (authStatePromise: Promise<HeaderAuthState>) => {
+      authRequestId += 1;
+      const requestId = authRequestId;
 
-    loadHeaderAuthState().then((nextAuthState) => {
-      if (!cancelled) {
-        setAuthState(nextAuthState);
-      }
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      loadHeaderAuthState().then((nextAuthState) => {
-        if (!cancelled) {
+      authStatePromise.then((nextAuthState) => {
+        if (!cancelled && requestId === authRequestId) {
           setAuthState(nextAuthState);
         }
       });
+    };
+
+    const handleAuthStateEvent = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<HeaderAuthState>>).detail;
+
+      if (!detail || typeof detail.signedIn !== "boolean") {
+        return;
+      }
+
+      authRequestId += 1;
+
+      if (!detail.signedIn) {
+        setAuthState({
+          signedIn: false,
+          isManagementUser: false,
+        });
+        return;
+      }
+
+      setAuthState((currentAuthState) => ({
+        signedIn: true,
+        isManagementUser:
+          typeof detail.isManagementUser === "boolean"
+            ? detail.isManagementUser
+            : currentAuthState.isManagementUser,
+      }));
+      resolveAuthState(loadHeaderAuthState({ userKnown: true }));
+    };
+
+    resolveAuthState(loadHeaderAuthState());
+    window.addEventListener(HEADER_AUTH_STATE_EVENT, handleAuthStateEvent);
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        setAuthState((currentAuthState) => ({
+          signedIn: true,
+          isManagementUser: currentAuthState.isManagementUser,
+        }));
+        resolveAuthState(loadHeaderAuthState({ userKnown: true }));
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        authRequestId += 1;
+        setAuthState({
+          signedIn: false,
+          isManagementUser: false,
+        });
+      }
     });
 
     return () => {
       cancelled = true;
+      window.removeEventListener(HEADER_AUTH_STATE_EVENT, handleAuthStateEvent);
       subscription.unsubscribe();
     };
   }, []);

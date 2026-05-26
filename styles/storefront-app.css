@@ -215,8 +215,8 @@
   position: absolute;
   top: 0;
   right: 0;
-  width: 49.55%;
-  height: 100%;
+  width: 668px;
+  height: 891.29px;
   overflow: hidden;
   z-index: 1;
   pointer-events: none;
@@ -269,6 +269,30 @@
   text-decoration: underline;
   text-underline-offset: 0.12em;
   pointer-events: auto;
+}
+
+.story-hero__spring-copy-desktop {
+  display: none;
+}
+
+@media (min-width: 769px) {
+  .vh-home-page .story-hero__spring-copy {
+    top: 3rem;
+    right: calc(668px - 2.25rem - 15.5rem);
+    left: auto;
+    z-index: 4;
+    color: #fff;
+    text-align: left;
+    text-shadow: 0 0.08rem 1rem rgba(0, 0, 0, 0.82), 0 0 0.14rem rgba(0, 0, 0, 0.72);
+  }
+
+  .story-hero__spring-copy-desktop {
+    display: inline;
+  }
+
+  .story-hero__spring-copy-mobile {
+    display: none;
+  }
 }
 
 .story-hero__split-video .heroslide__hotspots {
