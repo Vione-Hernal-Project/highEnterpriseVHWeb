@@ -6,7 +6,7 @@ const MOTION_ITEMS = [
   {
     panel: ".vh-home-page .story-hero__video-pane",
     overlay: ".vh-home-page .story-hero__copy-overlay",
-    topOffset: 24,
+    topOffset: 40,
     includePanelOffset: true,
   },
   {
