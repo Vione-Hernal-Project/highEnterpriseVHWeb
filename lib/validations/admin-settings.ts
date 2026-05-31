@@ -1,6 +1,12 @@
 import { z } from "zod";
 
+import { isAllowedBrandingAssetUrl } from "@/lib/security/asset-urls";
+
 const text = (max: number, message: string) => z.string().trim().max(max, message);
+const brandingAssetUrl = text(1000, "Branding asset URL is too long.").refine(
+  (value) => !value || isAllowedBrandingAssetUrl(value),
+  "Use an uploaded branding image or an approved site asset.",
+);
 
 const adminBranchLocationSchema = z.object({
   id: text(120, "Branch ID is too long."),
@@ -20,8 +26,8 @@ export const adminGeneralSettingsSchema = z
   tagline: text(180, "Tagline is too long."),
   storeEmail: text(160, "Store email is too long.").email("Store email must be valid."),
   phoneNumber: text(60, "Phone number is too long."),
-  logoUrl: text(1000, "Logo URL is too long."),
-  faviconUrl: text(1000, "Favicon URL is too long."),
+  logoUrl: brandingAssetUrl,
+  faviconUrl: brandingAssetUrl,
   brandingVersion: text(80, "Branding version is too long."),
   defaultCurrency: text(80, "Default currency is too long."),
   currencyPosition: text(80, "Currency position is too long."),

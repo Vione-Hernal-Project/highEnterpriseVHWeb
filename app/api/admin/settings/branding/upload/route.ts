@@ -4,40 +4,13 @@ import sharp from "sharp";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
+import { verifyUploadFile } from "@/lib/security/uploads";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const MAX_BRANDING_MEDIA_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_BRANDING_MEDIA_REQUEST_BYTES = 6 * 1024 * 1024;
 const BRANDING_MEDIA_UPLOAD_WINDOW_MS = 10 * 60_000;
 const BRANDING_MEDIA_UPLOAD_LIMIT = 30;
-const SUPPORTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"];
-
-function getFileExtension(fileName: string, fileType: string) {
-  const lastDot = fileName.lastIndexOf(".");
-  const extension = lastDot >= 0 ? fileName.slice(lastDot).replace(/[^a-zA-Z0-9.]/g, "") : "";
-
-  if (extension) {
-    return extension;
-  }
-
-  if (fileType === "image/svg+xml") {
-    return ".svg";
-  }
-
-  if (fileType === "image/png") {
-    return ".png";
-  }
-
-  if (fileType === "image/webp") {
-    return ".webp";
-  }
-
-  if (fileType === "image/x-icon" || fileType === "image/vnd.microsoft.icon") {
-    return ".ico";
-  }
-
-  return ".jpg";
-}
 
 function colorDistance(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number) {
   return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
@@ -216,19 +189,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Branding images must be 4 MB or smaller." }, { status: 413 });
     }
 
-    if (file.type && !SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-      return NextResponse.json({ error: "Only PNG, JPG, WEBP, SVG, and ICO image uploads are supported." }, { status: 400 });
+    const verifiedUpload = await verifyUploadFile(file, kind === "favicon" ? ["ico", "jpeg", "png", "webp"] : ["jpeg", "png", "webp"]);
+
+    if (!verifiedUpload) {
+      return NextResponse.json(
+        { error: kind === "favicon" ? "Only PNG, JPG, WEBP, and ICO favicon uploads are supported." : "Only PNG, JPG, and WEBP logo uploads are supported." },
+        { status: 400 },
+      );
     }
 
-    const fileName = typeof (file as { name?: unknown }).name === "string" ? (file as { name: string }).name : "upload";
-    const extension = getFileExtension(fileName, file.type);
-    const objectPath = `branding/${kind}-${Date.now()}-${crypto.randomUUID()}${extension}`;
     const admin = createSupabaseAdminClient();
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const logoBytes = kind === "logo" ? await createOptimizedLogo(bytes) : bytes;
-    const uploadContentType = kind === "logo" ? "image/png" : file.type || "application/octet-stream";
-    const uploadPath = kind === "logo" ? objectPath.replace(/\.[^.]+$/, ".png") : objectPath;
-    const { error: uploadError } = await admin.storage.from("product-media").upload(uploadPath, logoBytes, {
+    const uploadPath =
+      kind === "favicon" && verifiedUpload.kind === "ico"
+        ? `branding/favicon-${Date.now()}-${crypto.randomUUID()}.ico`
+        : `branding/${kind}-${Date.now()}-${crypto.randomUUID()}.png`;
+    const uploadBytes =
+      kind === "logo"
+        ? await createOptimizedLogo(verifiedUpload.bytes)
+        : verifiedUpload.kind === "ico"
+          ? verifiedUpload.bytes
+          : await createOptimizedFavicon(verifiedUpload.bytes);
+    const uploadContentType = uploadPath.endsWith(".ico") ? "image/x-icon" : "image/png";
+    const { error: uploadError } = await admin.storage.from("product-media").upload(uploadPath, uploadBytes, {
       cacheControl: "31536000",
       upsert: false,
       contentType: uploadContentType,
@@ -242,7 +224,7 @@ export async function POST(request: Request) {
     let faviconUrl = data.publicUrl;
 
     if (kind === "logo") {
-      const faviconBytes = await createOptimizedFavicon(bytes);
+      const faviconBytes = await createOptimizedFavicon(verifiedUpload.bytes);
       const faviconPath = `branding/favicon-${Date.now()}-${crypto.randomUUID()}.png`;
       const { error: faviconUploadError } = await admin.storage.from("product-media").upload(faviconPath, faviconBytes, {
         cacheControl: "31536000",

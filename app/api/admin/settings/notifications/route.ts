@@ -9,9 +9,12 @@ import { isMissingAdminSettingsTableError } from "@/lib/admin/settings";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { NOTIFICATION_EVENT_KEYS, type AdminNotificationSettings } from "@/lib/notifications/definitions";
+import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { adminNotificationSettingsSchema } from "@/lib/validations/admin-notifications";
 
 const ADMIN_NOTIFICATION_SETTINGS_BODY_LIMIT_BYTES = 64 * 1024;
+const ADMIN_NOTIFICATION_SETTINGS_WRITE_WINDOW_MS = 10 * 60_000;
+const ADMIN_NOTIFICATION_SETTINGS_WRITE_LIMIT = 30;
 
 function getSettingsStorageErrorResponse() {
   return NextResponse.json(
@@ -60,6 +63,22 @@ export async function PUT(request: Request) {
 
     if (bodySizeError) {
       return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const userRateLimit = await applyRateLimit({
+      key: `admin:settings:notifications:write:user:${user.id}`,
+      limit: ADMIN_NOTIFICATION_SETTINGS_WRITE_LIMIT,
+      windowMs: ADMIN_NOTIFICATION_SETTINGS_WRITE_WINDOW_MS,
+    });
+
+    if (!userRateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many notification settings update attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      );
     }
 
     const body = await request.json().catch(() => null);

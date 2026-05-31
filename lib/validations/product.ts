@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+import { isAllowedProductMediaUrl } from "@/lib/security/asset-urls";
+
+const productMediaUrlSchema = z
+  .string()
+  .trim()
+  .min(1, "Image URL is invalid.")
+  .max(4000, "Image URL is too long.")
+  .refine(isAllowedProductMediaUrl, "Use an uploaded image or an approved site asset.");
+
 const productSizeRowSchema = z.object({
   size: z
     .string()
@@ -22,16 +31,17 @@ export const adminProductSchema = z
     description: z.string().trim().min(1, "Description is required.").max(5000, "Description is too long."),
     department: z.string().trim().min(1, "Department is required.").max(120, "Department is too long."),
     categoryLabel: z.string().trim().min(1, "Category is required.").max(120, "Category is too long."),
-    mainImageUrl: z.string().trim().min(1, "Main image is required.").max(4000, "Main image URL is too long."),
+    mainImageUrl: productMediaUrlSchema,
     hoverImageUrl: z
       .string()
       .trim()
       .max(4000, "Hover image URL is too long.")
       .optional()
       .nullable()
-      .transform((value) => value?.trim() || null),
+      .transform((value) => value?.trim() || null)
+      .refine((value) => !value || isAllowedProductMediaUrl(value), "Use an uploaded hover image or an approved site asset."),
     galleryImageUrls: z
-      .array(z.string().trim().min(1, "Gallery image URL is invalid.").max(4000, "Gallery image URL is too long."))
+      .array(productMediaUrlSchema)
       .max(10, "Gallery images are limited to 10.")
       .default([]),
     sizeInventoryRows: z.array(productSizeRowSchema).min(1, "Add at least one size and stock row."),
