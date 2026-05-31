@@ -4,13 +4,22 @@ import { getCurrentUserContext } from "@/lib/auth";
 import { normalizeCollectionSlug } from "@/lib/collections";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
-import { sanitizeStoragePathSegment, verifyUploadFile } from "@/lib/security/uploads";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const MAX_COLLECTION_MEDIA_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_COLLECTION_MEDIA_REQUEST_BYTES = 12 * 1024 * 1024;
 const COLLECTION_MEDIA_UPLOAD_WINDOW_MS = 10 * 60_000;
 const COLLECTION_MEDIA_UPLOAD_LIMIT = 40;
+
+function sanitizePathSegment(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-");
+}
+
+function getFileExtension(fileName: string) {
+  const lastDot = fileName.lastIndexOf(".");
+
+  return lastDot >= 0 ? fileName.slice(lastDot).replace(/[^a-zA-Z0-9.]/g, "") : "";
+}
 
 export async function POST(request: Request) {
   try {
@@ -48,7 +57,7 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get("file");
-    const collectionSlug = sanitizeStoragePathSegment(normalizeCollectionSlug(String(formData.get("slug") || "")));
+    const collectionSlug = sanitizePathSegment(normalizeCollectionSlug(String(formData.get("slug") || "")));
 
     if (!(file instanceof Blob) || file.size <= 0) {
       return NextResponse.json({ error: "Choose an image file to upload." }, { status: 400 });
@@ -62,18 +71,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Collection slug is required before uploading images." }, { status: 400 });
     }
 
-    const verifiedUpload = await verifyUploadFile(file, ["jpeg", "png", "webp"]);
-
-    if (!verifiedUpload) {
-      return NextResponse.json({ error: "Only PNG, JPG, and WEBP image uploads are supported." }, { status: 400 });
+    if (file.type && !file.type.startsWith("image/")) {
+      return NextResponse.json({ error: "Only image uploads are supported." }, { status: 400 });
     }
 
-    const objectPath = `collections/${collectionSlug}/image-${Date.now()}-${crypto.randomUUID()}${verifiedUpload.extension}`;
+    const fileName = typeof (file as { name?: unknown }).name === "string" ? (file as { name: string }).name : "upload";
+    const extension = getFileExtension(fileName);
+
+    if (file.type === "image/svg+xml" || extension.toLowerCase() === ".svg") {
+      return NextResponse.json({ error: "SVG uploads are not supported for collection media." }, { status: 400 });
+    }
+
+    const objectPath = `collections/${collectionSlug}/image-${Date.now()}-${crypto.randomUUID()}${extension}`;
     const admin = createSupabaseAdminClient();
-    const { error: uploadError } = await admin.storage.from("product-media").upload(objectPath, verifiedUpload.bytes, {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const { error: uploadError } = await admin.storage.from("product-media").upload(objectPath, bytes, {
       cacheControl: "3600",
       upsert: false,
-      contentType: verifiedUpload.contentType,
+      contentType: file.type || "application/octet-stream",
     });
 
     if (uploadError) {

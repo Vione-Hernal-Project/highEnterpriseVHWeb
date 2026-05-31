@@ -1,5 +1,8 @@
 import "server-only";
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
 import { getCatalogSubtotalPhpCents, getProductAvailableSizes, type CatalogProduct } from "@/lib/catalog";
 import { DEFAULT_GENERAL_SETTINGS, loadFreshAdminGeneralSettings, type AdminGeneralSettings } from "@/lib/admin/settings";
 import {
@@ -34,6 +37,7 @@ const STALE_QUOTE_TTL_MS = 15 * 60_000;
 const DEFAULT_QUOTE_TTL_SECONDS = 60;
 const DEFAULT_PRICE_DIFF_TOLERANCE_PERCENT = 2;
 const DEFAULT_SLIPPAGE_BUFFER_PERCENT = 1.5;
+const execFileAsync = promisify(execFile);
 
 export type EthPhpQuote = {
   phpPerEth: number;
@@ -401,6 +405,34 @@ function isRetryableTransportError(error: unknown) {
   );
 }
 
+async function parseJsonResponse<T>(responseText: string, errorMessage: string) {
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    throw new Error(errorMessage);
+  }
+}
+
+async function fetchJsonViaCurl<T>(url: string, headers: Record<string, string>, errorMessage: string) {
+  const args = ["-fsSL", "--connect-timeout", "10", "--max-time", "15"];
+
+  for (const [headerName, headerValue] of Object.entries(headers)) {
+    args.push("-H", `${headerName}: ${headerValue}`);
+  }
+
+  args.push(url);
+
+  try {
+    const { stdout } = await execFileAsync("curl", args, {
+      maxBuffer: 1024 * 1024,
+    });
+
+    return await parseJsonResponse<T>(stdout, errorMessage);
+  } catch (error) {
+    throw new Error(getErrorMessage(error, errorMessage));
+  }
+}
+
 async function fetchJsonWithTransportFallback<T>(url: string, headers: Record<string, string>, errorMessage: string) {
   try {
     const response = await fetch(url, {
@@ -414,14 +446,16 @@ async function fetchJsonWithTransportFallback<T>(url: string, headers: Record<st
 
     return (await response.json()) as T;
   } catch (error) {
-    if (isRetryableTransportError(error)) {
-      logPaymentDebug("quote-fetch-transport-error", {
-        error: getErrorMessage(error, errorMessage),
-        url,
-      });
+    if (!isRetryableTransportError(error)) {
+      throw error;
     }
 
-    throw error;
+    logPaymentDebug("quote-fetch-curl-fallback", {
+      error: getErrorMessage(error, errorMessage),
+      url,
+    });
+
+    return fetchJsonViaCurl<T>(url, headers, errorMessage);
   }
 }
 

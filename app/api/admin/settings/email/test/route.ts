@@ -5,11 +5,8 @@ import { loadFreshAdminGeneralSettings } from "@/lib/admin/settings";
 import { getCurrentUserContext } from "@/lib/auth";
 import { sendAdminTestEmail } from "@/lib/email";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
-import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 
 const TEST_EMAIL_BODY_LIMIT_BYTES = 8 * 1024;
-const TEST_EMAIL_WINDOW_MS = 10 * 60_000;
-const TEST_EMAIL_LIMIT = 10;
 
 const emailSettingsPayloadSchema = z.object({
   fromName: z.string().trim().max(120, "From name is too long."),
@@ -40,22 +37,6 @@ export async function POST(request: Request) {
 
     if (bodySizeError) {
       return NextResponse.json({ error: bodySizeError }, { status: 413 });
-    }
-
-    const userRateLimit = await applyRateLimit({
-      key: `admin:settings:email-test:user:${user.id}`,
-      limit: TEST_EMAIL_LIMIT,
-      windowMs: TEST_EMAIL_WINDOW_MS,
-    });
-
-    if (!userRateLimit.allowed) {
-      return NextResponse.json(
-        { error: "Too many test emails were requested from this admin account. Please wait a few minutes and try again." },
-        {
-          status: 429,
-          headers: buildRateLimitHeaders(userRateLimit.resetAt),
-        },
-      );
     }
 
     const body = await request.json().catch(() => null);

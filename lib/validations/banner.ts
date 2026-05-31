@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { isAllowedProductMediaUrl } from "@/lib/security/asset-urls";
-
 const optionalTextSchema = (max: number, message: string) =>
   z
     .string()
@@ -15,11 +13,11 @@ const optionalUrlSchema = z
   .string()
   .trim()
   .max(1000, "URL is too long.")
+  .url("URL is invalid.")
   .optional()
   .nullable()
   .or(z.literal(""))
-  .transform((value) => value?.trim() || null)
-  .refine((value) => !value || isAllowedProductMediaUrl(value), "Use an uploaded image or an approved site asset.");
+  .transform((value) => value?.trim() || null);
 
 const optionalLinkSchema = z
   .string()
