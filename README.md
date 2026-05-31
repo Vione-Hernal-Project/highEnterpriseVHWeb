@@ -49,6 +49,7 @@ lib/
   email.ts
   orders.ts
 docs/
+  vione-hernal-product-vision-roadmap.md
   supabase-auth-setup.md
 public/
   assets/
