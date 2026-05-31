@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { useStorefrontSettings } from "@/components/site/storefront-settings-context";
 import { getBagCount, getWishlistCount, subscribeToStorefrontState } from "@/lib/storefront/storage";
 
 export function HeaderStoreLinks() {
+  const { enableWishlist } = useStorefrontSettings();
   const [wishlistCount, setWishlistCount] = useState(0);
   const [bagCount, setBagCount] = useState(0);
 
@@ -22,9 +24,11 @@ export function HeaderStoreLinks() {
 
   return (
     <>
-      <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
-        <Link href="/wishlist">Wish List ({wishlistCount})</Link>
-      </li>
+      {enableWishlist ? (
+        <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
+          <Link href="/wishlist">Wish List ({wishlistCount})</Link>
+        </li>
+      ) : null}
       <li className="global-header__secondary-nav-list-item global-header__secondary-responsive-margin">
         <Link href="/bag">My Bag ({bagCount})</Link>
       </li>

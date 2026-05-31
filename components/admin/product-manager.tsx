@@ -878,7 +878,12 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
               <p className="vh-mvp-eyebrow">Existing Products</p>
               <h2 className="h3 u-margin-b--none">Select To Edit</h2>
             </div>
-            <span style={{ color: "#6c6c6c", fontSize: "0.8rem" }}>{products.length} total</span>
+            <div className="vh-product-picker-header-actions">
+              <Link className="vh-product-picker-catalog-link" href="/admin/products/catalog">
+                View Catalog
+              </Link>
+              <span style={{ color: "#6c6c6c", fontSize: "0.8rem" }}>{products.length} total</span>
+            </div>
           </div>
 
           <div className="vh-product-picker vh-product-picker--scroll">

@@ -3,6 +3,7 @@
 import { Heart } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { useStorefrontSettings } from "@/components/site/storefront-settings-context";
 import { readWishlistProductIds, subscribeToStorefrontState, toggleWishlistProduct } from "@/lib/storefront/storage";
 
 type Props = {
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export function WishlistToggleButton({ productId, productName }: Props) {
+  const { enableWishlist } = useStorefrontSettings();
   const [wishlisted, setWishlisted] = useState(false);
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export function WishlistToggleButton({ productId, productName }: Props) {
     return subscribeToStorefrontState(syncWishlistedState);
   }, [productId]);
 
-  return (
+  return enableWishlist ? (
     <button
       type="button"
       className={`storefront-app-wishlist-button ${wishlisted ? "is-active" : ""}`}
@@ -38,5 +40,5 @@ export function WishlistToggleButton({ productId, productName }: Props) {
         <Heart />
       </span>
     </button>
-  );
+  ) : null;
 }

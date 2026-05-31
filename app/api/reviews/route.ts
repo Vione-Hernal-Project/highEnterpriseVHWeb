@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 
+import { DEFAULT_GENERAL_SETTINGS, loadFreshAdminGeneralSettings } from "@/lib/admin/settings";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import {
@@ -29,6 +30,12 @@ function getReviewStorageErrorResponse() {
 
 export async function POST(request: Request) {
   try {
+    const settings = await loadFreshAdminGeneralSettings().catch(() => DEFAULT_GENERAL_SETTINGS);
+
+    if (!settings.enableReviews) {
+      return NextResponse.json({ error: "Product reviews are currently unavailable." }, { status: 403 });
+    }
+
     const { user } = await getCurrentUserContext();
 
     if (!user) {

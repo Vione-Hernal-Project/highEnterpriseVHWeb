@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAddress } from "ethers";
 import { PublicKey } from "@solana/web3.js";
 
+import { DEFAULT_GENERAL_SETTINGS, loadFreshAdminGeneralSettings } from "@/lib/admin/settings";
 import { getCurrentUserContext } from "@/lib/auth";
 import { getEthereumMainnetRpcEnvError, getSolanaRpcEnvError } from "@/lib/env/server";
 import { sendOrderConfirmationEmail } from "@/lib/email";
@@ -87,6 +88,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const settings = await loadFreshAdminGeneralSettings().catch(() => DEFAULT_GENERAL_SETTINGS);
+
+    if (!settings.enableStore) {
+      return NextResponse.json({ error: "The online store is currently under maintenance." }, { status: 503 });
+    }
+
     const { user } = await getCurrentUserContext();
 
     if (!user) {

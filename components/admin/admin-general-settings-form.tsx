@@ -6,10 +6,24 @@ import { ChangeEvent, FormEvent, useRef, useState, type ReactNode } from "react"
 import { BRANDING_UPDATED_EVENT } from "@/components/branding/branding-assets";
 import type { AdminGeneralSettings } from "@/lib/admin/settings";
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
+import { broadcastStorefrontSettings, type StorefrontPublicSettings } from "@/lib/storefront/settings-live-sync";
 
 type Props = {
   initialSettings: AdminGeneralSettings;
 };
+
+type OtherSettingsKey = "enableStore" | "allowCustomerRegistration" | "enableReviews" | "enableWishlist";
+
+function getStorefrontPublicSettings(settings: AdminGeneralSettings): StorefrontPublicSettings {
+  return {
+    storeName: settings.storeName,
+    storeEmail: settings.storeEmail,
+    enableStore: settings.enableStore,
+    allowCustomerRegistration: settings.allowCustomerRegistration,
+    enableReviews: settings.enableReviews,
+    enableWishlist: settings.enableWishlist,
+  };
+}
 
 function Field({
   label,
@@ -46,11 +60,13 @@ function ToggleRow({
   label,
   copy,
   enabled,
+  disabled = false,
   onChange,
 }: {
   label: string;
   copy: string;
   enabled: boolean;
+  disabled?: boolean;
   onChange: (enabled: boolean) => void;
 }) {
   return (
@@ -64,6 +80,8 @@ function ToggleRow({
         type="button"
         role="switch"
         aria-checked={enabled}
+        aria-busy={disabled}
+        disabled={disabled}
         onClick={() => onChange(!enabled)}
       >
         <i />
@@ -85,8 +103,10 @@ export function AdminGeneralSettingsForm({ initialSettings }: Props) {
   const [settings, setSettings] = useState(initialSettings);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [uploading, setUploading] = useState(false);
+  const [savingToggleKey, setSavingToggleKey] = useState<OtherSettingsKey | null>(null);
   const [error, setError] = useState("");
   const brandAssetInputRef = useRef<HTMLInputElement | null>(null);
+  const otherSettingsDisabled = Boolean(savingToggleKey) || status === "saving";
 
   function update<K extends keyof AdminGeneralSettings>(key: K, value: AdminGeneralSettings[K]) {
     setSettings((current) => ({ ...current, [key]: value }));
@@ -110,10 +130,51 @@ export function AdminGeneralSettingsForm({ initialSettings }: Props) {
 
     if (payload?.settings) {
       setSettings(payload.settings);
+      broadcastStorefrontSettings(getStorefrontPublicSettings(payload.settings));
     }
 
     setStatus("saved");
     window.dispatchEvent(new Event(BRANDING_UPDATED_EVENT));
+  }
+
+  async function saveOtherSetting(key: OtherSettingsKey, value: boolean) {
+    if (savingToggleKey || status === "saving") {
+      return;
+    }
+
+    const previousSettings = settings;
+    const nextSettings = { ...previousSettings, [key]: value };
+
+    setSettings(nextSettings);
+    setSavingToggleKey(key);
+    setStatus("saving");
+    setError("");
+
+    try {
+      const response = await fetch("/api/admin/settings/general", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      const payload = await readJsonSafely<{ error?: string; settings?: AdminGeneralSettings }>(response);
+
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to save settings."));
+      }
+
+      const savedSettings = payload?.settings || nextSettings;
+
+      setSettings(savedSettings);
+      broadcastStorefrontSettings(getStorefrontPublicSettings(savedSettings));
+      setStatus("saved");
+      window.dispatchEvent(new Event(BRANDING_UPDATED_EVENT));
+    } catch (saveError) {
+      setSettings(previousSettings);
+      setStatus("idle");
+      setError(getErrorMessage(saveError, "Unable to save settings."));
+    } finally {
+      setSavingToggleKey(null);
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -239,10 +300,10 @@ export function AdminGeneralSettingsForm({ initialSettings }: Props) {
 
       <section className="vh-admin-panel">
         <h2>Other Settings</h2>
-        <ToggleRow label="Enable Store" copy="Make your store visible to customers" enabled={settings.enableStore} onChange={(value) => update("enableStore", value)} />
-        <ToggleRow label="Allow Customer Registration" copy="Allow customers to create an account" enabled={settings.allowCustomerRegistration} onChange={(value) => update("allowCustomerRegistration", value)} />
-        <ToggleRow label="Enable Reviews" copy="Allow customers to write product reviews" enabled={settings.enableReviews} onChange={(value) => update("enableReviews", value)} />
-        <ToggleRow label="Enable Wishlist" copy="Allow customers to add products to wishlist" enabled={settings.enableWishlist} onChange={(value) => update("enableWishlist", value)} />
+        <ToggleRow label="Enable Store" copy="Make your store visible to customers" enabled={settings.enableStore} disabled={otherSettingsDisabled} onChange={(value) => void saveOtherSetting("enableStore", value)} />
+        <ToggleRow label="Allow Customer Registration" copy="Allow customers to create an account" enabled={settings.allowCustomerRegistration} disabled={otherSettingsDisabled} onChange={(value) => void saveOtherSetting("allowCustomerRegistration", value)} />
+        <ToggleRow label="Enable Reviews" copy="Allow customers to write product reviews" enabled={settings.enableReviews} disabled={otherSettingsDisabled} onChange={(value) => void saveOtherSetting("enableReviews", value)} />
+        <ToggleRow label="Enable Wishlist" copy="Allow customers to add products to wishlist" enabled={settings.enableWishlist} disabled={otherSettingsDisabled} onChange={(value) => void saveOtherSetting("enableWishlist", value)} />
       </section>
 
       <section className="vh-admin-panel">

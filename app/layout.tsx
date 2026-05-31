@@ -8,7 +8,7 @@ import { BrandingFaviconUpdater } from "@/components/branding/branding-assets";
 import { CookieConsent } from "@/components/cookie-consent/CookieConsent";
 import { MarketingAttributionCapture } from "@/components/marketing/marketing-attribution-capture";
 import { SiteFrame } from "@/components/site/site-frame";
-import { loadPublicBrandingSettings, versionAssetUrl } from "@/lib/admin/settings";
+import { loadPublicBrandingSettings, loadPublicStorefrontSettings, versionAssetUrl } from "@/lib/admin/settings";
 import { JsonLd, organizationJsonLd, siteName, siteUrl, siteDomain, officialOnlineStoreTitle, defaultSeoDescription } from "@/lib/seo";
 import Script from "next/script";
 
@@ -105,7 +105,9 @@ const cookieConsentBootstrap = `
   })();
 `;
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const storefrontSettings = await loadPublicStorefrontSettings();
+
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <head>
@@ -137,7 +139,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   `}
         </Script>
         <JsonLd data={organizationJsonLd()} />
-        <SiteFrame>{children}</SiteFrame>
+        <SiteFrame storefrontSettings={storefrontSettings}>{children}</SiteFrame>
         <BrandingFaviconUpdater />
         <Suspense fallback={null}>
           <MarketingAttributionCapture />

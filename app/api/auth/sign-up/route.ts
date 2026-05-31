@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
+import { DEFAULT_GENERAL_SETTINGS, loadFreshAdminGeneralSettings } from "@/lib/admin/settings";
 import { getPasswordStrengthError, getPasswordStrengthInputs, passwordStrengthRules } from "@/lib/auth/password-strength";
 import { resolveAuthRedirectUrl } from "@/lib/auth/redirect-url";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
@@ -44,6 +45,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to the deployment environment." },
         { status: 500 },
+      );
+    }
+
+    const settings = await loadFreshAdminGeneralSettings().catch(() => DEFAULT_GENERAL_SETTINGS);
+
+    if (!settings.allowCustomerRegistration) {
+      return NextResponse.json(
+        { error: "Customer registration is currently unavailable." },
+        { status: 403 },
       );
     }
 

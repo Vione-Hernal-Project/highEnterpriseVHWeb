@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ProductDetailView } from "@/components/storefront/product-detail-view";
+import { loadPublicStorefrontSettings } from "@/lib/admin/settings";
 import { getCatalogProductPageHref } from "@/lib/catalog";
 import { loadPublishedCatalogProduct, loadPublishedCatalogProducts } from "@/lib/products";
 import { loadApprovedProductReviews } from "@/lib/reviews";
@@ -42,10 +43,11 @@ export default async function ProductPage({ params }: Props) {
     notFound();
   }
 
+  const settings = await loadPublicStorefrontSettings();
   const relatedProducts = (await loadPublishedCatalogProducts())
     .filter((candidate) => candidate.id !== product.id && candidate.categoryLabel === product.categoryLabel)
     .slice(0, 3);
-  const reviews = await loadApprovedProductReviews(product.id);
+  const reviews = settings.enableReviews ? await loadApprovedProductReviews(product.id) : [];
 
   return (
     <>

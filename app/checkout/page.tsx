@@ -5,9 +5,14 @@ import { requireUser } from "@/lib/auth";
 import { loadPublishedCatalogProducts } from "@/lib/products";
 
 export default async function CheckoutPage() {
+  const checkoutSettings = await loadFreshAdminGeneralSettings().catch(() => DEFAULT_CHECKOUT_AVAILABILITY_SETTINGS);
+
+  if ("enableStore" in checkoutSettings && !checkoutSettings.enableStore) {
+    return null;
+  }
+
   const { user } = await requireUser();
   const products = await loadPublishedCatalogProducts();
-  const checkoutSettings = await loadFreshAdminGeneralSettings().catch(() => DEFAULT_CHECKOUT_AVAILABILITY_SETTINGS);
 
   return (
     <section className="storefront-app-view vh-checkout-page">

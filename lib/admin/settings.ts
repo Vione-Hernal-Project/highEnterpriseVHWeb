@@ -253,6 +253,25 @@ export async function loadFreshAdminGeneralSettings() {
 }
 
 export type PublicBrandingSettings = Pick<AdminGeneralSettings, "storeName" | "logoUrl" | "faviconUrl" | "brandingVersion">;
+export type PublicStorefrontSettings = Pick<
+  AdminGeneralSettings,
+  "storeName" | "storeEmail" | "enableStore" | "allowCustomerRegistration" | "enableReviews" | "enableWishlist"
+>;
+
+function getPublicStorefrontSettings(settings: AdminGeneralSettings): PublicStorefrontSettings {
+  return {
+    storeName: settings.storeName,
+    storeEmail: settings.storeEmail,
+    enableStore: settings.enableStore,
+    allowCustomerRegistration: settings.allowCustomerRegistration,
+    enableReviews: settings.enableReviews,
+    enableWishlist: settings.enableWishlist,
+  };
+}
+
+function getDefaultPublicStorefrontSettings(): PublicStorefrontSettings {
+  return getPublicStorefrontSettings(DEFAULT_GENERAL_SETTINGS);
+}
 
 export function versionAssetUrl(url: string, version: string) {
   if (!url || version === "default") {
@@ -281,5 +300,25 @@ export async function loadPublicBrandingSettings(): Promise<PublicBrandingSettin
       faviconUrl: DEFAULT_GENERAL_SETTINGS.faviconUrl,
       brandingVersion: DEFAULT_GENERAL_SETTINGS.brandingVersion,
     };
+  }
+}
+
+export async function loadPublicStorefrontSettings(): Promise<PublicStorefrontSettings> {
+  try {
+    const settings = await loadAdminGeneralSettings();
+
+    return getPublicStorefrontSettings(settings);
+  } catch {
+    return getDefaultPublicStorefrontSettings();
+  }
+}
+
+export async function loadFreshPublicStorefrontSettings(): Promise<PublicStorefrontSettings> {
+  try {
+    const settings = await loadFreshAdminGeneralSettings();
+
+    return getPublicStorefrontSettings(settings);
+  } catch {
+    return getDefaultPublicStorefrontSettings();
   }
 }

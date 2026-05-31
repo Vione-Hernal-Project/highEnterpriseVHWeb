@@ -7,6 +7,7 @@ import { Menu, ShoppingBag, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { useStorefrontSettings } from "@/components/site/storefront-settings-context";
 import { getBagCount, getWishlistCount, subscribeToStorefrontState } from "@/lib/storefront/storage";
 
 const MobileWalletStatus = dynamic(
@@ -30,6 +31,7 @@ type MobileAuthState = {
 const HEADER_AUTH_STATE_EVENT = "vh:auth-state";
 
 export function MobileHeader({ signedIn, isManagementUser }: Props) {
+  const { enableWishlist } = useStorefrontSettings();
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [mobileAuthState, setMobileAuthState] = useState<MobileAuthState>({
@@ -156,10 +158,12 @@ export function MobileHeader({ signedIn, isManagementUser }: Props) {
         </div>
 
         <div className="vh-mobile-drawer__section vh-mobile-drawer__section--summary">
-          <Link className="vh-mobile-drawer__summary-link" href="/wishlist">
-            <span>Wishlist</span>
-            <strong>{wishlistCount}</strong>
-          </Link>
+          {enableWishlist ? (
+            <Link className="vh-mobile-drawer__summary-link" href="/wishlist">
+              <span>Wishlist</span>
+              <strong>{wishlistCount}</strong>
+            </Link>
+          ) : null}
           <Link className="vh-mobile-drawer__summary-link" href="/bag">
             <span>My Bag</span>
             <strong>{bagCount}</strong>

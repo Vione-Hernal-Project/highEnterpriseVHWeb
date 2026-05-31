@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { DEFAULT_GENERAL_SETTINGS, loadFreshAdminGeneralSettings } from "@/lib/admin/settings";
 import { loadPublishedCatalogProductsPage, resolveCategoryFilter, resolveDepartmentFilter } from "@/lib/products";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -17,6 +18,20 @@ function getSafeInteger(value: string | null, fallback: number) {
 
 export async function GET(request: Request) {
   try {
+    const settings = await loadFreshAdminGeneralSettings().catch(() => DEFAULT_GENERAL_SETTINGS);
+
+    if (!settings.enableStore) {
+      return NextResponse.json(
+        {
+          error: "The online store is currently under maintenance.",
+          products: [],
+          hasMore: false,
+          total: 0,
+        },
+        { status: 503 },
+      );
+    }
+
     const url = new URL(request.url);
     const offset = getSafeInteger(url.searchParams.get("offset"), 0);
     const requestedLimit = getSafeInteger(url.searchParams.get("limit"), DEFAULT_PAGE_SIZE);

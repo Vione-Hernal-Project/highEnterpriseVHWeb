@@ -70,3 +70,14 @@ export const adminGeneralSettingsSchema = z
       path: ["vat12Enabled"],
     },
   );
+
+export const adminGeneralOtherSettingsPatchSchema = z
+  .object({
+    enableStore: z.boolean().optional(),
+    allowCustomerRegistration: z.boolean().optional(),
+    enableReviews: z.boolean().optional(),
+    enableWishlist: z.boolean().optional(),
+  })
+  .refine((settings) => Object.values(settings).some((value) => typeof value === "boolean"), {
+    message: "Choose at least one setting to update.",
+  });
