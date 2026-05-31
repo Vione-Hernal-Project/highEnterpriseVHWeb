@@ -11308,6 +11308,13 @@ label.vh-admin-toggle-row input:checked + span::after,
   gap: 0.45rem;
 }
 
+.vh-admin-row-actions--orders {
+  display: grid;
+  grid-template-columns: auto minmax(12.5rem, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+}
+
 .vh-admin-row-actions .vh-actions,
 .vh-admin-row-actions [style*="margin-top"] {
   margin-top: 0 !important;
@@ -11331,6 +11338,101 @@ label.vh-admin-toggle-row input:checked + span::after,
 .vh-admin-view-button {
   min-height: 2.25rem;
   padding: 0 0.78rem;
+}
+
+.vh-admin-orders-table__actions-cell {
+  width: 18.5rem;
+  min-width: 18.5rem;
+}
+
+.vh-admin-order-status-form {
+  margin-top: 1rem;
+}
+
+.vh-admin-order-status-form__controls {
+  margin-top: 0;
+}
+
+.vh-admin-order-status-form__status {
+  margin-top: 0.75rem;
+}
+
+.vh-admin-order-status-form--table {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__controls {
+  display: grid;
+  grid-template-columns: minmax(7.3rem, 1fr) auto;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__select {
+  min-width: 0;
+  min-height: 2.15rem;
+  height: 2.15rem;
+  padding: 0 0.7rem;
+  border-color: var(--admin-line);
+  border-radius: 7px;
+  color: #252a38;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__select:disabled {
+  border-color: #e4e8f0;
+  background: #f8fafc;
+  color: #88909f;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__button {
+  min-height: 2.15rem;
+  padding: 0 0.66rem;
+  border-color: #e0e4ec;
+  border-radius: 7px;
+  box-shadow: none;
+  color: #3e4655;
+  font-size: 0.67rem;
+  letter-spacing: 0.1em;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__button:disabled {
+  border-color: #e5e8ef;
+  background: #f8fafc;
+  color: #9aa1ad;
+  opacity: 1;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__helper {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.15rem;
+  color: #7b8291;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.28;
+  white-space: nowrap;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__feedback {
+  display: block;
+  margin-top: 0.3rem;
+  color: #7b8291;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.28;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__feedback--error {
+  color: #b33c53;
+}
+
+.vh-admin-order-status-form--table .vh-admin-order-status-form__feedback--success {
+  color: #22734f;
 }
 
 .vh-admin-icon-button {

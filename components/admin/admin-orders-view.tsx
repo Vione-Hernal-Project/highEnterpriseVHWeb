@@ -679,8 +679,8 @@ export function AdminOrdersView({ rows, role, canUpdateOrders, canViewPaymentDet
                     </td>
                     <td><AdminStatusBadge tone={getStatusTone(row.status)}>{row.status}</AdminStatusBadge></td>
                     <td><AdminStatusBadge tone={row.status === "paid" ? "shipped" : "pending"}>{row.status === "paid" ? "Ready" : "Pending"}</AdminStatusBadge></td>
-                    <td>
-                      <div className="vh-admin-row-actions">
+                    <td className="vh-admin-orders-table__actions-cell">
+                      <div className="vh-admin-row-actions vh-admin-row-actions--orders">
                         <Link className="vh-admin-view-button" href={row.detailHref}>
                           View
                         </Link>
@@ -689,6 +689,7 @@ export function AdminOrdersView({ rows, role, canUpdateOrders, canViewPaymentDet
                             orderId={row.id}
                             initialStatus={row.initialStatus}
                             allowedStatuses={role === "orders_manager" ? ["pending", "cancelled"] : undefined}
+                            variant="table"
                           />
                         ) : null}
                       </div>
