@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { Save } from "lucide-react";
 
+import { AdminNotificationHistoryList } from "@/components/admin/admin-notification-history-list";
 import {
   groupNotificationEventKeys,
   NOTIFICATION_EVENT_DEFINITIONS,
@@ -68,22 +70,6 @@ function ToggleButton({
 
 function getSettingsKey(settings: AdminNotificationSettings) {
   return JSON.stringify(settings);
-}
-
-function formatNotificationDate(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown time";
-  }
-
-  return new Intl.DateTimeFormat("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
 }
 
 export function AdminNotificationSettingsSaveButton() {
@@ -325,32 +311,14 @@ function updateRule(eventKey: NotificationEventKey, channel: NotificationChannel
       </section>
 
       <section className="vh-admin-panel vh-admin-panel--wide">
-        <h2>Notification History</h2>
-        <p className="vh-admin-panel-copy">Recent notification records created from real store events.</p>
-        {historyRows.length ? (
-          <div className="vh-admin-notification-history">
-            {historyRows.map((row) => (
-              <article className="vh-admin-notification-history__item" key={row.id}>
-                <span className="vh-admin-notification-history__meta">
-                  <strong>{row.channel.toUpperCase()}</strong>
-                  <i>{row.status}</i>
-                  <small>{formatNotificationDate(row.createdAt)}</small>
-                </span>
-                <span>
-                  <strong>{row.title}</strong>
-                  <small>{row.type}</small>
-                  <p>{row.message}</p>
-                  {row.errorMessage ? <em>{row.errorMessage}</em> : null}
-                </span>
-              </article>
-            ))}
+        <div className="vh-admin-panel__header">
+          <div>
+            <h2>Notification History</h2>
+            <p>Recent notification records created from real store events.</p>
           </div>
-        ) : (
-          <div className="vh-admin-empty-inline">
-            <strong>No notification records yet.</strong>
-            <p>Order, payment, inventory, customer, and security events will appear here once triggered.</p>
-          </div>
-        )}
+          <Link href="/admin/settings/notifications/history">View All</Link>
+        </div>
+        <AdminNotificationHistoryList rows={historyRows} />
       </section>
 
       {status === "saving" ? <p className="vh-admin-panel-copy vh-admin-panel--wide">Saving notification settings...</p> : null}

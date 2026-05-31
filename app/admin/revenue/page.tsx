@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
 
-export default function AdminRevenuePage() {
+import { requireAdminArea } from "@/lib/auth";
+
+export default async function AdminRevenuePage() {
+  await requireAdminArea("reports");
   redirect("/admin/analytics");
 }

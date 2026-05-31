@@ -13,7 +13,21 @@ $$;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
-  role text not null default 'user' check (role in ('user', 'staff', 'admin', 'owner')),
+  role text not null default 'user' check (
+    role in (
+      'user',
+      'super_admin',
+      'full_admin',
+      'product_manager',
+      'orders_manager',
+      'customer_support',
+      'marketing_content_manager',
+      'finance_ledger',
+      'staff',
+      'admin',
+      'owner'
+    )
+  ),
   wallet_address text null,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -27,7 +41,21 @@ alter table public.profiles add column if not exists updated_at timestamptz not 
 
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles
-add constraint profiles_role_check check (role in ('user', 'staff', 'admin', 'owner'));
+add constraint profiles_role_check check (
+  role in (
+    'user',
+    'super_admin',
+    'full_admin',
+    'product_manager',
+    'orders_manager',
+    'customer_support',
+    'marketing_content_manager',
+    'finance_ledger',
+    'staff',
+    'admin',
+    'owner'
+  )
+);
 
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
@@ -1684,7 +1712,17 @@ create index if not exists payments_order_id_idx on public.payments (order_id);
 create index if not exists payments_status_idx on public.payments (status);
 create index if not exists payments_chain_id_idx on public.payments (chain_id);
 create index if not exists orders_product_id_idx on public.orders (product_id);
+update public.payments
+set tx_hash = lower(trim(tx_hash))
+where tx_hash is not null
+  and tx_hash ~* '^0x[0-9a-f]{64}$'
+  and tx_hash <> lower(trim(tx_hash));
+
 create unique index if not exists payments_tx_hash_unique_idx on public.payments (tx_hash) where tx_hash is not null;
+create unique index if not exists payments_evm_tx_hash_lower_unique_idx
+on public.payments (lower(tx_hash))
+where tx_hash is not null
+  and tx_hash ~* '^0x[0-9a-f]{64}$';
 create index if not exists payment_allocations_payment_id_idx on public.payment_allocations (payment_id);
 create index if not exists payment_allocations_code_idx on public.payment_allocations (allocation_code);
 create unique index if not exists payment_allocations_payment_code_unique_idx on public.payment_allocations (payment_id, allocation_code);
@@ -1696,6 +1734,20 @@ create index if not exists admin_cash_out_breakdowns_code_idx on public.admin_ca
 
 do $$
 begin
+  if exists (
+    select 1
+    from pg_publication
+    where pubname = 'supabase_realtime'
+  ) and not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'profiles'
+  ) then
+    alter publication supabase_realtime add table public.profiles;
+  end if;
+
   if exists (
     select 1
     from pg_publication
@@ -1873,6 +1925,82 @@ begin
 end;
 $$;
 
+create or replace function public.current_admin_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when role in ('owner', 'super_admin') then 'super_admin'
+    when role in ('admin', 'full_admin') then 'full_admin'
+    when role = 'staff' then 'orders_manager'
+    when role in ('product_manager', 'orders_manager', 'customer_support', 'marketing_content_manager', 'finance_ledger') then role
+    else null
+  end
+  from public.profiles
+  where id = auth.uid()
+  limit 1;
+$$;
+
+create or replace function public.has_admin_access(access_area text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  admin_role text := public.current_admin_role();
+begin
+  if admin_role = 'super_admin' then
+    return true;
+  end if;
+
+  if admin_role = 'full_admin' then
+    return access_area in (
+      'dashboard',
+      'orders',
+      'orders:write',
+      'products',
+      'collections',
+      'customers',
+      'payments',
+      'ledger',
+      'reports',
+      'coupons',
+      'marketing',
+      'content',
+      'reviews',
+      'settings'
+    );
+  end if;
+
+  if admin_role = 'product_manager' then
+    return access_area in ('products', 'collections');
+  end if;
+
+  if admin_role = 'orders_manager' then
+    return access_area in ('orders', 'orders:write');
+  end if;
+
+  if admin_role = 'customer_support' then
+    return access_area in ('orders', 'customers');
+  end if;
+
+  if admin_role = 'marketing_content_manager' then
+    return access_area in ('coupons', 'marketing', 'content');
+  end if;
+
+  if admin_role = 'finance_ledger' then
+    return access_area in ('payments', 'ledger', 'reports');
+  end if;
+
+  return false;
+end;
+$$;
+
 create or replace function public.is_management_user()
 returns boolean
 language sql
@@ -1880,12 +2008,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select exists (
-    select 1
-    from public.profiles
-    where id = auth.uid()
-      and role in ('admin', 'owner')
-  );
+  select public.has_admin_access('dashboard');
 $$;
 
 create or replace function public.rebuild_payment_allocations(target_payment_id uuid)
@@ -2190,8 +2313,8 @@ declare
   bucket_record record;
   inserted_cash_out public.admin_cash_outs%rowtype;
 begin
-  if not public.is_management_user() then
-    raise exception 'Management access required.';
+  if not public.has_admin_access('ledger') then
+    raise exception 'Ledger access required.';
   end if;
 
   if p_request_id is null then
@@ -2784,7 +2907,7 @@ drop policy if exists "profiles_select_management" on public.profiles;
 create policy "profiles_select_management"
 on public.profiles
 for select
-using (public.is_management_user());
+using (public.has_admin_access('admin-settings'));
 
 drop policy if exists "profiles_insert_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
@@ -2793,20 +2916,20 @@ drop policy if exists "customers_select_management" on public.customers;
 create policy "customers_select_management"
 on public.customers
 for select
-using (public.is_management_user());
+using (public.has_admin_access('customers'));
 
 drop policy if exists "customers_insert_management" on public.customers;
 create policy "customers_insert_management"
 on public.customers
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('customers'));
 
 drop policy if exists "customers_update_management" on public.customers;
 create policy "customers_update_management"
 on public.customers
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('customers'))
+with check (public.has_admin_access('customers'));
 
 drop policy if exists "products_select_published" on public.products;
 create policy "products_select_published"
@@ -2818,20 +2941,20 @@ drop policy if exists "products_select_management" on public.products;
 create policy "products_select_management"
 on public.products
 for select
-using (public.is_management_user());
+using (public.has_admin_access('products'));
 
 drop policy if exists "products_insert_management" on public.products;
 create policy "products_insert_management"
 on public.products
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('products'));
 
 drop policy if exists "products_update_management" on public.products;
 create policy "products_update_management"
 on public.products
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('products'))
+with check (public.has_admin_access('products'));
 
 drop policy if exists "collections_select_active" on public.collections;
 create policy "collections_select_active"
@@ -2843,77 +2966,77 @@ drop policy if exists "collections_select_management" on public.collections;
 create policy "collections_select_management"
 on public.collections
 for select
-using (public.is_management_user());
+using (public.has_admin_access('collections'));
 
 drop policy if exists "collections_insert_management" on public.collections;
 create policy "collections_insert_management"
 on public.collections
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('collections'));
 
 drop policy if exists "collections_update_management" on public.collections;
 create policy "collections_update_management"
 on public.collections
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('collections'))
+with check (public.has_admin_access('collections'));
 
 drop policy if exists "admin_settings_select_management" on public.admin_settings;
 create policy "admin_settings_select_management"
 on public.admin_settings
 for select
-using (public.is_management_user());
+using (public.has_admin_access('settings'));
 
 drop policy if exists "admin_settings_insert_management" on public.admin_settings;
 create policy "admin_settings_insert_management"
 on public.admin_settings
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('settings'));
 
 drop policy if exists "admin_settings_update_management" on public.admin_settings;
 create policy "admin_settings_update_management"
 on public.admin_settings
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('settings'))
+with check (public.has_admin_access('settings'));
 
 drop policy if exists "admin_notifications_select_management" on public.admin_notifications;
 create policy "admin_notifications_select_management"
 on public.admin_notifications
 for select
-using (public.is_management_user());
+using (public.has_admin_access('settings'));
 
 drop policy if exists "admin_notifications_insert_management" on public.admin_notifications;
 create policy "admin_notifications_insert_management"
 on public.admin_notifications
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('settings'));
 
 drop policy if exists "admin_notifications_update_management" on public.admin_notifications;
 create policy "admin_notifications_update_management"
 on public.admin_notifications
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('settings'))
+with check (public.has_admin_access('settings'));
 
 drop policy if exists "campaigns_select_management" on public.campaigns;
 create policy "campaigns_select_management"
 on public.campaigns
 for select
-using (public.is_management_user());
+using (public.has_admin_access('marketing'));
 
 drop policy if exists "campaigns_insert_management" on public.campaigns;
 create policy "campaigns_insert_management"
 on public.campaigns
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('marketing'));
 
 drop policy if exists "campaigns_update_management" on public.campaigns;
 create policy "campaigns_update_management"
 on public.campaigns
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('marketing'))
+with check (public.has_admin_access('marketing'));
 
 drop policy if exists "orders_select_own" on public.orders;
 create policy "orders_select_own"
@@ -2925,7 +3048,7 @@ drop policy if exists "orders_select_management" on public.orders;
 create policy "orders_select_management"
 on public.orders
 for select
-using (public.is_management_user());
+using (public.has_admin_access('orders'));
 
 drop policy if exists "order_items_select_own" on public.order_items;
 create policy "order_items_select_own"
@@ -2944,7 +3067,7 @@ drop policy if exists "order_items_select_management" on public.order_items;
 create policy "order_items_select_management"
 on public.order_items
 for select
-using (public.is_management_user());
+using (public.has_admin_access('orders'));
 
 drop policy if exists "reviews_select_approved" on public.reviews;
 create policy "reviews_select_approved"
@@ -2956,20 +3079,20 @@ drop policy if exists "reviews_select_management" on public.reviews;
 create policy "reviews_select_management"
 on public.reviews
 for select
-using (public.is_management_user());
+using (public.has_admin_access('reviews'));
 
 drop policy if exists "reviews_insert_management" on public.reviews;
 create policy "reviews_insert_management"
 on public.reviews
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('reviews'));
 
 drop policy if exists "reviews_update_management" on public.reviews;
 create policy "reviews_update_management"
 on public.reviews
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('reviews'))
+with check (public.has_admin_access('reviews'));
 
 drop policy if exists "blog_posts_select_published" on public.blog_posts;
 create policy "blog_posts_select_published"
@@ -2985,20 +3108,20 @@ drop policy if exists "blog_posts_select_management" on public.blog_posts;
 create policy "blog_posts_select_management"
 on public.blog_posts
 for select
-using (public.is_management_user());
+using (public.has_admin_access('content'));
 
 drop policy if exists "blog_posts_insert_management" on public.blog_posts;
 create policy "blog_posts_insert_management"
 on public.blog_posts
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('content'));
 
 drop policy if exists "blog_posts_update_management" on public.blog_posts;
 create policy "blog_posts_update_management"
 on public.blog_posts
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('content'))
+with check (public.has_admin_access('content'));
 
 drop policy if exists "site_pages_select_published" on public.site_pages;
 create policy "site_pages_select_published"
@@ -3010,20 +3133,20 @@ drop policy if exists "site_pages_select_management" on public.site_pages;
 create policy "site_pages_select_management"
 on public.site_pages
 for select
-using (public.is_management_user());
+using (public.has_admin_access('content'));
 
 drop policy if exists "site_pages_insert_management" on public.site_pages;
 create policy "site_pages_insert_management"
 on public.site_pages
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('content'));
 
 drop policy if exists "site_pages_update_management" on public.site_pages;
 create policy "site_pages_update_management"
 on public.site_pages
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('content'))
+with check (public.has_admin_access('content'));
 
 drop policy if exists "banners_select_public_active" on public.banners;
 create policy "banners_select_public_active"
@@ -3052,20 +3175,20 @@ drop policy if exists "banners_select_management" on public.banners;
 create policy "banners_select_management"
 on public.banners
 for select
-using (public.is_management_user());
+using (public.has_admin_access('content'));
 
 drop policy if exists "banners_insert_management" on public.banners;
 create policy "banners_insert_management"
 on public.banners
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('content'));
 
 drop policy if exists "banners_update_management" on public.banners;
 create policy "banners_update_management"
 on public.banners
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('content'))
+with check (public.has_admin_access('content'));
 
 drop policy if exists "coupons_select_active" on public.coupons;
 create policy "coupons_select_active"
@@ -3081,20 +3204,20 @@ drop policy if exists "coupons_select_management" on public.coupons;
 create policy "coupons_select_management"
 on public.coupons
 for select
-using (public.is_management_user());
+using (public.has_admin_access('coupons'));
 
 drop policy if exists "coupons_insert_management" on public.coupons;
 create policy "coupons_insert_management"
 on public.coupons
 for insert
-with check (public.is_management_user());
+with check (public.has_admin_access('coupons'));
 
 drop policy if exists "coupons_update_management" on public.coupons;
 create policy "coupons_update_management"
 on public.coupons
 for update
-using (public.is_management_user())
-with check (public.is_management_user());
+using (public.has_admin_access('coupons'))
+with check (public.has_admin_access('coupons'));
 
 drop policy if exists "coupon_redemptions_select_own" on public.coupon_redemptions;
 create policy "coupon_redemptions_select_own"
@@ -3106,7 +3229,7 @@ drop policy if exists "coupon_redemptions_select_management" on public.coupon_re
 create policy "coupon_redemptions_select_management"
 on public.coupon_redemptions
 for select
-using (public.is_management_user());
+using (public.has_admin_access('coupons'));
 
 drop policy if exists "payments_select_own" on public.payments;
 create policy "payments_select_own"
@@ -3118,31 +3241,31 @@ drop policy if exists "payments_select_management" on public.payments;
 create policy "payments_select_management"
 on public.payments
 for select
-using (public.is_management_user());
+using (public.has_admin_access('payments'));
 
 drop policy if exists "fund_allocation_rules_select_management" on public.fund_allocation_rules;
 create policy "fund_allocation_rules_select_management"
 on public.fund_allocation_rules
 for select
-using (public.is_management_user());
+using (public.has_admin_access('ledger'));
 
 drop policy if exists "payment_allocations_select_management" on public.payment_allocations;
 create policy "payment_allocations_select_management"
 on public.payment_allocations
 for select
-using (public.is_management_user());
+using (public.has_admin_access('ledger'));
 
 drop policy if exists "admin_cash_outs_select_management" on public.admin_cash_outs;
 create policy "admin_cash_outs_select_management"
 on public.admin_cash_outs
 for select
-using (public.is_management_user());
+using (public.has_admin_access('ledger'));
 
 drop policy if exists "admin_cash_out_breakdowns_select_management" on public.admin_cash_out_breakdowns;
 create policy "admin_cash_out_breakdowns_select_management"
 on public.admin_cash_out_breakdowns
 for select
-using (public.is_management_user());
+using (public.has_admin_access('ledger'));
 
 grant select on public.fund_allocation_rules to authenticated;
 grant select on public.payment_allocations to authenticated;
@@ -3153,6 +3276,8 @@ grant select on public.admin_settings to authenticated;
 grant select, insert, update on public.admin_notifications to authenticated;
 grant select on public.campaigns to authenticated;
 grant select on public.order_items to authenticated;
+grant execute on function public.current_admin_role() to authenticated;
+grant execute on function public.has_admin_access(text) to authenticated;
 grant select on public.reviews to anon;
 grant select on public.reviews to authenticated;
 grant select on public.blog_posts to anon;

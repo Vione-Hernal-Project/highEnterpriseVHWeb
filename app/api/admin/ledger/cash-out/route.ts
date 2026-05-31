@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAddress } from "ethers";
 
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { loadAllocationLedgerSnapshot } from "@/lib/admin/allocation-ledger";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { resolveMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
@@ -218,14 +219,14 @@ async function recordLegacyAdminCashOut(params: {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser, supabase } = await getCurrentUserContext();
+    const { user, role, supabase } = await getCurrentUserContext();
 
     if (!user || !supabase) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "dashboard")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_CASH_OUT_BODY_LIMIT_BYTES);

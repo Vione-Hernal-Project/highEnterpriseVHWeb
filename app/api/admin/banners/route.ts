@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { BANNER_CACHE_TAG, isMissingBannersTableError } from "@/lib/banners";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -48,14 +49,14 @@ function getBannerStorageErrorResponse() {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "content")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_BANNER_BODY_LIMIT_BYTES);

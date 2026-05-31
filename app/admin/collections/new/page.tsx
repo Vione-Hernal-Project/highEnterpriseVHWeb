@@ -1,8 +1,8 @@
 import { AdminCollectionCreateView } from "@/components/admin/admin-collection-create-view";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 
 export default async function AdminNewCollectionPage() {
-  await requireManagementUser();
+  await requireAdminArea("collections");
 
   return <AdminCollectionCreateView />;
 }

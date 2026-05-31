@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
 
-export default function AdminWalletsPage() {
+import { requireAdminArea } from "@/lib/auth";
+
+export default async function AdminWalletsPage() {
+  await requireAdminArea("wallet-settings");
   redirect("/admin/settings/payment-methods");
 }

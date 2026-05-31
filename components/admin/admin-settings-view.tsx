@@ -8,10 +8,12 @@ import {
   ReceiptText,
   Save,
   Settings,
+  ShieldCheck,
   Store,
   Truck,
 } from "lucide-react";
 
+import { AdminAccessSettingsPanel } from "@/components/admin/admin-access-settings-panel";
 import { AdminGeneralSettingsForm, AdminGeneralSettingsSaveButton } from "@/components/admin/admin-general-settings-form";
 import { AdminEmailSettingsForm, AdminEmailSettingsSaveButton } from "@/components/admin/admin-email-settings-form";
 import { AdminLocationSettings, AdminLocationSettingsSaveButton } from "@/components/admin/admin-location-settings";
@@ -19,34 +21,82 @@ import { AdminNotificationSettingsForm, AdminNotificationSettingsSaveButton } fr
 import { AdminPaymentMethodSettingsForm, AdminPaymentMethodSettingsSaveButton } from "@/components/admin/admin-payment-method-settings-form";
 import { AdminShippingSettingsForm, AdminShippingSettingsSaveButton } from "@/components/admin/admin-shipping-settings-form";
 import { AdminTaxSettingsForm, AdminTaxSettingsSaveButton } from "@/components/admin/admin-tax-settings-form";
-import { AdminActionButton, AdminPageHeader, AdminStatCard } from "@/components/admin/admin-ui";
+import { AdminActionButton, AdminPageHeader } from "@/components/admin/admin-ui";
 import {
   loadAdminNotificationHistoryRows,
   loadAdminNotificationSettings,
   type AdminNotificationHistoryItem,
 } from "@/lib/admin/notifications";
 import { loadAdminGeneralSettings, type AdminGeneralSettings } from "@/lib/admin/settings";
+import { hasAdminAccess, normalizeAdminRole, type AdminAccessArea, type AdminRole } from "@/lib/admin/access";
+import { getConfiguredOwnerEmails } from "@/lib/env/server";
 import type { AdminNotificationSettings } from "@/lib/notifications/definitions";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { cn } from "@/lib/utils";
 
 const SETTINGS_NAV = [
-  { href: "/admin/settings", key: "general", label: "General", icon: Settings },
-  { href: "/admin/settings/store-information", key: "store-information", label: "Store Information", icon: Store },
-  { href: "/admin/settings/location", key: "location", label: "Location", icon: MapPin },
-  { href: "/admin/settings/currency", key: "currency", label: "Currency", icon: DollarSign },
-  { href: "/admin/settings/tax", key: "tax", label: "Tax", icon: ReceiptText },
-  { href: "/admin/settings/shipping", key: "shipping", label: "Shipping", icon: Truck },
-  { href: "/admin/settings/payment-methods", key: "payment-methods", label: "Payment Methods", icon: CreditCard },
-  { href: "/admin/settings/email", key: "email", label: "Email", icon: Mail },
-  { href: "/admin/settings/notifications", key: "notifications", label: "Notifications", icon: Bell },
-];
+  { href: "/admin/settings", key: "general", label: "General", icon: Settings, area: "settings" },
+  { href: "/admin/settings/store-information", key: "store-information", label: "Store Information", icon: Store, area: "settings" },
+  { href: "/admin/settings/location", key: "location", label: "Location", icon: MapPin, area: "settings" },
+  { href: "/admin/settings/currency", key: "currency", label: "Currency", icon: DollarSign, area: "settings" },
+  { href: "/admin/settings/tax", key: "tax", label: "Tax", icon: ReceiptText, area: "settings" },
+  { href: "/admin/settings/shipping", key: "shipping", label: "Shipping", icon: Truck, area: "settings" },
+  { href: "/admin/settings/payment-methods", key: "payment-methods", label: "Payment Methods", icon: CreditCard, area: "wallet-settings" },
+  { href: "/admin/settings/email", key: "email", label: "Email", icon: Mail, area: "settings" },
+  { href: "/admin/settings/notifications", key: "notifications", label: "Notifications", icon: Bell, area: "settings" },
+  { href: "/admin/settings/admin", key: "admin", label: "Admin Settings", icon: ShieldCheck, area: "admin-settings" },
+] satisfies Array<{ href: string; key: string; label: string; icon: typeof Settings; area: AdminAccessArea }>;
+
+const NOTIFICATION_HISTORY_PREVIEW_LIMIT = 4;
 
 type Props = {
   section?: string;
+  adminRole: AdminRole | null;
+};
+
+type AdminAccessProfile = {
+  id: string;
+  email: string;
+  role: AdminRole;
+  protected: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 function titleForSection(section: string) {
   return SETTINGS_NAV.find((item) => item.key === section)?.label || "Settings";
+}
+
+async function loadAdminAccessProfiles(): Promise<AdminAccessProfile[]> {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.from("profiles").select("*").order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const ownerEmails = getConfiguredOwnerEmails();
+
+  return (data || [])
+    .map((profile) => {
+      const role = normalizeAdminRole(profile.role);
+
+      if (!role) {
+        return null;
+      }
+
+      const email = profile.email || "";
+
+      return {
+        id: profile.id,
+        email: email || "No email recorded",
+        role,
+        protected: profile.role === "owner" || ownerEmails.includes(email.toLowerCase()),
+        createdAt: profile.created_at,
+        updatedAt: profile.updated_at,
+      };
+    })
+    .filter((profile): profile is AdminAccessProfile => Boolean(profile));
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -160,7 +210,9 @@ function renderSection(
   generalSettings: AdminGeneralSettings | null,
   notificationSettings: AdminNotificationSettings | null,
   notificationHistoryRows: AdminNotificationHistoryItem[],
+  adminProfiles: AdminAccessProfile[],
 ) {
+  if (section === "admin") return <AdminAccessSettingsPanel profiles={adminProfiles} />;
   if (section === "store-information") return generalSettings ? <StoreInformation settings={generalSettings} /> : null;
   if (section === "location") return generalSettings ? <AdminLocationSettings initialSettings={generalSettings} /> : null;
   if (section === "currency") return <CurrencySettings />;
@@ -176,13 +228,15 @@ function renderSection(
   return <GeneralSettings />;
 }
 
-export async function AdminSettingsView({ section = "general" }: Props) {
-  const normalizedSection = SETTINGS_NAV.some((item) => item.key === section) ? section : "general";
+export async function AdminSettingsView({ section = "general", adminRole }: Props) {
+  const visibleSettingsNav = SETTINGS_NAV.filter((item) => hasAdminAccess(adminRole, item.area));
+  const normalizedSection = visibleSettingsNav.some((item) => item.key === section) ? section : visibleSettingsNav[0]?.key || "general";
   const generalSettings = ["general", "store-information", "location", "tax", "shipping", "payment-methods", "email"].includes(normalizedSection)
     ? await loadAdminGeneralSettings()
     : null;
   const notificationSettings = normalizedSection === "notifications" ? await loadAdminNotificationSettings() : null;
-  const notificationHistoryRows = normalizedSection === "notifications" ? await loadAdminNotificationHistoryRows() : [];
+  const notificationHistoryRows = normalizedSection === "notifications" ? await loadAdminNotificationHistoryRows(NOTIFICATION_HISTORY_PREVIEW_LIMIT) : [];
+  const adminProfiles = normalizedSection === "admin" ? await loadAdminAccessProfiles() : [];
 
   return (
     <div className="vh-admin-page">
@@ -201,14 +255,14 @@ export async function AdminSettingsView({ section = "general" }: Props) {
           <AdminEmailSettingsSaveButton />
         ) : normalizedSection === "notifications" && notificationSettings ? (
           <AdminNotificationSettingsSaveButton />
-        ) : (
+        ) : normalizedSection === "admin" ? null : (
           <AdminActionButton icon={Save} variant="primary">Save Changes</AdminActionButton>
         )}
       </AdminPageHeader>
 
       <div className="vh-admin-settings-layout">
         <aside className="vh-admin-settings-menu">
-          {SETTINGS_NAV.map((item) => {
+          {visibleSettingsNav.map((item) => {
             const Icon = item.icon;
             return (
               <Link key={item.key} href={item.href} className={cn(item.key === normalizedSection && "vh-admin-settings-menu__active")}>
@@ -222,7 +276,7 @@ export async function AdminSettingsView({ section = "general" }: Props) {
           {normalizedSection === "general" && generalSettings ? (
             <AdminGeneralSettingsForm initialSettings={generalSettings} />
           ) : (
-            renderSection(normalizedSection, generalSettings, notificationSettings, notificationHistoryRows)
+            renderSection(normalizedSection, generalSettings, notificationSettings, notificationHistoryRows, adminProfiles)
           )}
         </div>
       </div>

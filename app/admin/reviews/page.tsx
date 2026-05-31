@@ -1,5 +1,5 @@
 import { AdminFilteredModule, type AdminFilteredRow } from "@/components/admin/admin-filtered-module";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAdminCatalogProducts } from "@/lib/products";
 import { loadAdminProductReviews } from "@/lib/reviews";
 import { formatDateTime } from "@/lib/utils";
@@ -7,7 +7,7 @@ import { formatDateTime } from "@/lib/utils";
 const REVIEW_TABS = ["All Reviews", "Pending", "Approved", "Rejected"];
 
 export default async function AdminReviewsPage() {
-  await requireManagementUser();
+  await requireAdminArea("reviews");
   const [reviews, products] = await Promise.all([
     loadAdminProductReviews().catch(() => []),
     loadAdminCatalogProducts().catch(() => []),

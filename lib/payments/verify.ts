@@ -185,7 +185,7 @@ export async function verifyEthereumMainnetTransfer(input: {
   const provider = await getEthereumMainnetProvider();
   const senderAddress = normalizeAddress(input.expectedSenderAddress, "Merchant wallet address is invalid.");
   const recipientAddress = normalizeAddress(input.expectedRecipientAddress, "Destination wallet address is invalid.");
-  const txHash = input.txHash.trim();
+  const txHash = input.txHash.trim().toLowerCase();
   const { transaction, receipt } = await loadTransactionState(provider, txHash);
   const submittedWallet = normalizeAddress(
     input.walletAddress || transaction?.from || "",
@@ -358,10 +358,10 @@ export async function verifyEthereumMainnetPayment(input: {
 
   const provider = await getEthereumMainnetProvider();
   const merchantAddress = normalizeAddress(
-    input.expectedRecipientAddress || input.payment.recipient_address || serverEnv.merchantWalletAddress,
-    "Merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_EVM_WALLET in .env.local.",
+    input.expectedRecipientAddress || input.payment.recipient_address || "",
+    "Saved merchant recipient wallet is missing or invalid.",
   );
-  const txHash = input.txHash.trim();
+  const txHash = input.txHash.trim().toLowerCase();
   const { transaction, receipt } = await loadTransactionState(provider, txHash);
   const submittedWallet = normalizeAddress(
     input.walletAddress || input.payment.wallet_address || transaction?.from || "",

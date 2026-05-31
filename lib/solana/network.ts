@@ -3,6 +3,9 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { SOLANA_NETWORK, SOLANA_RPC_URL } from "@/lib/web3/config";
 
 const SOLANA_MAINNET_NETWORK = "mainnet-beta";
+const SOLANA_MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+
+let solanaMainnetIdentityPromise: Promise<string> | null = null;
 
 export function assertSolanaMainnetConfig() {
   if (SOLANA_NETWORK !== SOLANA_MAINNET_NETWORK) {
@@ -18,6 +21,26 @@ export function getSolanaConnection(commitment: "confirmed" | "finalized" = "con
   assertSolanaMainnetConfig();
 
   return new Connection(SOLANA_RPC_URL, commitment);
+}
+
+export async function assertSolanaMainnetConnection(connection = getSolanaConnection("confirmed")) {
+  assertSolanaMainnetConfig();
+
+  if (!solanaMainnetIdentityPromise) {
+    solanaMainnetIdentityPromise = connection.getGenesisHash().catch((error) => {
+      solanaMainnetIdentityPromise = null;
+      throw error;
+    });
+  }
+
+  const genesisHash = await solanaMainnetIdentityPromise;
+
+  if (genesisHash !== SOLANA_MAINNET_GENESIS_HASH) {
+    solanaMainnetIdentityPromise = null;
+    throw new Error("Configured Solana RPC is not connected to Solana mainnet.");
+  }
+
+  return genesisHash;
 }
 
 export function normalizeSolanaAddress(address: string | null | undefined, fallbackMessage = "Solana wallet address is invalid.") {

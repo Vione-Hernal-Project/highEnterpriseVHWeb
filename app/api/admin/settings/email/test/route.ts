@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { loadFreshAdminGeneralSettings } from "@/lib/admin/settings";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { sendAdminTestEmail } from "@/lib/email";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 
@@ -23,14 +24,14 @@ const testEmailPayloadSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "settings")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, TEST_EMAIL_BODY_LIMIT_BYTES);

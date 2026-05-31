@@ -13,7 +13,7 @@ export type Database = {
         Row: {
           id: string;
           email: string | null;
-          role: "user" | "staff" | "admin" | "owner" | string;
+          role: "user" | "super_admin" | "full_admin" | "product_manager" | "orders_manager" | "customer_support" | "marketing_content_manager" | "finance_ledger" | "staff" | "admin" | "owner" | string;
           wallet_address: string | null;
           created_at: string;
           updated_at: string;
@@ -21,7 +21,7 @@ export type Database = {
         Insert: {
           id: string;
           email?: string | null;
-          role?: "user" | "staff" | "admin" | "owner" | string;
+          role?: "user" | "super_admin" | "full_admin" | "product_manager" | "orders_manager" | "customer_support" | "marketing_content_manager" | "finance_ledger" | "staff" | "admin" | "owner" | string;
           wallet_address?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -29,7 +29,7 @@ export type Database = {
         Update: {
           id?: string;
           email?: string | null;
-          role?: "user" | "staff" | "admin" | "owner" | string;
+          role?: "user" | "super_admin" | "full_admin" | "product_manager" | "orders_manager" | "customer_support" | "marketing_content_manager" | "finance_ledger" | "staff" | "admin" | "owner" | string;
           wallet_address?: string | null;
           created_at?: string;
           updated_at?: string;

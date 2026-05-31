@@ -1,5 +1,5 @@
 import { AdminCollectionsView, type AdminCollectionRow } from "@/components/admin/admin-collections-view";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import type { CatalogProduct } from "@/lib/catalog";
 import { loadAdminCollectionRecords, normalizeCollectionKey } from "@/lib/collections";
 import { loadAdminCatalogProducts } from "@/lib/products";
@@ -68,7 +68,7 @@ function resolveCollectionDescription(savedDescription: string | undefined, prod
 }
 
 export default async function AdminCollectionsPage({ searchParams }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("collections");
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const products = await loadAdminCatalogProducts().catch(() => []);
   const savedCollections = await loadAdminCollectionRecords().catch(() => []);

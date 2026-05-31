@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { PublicKey } from "@solana/web3.js";
 
+import { ADMIN_ROLE_VALUES } from "@/lib/admin/access";
 import { normalizePaymentAmount } from "@/lib/payments/amounts";
 import type { CheckoutAmountMode } from "@/lib/payments/checkout";
 import { getPaymentMethodConfig, PAYMENT_METHOD_VALUES } from "@/lib/payments/options";
 import { optionalCouponCodeSchema } from "@/lib/validations/coupon";
 
 const CHECKOUT_AMOUNT_MODES = ["php", "eth"] as const satisfies readonly CheckoutAmountMode[];
+const PROFILE_ROLE_VALUES = ["user", ...ADMIN_ROLE_VALUES] as const;
 
 function isSolanaPublicKey(value: string) {
   try {
@@ -253,9 +255,9 @@ export const adminOrderStatusSchema = z.object({
 
 export const profileRoleSchema = z.object({
   profileId: z.string().uuid("Profile ID is invalid."),
-  role: z.enum(["user", "staff", "admin"], {
+  role: z.enum(PROFILE_ROLE_VALUES, {
     errorMap: () => ({
-      message: "Role must be user, staff, or admin.",
+      message: "Select a valid admin role.",
     }),
   }),
 });

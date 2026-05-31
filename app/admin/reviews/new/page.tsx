@@ -1,9 +1,9 @@
 import { AdminReviewFormView } from "@/components/admin/admin-review-form-view";
 import { loadAdminReviewFormOptions } from "@/lib/admin/review-form-options";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 
 export default async function AdminNewReviewPage() {
-  await requireManagementUser();
+  await requireAdminArea("reviews");
   const options = await loadAdminReviewFormOptions();
 
   return (

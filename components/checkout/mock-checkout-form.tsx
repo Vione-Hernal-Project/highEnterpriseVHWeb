@@ -1247,6 +1247,9 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
         confirmationEmailStatus: createOrderPayload.order.confirmation_email_status,
       };
 
+      let walletPaymentSubmitted = false;
+      let submittedPaymentSnapshot: SubmissionState | null = null;
+
       try {
         if (orderSnapshot.quoteExpiresAt && Date.parse(orderSnapshot.quoteExpiresAt) <= Date.now()) {
           throw new Error("This crypto quote expired before wallet confirmation. Refresh the quote and try again.");
@@ -1266,7 +1269,8 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
               recipientAddress: orderSnapshot.recipientWalletAddress,
               expectedWalletAddress: orderSnapshot.walletAddress,
             });
-        const submittedPaymentSnapshot: SubmissionState = {
+        walletPaymentSubmitted = true;
+        submittedPaymentSnapshot = {
           ...orderSnapshot,
           txHash: walletPayment.txHash,
           walletAddress: walletPayment.walletAddress,
@@ -1330,6 +1334,23 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
         writeBagItems([]);
         resetForm();
       } catch (walletError) {
+        if (walletPaymentSubmitted) {
+          if (submittedPaymentSnapshot) {
+            writePendingCheckoutPayment(submittedPaymentSnapshot);
+            setSubmission({
+              ...submittedPaymentSnapshot,
+              verificationStatus: "pending",
+              message:
+                "Transaction submitted. Verification could not complete locally. The order remains pending and can be rechecked from the dashboard.",
+            });
+          }
+
+          setError(
+            `${getErrorMessage(walletError, "The on-chain payment could not be verified locally.")} The order remains pending and can be rechecked from the dashboard.`,
+          );
+          return;
+        }
+
         let rollbackMessage = "";
 
         try {

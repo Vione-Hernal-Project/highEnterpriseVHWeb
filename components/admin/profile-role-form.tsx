@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ADMIN_ROLE_LABELS, ADMIN_ROLE_VALUES, normalizeAdminRole, type AdminRole } from "@/lib/admin/access";
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
 
 type Props = {
@@ -13,7 +14,7 @@ type Props = {
 
 export function ProfileRoleForm({ profileId, initialRole, disabled = false }: Props) {
   const router = useRouter();
-  const [role, setRole] = useState(initialRole === "admin" ? "admin" : initialRole === "staff" ? "staff" : "user");
+  const [role, setRole] = useState<AdminRole | "user">(normalizeAdminRole(initialRole) || "user");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -21,10 +22,11 @@ export function ProfileRoleForm({ profileId, initialRole, disabled = false }: Pr
   return (
     <div style={{ marginTop: "1rem" }}>
       <div className="vh-actions" style={{ marginTop: 0 }}>
-        <select className="vh-input" value={role} onChange={(event) => setRole(event.target.value)} disabled={loading || disabled}>
+        <select className="vh-input" value={role} onChange={(event) => setRole(event.target.value as AdminRole | "user")} disabled={loading || disabled}>
           <option value="user">User</option>
-          <option value="staff">Staff</option>
-          <option value="admin">Admin</option>
+          {ADMIN_ROLE_VALUES.map((role) => (
+            <option key={role} value={role}>{ADMIN_ROLE_LABELS[role]}</option>
+          ))}
         </select>
         <button
           type="button"

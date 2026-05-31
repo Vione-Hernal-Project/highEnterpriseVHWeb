@@ -401,13 +401,18 @@ export async function loadAdminNotificationCenterRows(limit = 12) {
   }));
 }
 
-export async function loadAdminNotificationHistoryRows(limit = 20): Promise<AdminNotificationHistoryItem[]> {
+export async function loadAdminNotificationHistoryRows(limit: number | null = 20): Promise<AdminNotificationHistoryItem[]> {
   const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
+  let query = admin
     .from("admin_notifications")
     .select("id,type,channel,title,message,status,href,read_at,delivered_at,error_message,created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("created_at", { ascending: false });
+
+  if (typeof limit === "number") {
+    query = query.limit(limit);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     if (isMissingAdminSettingsTableError(error) || error.message.includes("admin_notifications")) {

@@ -1,6 +1,6 @@
 import { AdminFilteredModule, type AdminFilteredRow } from "@/components/admin/admin-filtered-module";
 import { loadGa4PageViews } from "@/lib/analytics/ga4";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAdminSitePages, staticSitePages, type SitePageRecord } from "@/lib/site-pages";
 import { formatDateTime } from "@/lib/utils";
 
@@ -25,7 +25,7 @@ function getStatusTone(status: SitePageRecord["status"]) {
 }
 
 export default async function AdminPagesPage() {
-  await requireManagementUser();
+  await requireAdminArea("content");
   const cmsPages = await loadAdminSitePages();
   const cmsHrefs = new Set(cmsPages.map((page) => page.href));
   const sitePages = [...cmsPages, ...staticSitePages.filter((page) => !cmsHrefs.has(page.href))];

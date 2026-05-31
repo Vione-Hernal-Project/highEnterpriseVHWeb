@@ -7,6 +7,7 @@ import {
 } from "@/lib/admin/notifications";
 import { isMissingAdminSettingsTableError } from "@/lib/admin/settings";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { NOTIFICATION_EVENT_KEYS, type AdminNotificationSettings } from "@/lib/notifications/definitions";
 import { adminNotificationSettingsSchema } from "@/lib/validations/admin-notifications";
@@ -24,14 +25,14 @@ function getSettingsStorageErrorResponse() {
 
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "settings")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     return NextResponse.json({ settings: await loadAdminNotificationSettings() });
@@ -46,14 +47,14 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "settings")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_NOTIFICATION_SETTINGS_BODY_LIMIT_BYTES);

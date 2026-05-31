@@ -9,11 +9,20 @@ import {
   loadFreshAdminGeneralSettings,
 } from "@/lib/admin/settings";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adminGeneralOtherSettingsPatchSchema, adminGeneralSettingsSchema } from "@/lib/validations/admin-settings";
 
 const ADMIN_SETTINGS_BODY_LIMIT_BYTES = 64 * 1024;
+const WALLET_PAYMENT_SETTING_KEYS = [
+  "evmEthEnabled",
+  "evmUsdcEnabled",
+  "evmUsdtEnabled",
+  "solEnabled",
+  "solUsdcEnabled",
+  "solUsdtEnabled",
+] as const;
 
 function getSettingsStorageErrorResponse() {
   return NextResponse.json(
@@ -34,16 +43,23 @@ function revalidateGeneralSettingsViews() {
   revalidatePath("/admin/settings");
 }
 
+function changesWalletPaymentSettings(
+  currentSettings: Awaited<ReturnType<typeof loadFreshAdminGeneralSettings>>,
+  nextSettings: Awaited<ReturnType<typeof loadFreshAdminGeneralSettings>>,
+) {
+  return WALLET_PAYMENT_SETTING_KEYS.some((key) => currentSettings[key] !== nextSettings[key]);
+}
+
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "settings")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const settings = await loadAdminGeneralSettings();
@@ -60,14 +76,14 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "settings")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_SETTINGS_BODY_LIMIT_BYTES);
@@ -81,6 +97,12 @@ export async function PUT(request: Request) {
 
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid settings payload." }, { status: 400 });
+    }
+
+    const currentSettings = await loadFreshAdminGeneralSettings();
+
+    if (!hasAdminAccess(role, "wallet-settings") && changesWalletPaymentSettings(currentSettings, parsed.data)) {
+      return NextResponse.json({ error: "Super Admin access is required to change wallet/payment settings." }, { status: 403 });
     }
 
     const admin = createSupabaseAdminClient();
@@ -119,14 +141,14 @@ export async function PUT(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "settings")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_SETTINGS_BODY_LIMIT_BYTES);

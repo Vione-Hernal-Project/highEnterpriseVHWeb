@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { CUSTOMER_CACHE_TAG, isMissingCustomersTableError, loadAdminManualCustomers } from "@/lib/customers";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
@@ -51,14 +52,14 @@ function getCustomerStorageErrorResponse() {
 
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "customers")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const customers = await loadAdminManualCustomers();
@@ -71,14 +72,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "customers")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_CUSTOMER_BODY_LIMIT_BYTES);

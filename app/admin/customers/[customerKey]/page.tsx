@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ReceiptText, ShoppingBag, UserRound } from "lucide-react";
 
 import { AdminPageHeader, AdminStatCard, AdminStatusBadge, AdminTableShell } from "@/components/admin/admin-ui";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAdminManualCustomers } from "@/lib/customers";
 import { formatAmountWithUnit } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -32,7 +32,7 @@ function getStatusTone(status: string): "paid" | "processing" | "pending" | "can
 }
 
 export default async function AdminCustomerDetailPage({ params }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("customers");
   const { customerKey } = await params;
   const decodedKey = decodeURIComponent(customerKey);
   const admin = createSupabaseAdminClient();

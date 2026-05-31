@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { rebuildPaymentAllocations } from "@/lib/admin/payment-allocation-sync";
-import { getCurrentUserContext } from "@/lib/auth";
+import { getAdminApiAccess, getCurrentUserContext } from "@/lib/auth";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -39,15 +39,13 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const { user, canManageOrders, role } = await getCurrentUserContext();
+    const access = await getAdminApiAccess("orders:write");
 
-    if (!user) {
-      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
-    if (!canManageOrders) {
-      return NextResponse.json({ error: "Order operations access required." }, { status: 403 });
-    }
+    const { user, role } = access.context;
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_ORDER_UPDATE_BODY_LIMIT_BYTES);
 
@@ -121,8 +119,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ order });
     }
 
-    if (role === "staff" && order.status === "paid") {
-      return NextResponse.json({ error: "Paid orders are view-only for staff." }, { status: 403 });
+    if (role === "orders_manager" && order.status === "paid") {
+      return NextResponse.json({ error: "Paid orders are view-only for Orders Manager." }, { status: 403 });
     }
 
     const { data: updatedOrder, error: updateError } = await admin

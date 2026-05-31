@@ -1,6 +1,6 @@
 import { AdminFilteredModule, type AdminFilteredRow } from "@/components/admin/admin-filtered-module";
 import { loadGa4BannerSummary } from "@/lib/analytics/ga4";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAdminBanners, type BannerRecord } from "@/lib/banners";
 import { formatDateTime } from "@/lib/utils";
 
@@ -25,7 +25,7 @@ function getStatusLabel(status: BannerRecord["status"]) {
 }
 
 export default async function AdminBannersPage() {
-  await requireManagementUser();
+  await requireAdminArea("content");
   const banners = await loadAdminBanners();
   const analytics = await loadGa4BannerSummary();
   const rows: AdminFilteredRow[] = banners.map((banner) => {

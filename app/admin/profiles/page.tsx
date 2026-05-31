@@ -2,13 +2,15 @@ import { ShieldCheck, UserCog, Users } from "lucide-react";
 
 import { ProfileRoleForm } from "@/components/admin/profile-role-form";
 import { AdminPageHeader, AdminStatCard, AdminStatusBadge, AdminTableShell } from "@/components/admin/admin-ui";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
+import { getAdminRoleLabel, normalizeAdminRole } from "@/lib/admin/access";
+import { getConfiguredOwnerEmails } from "@/lib/env/server";
 import { getErrorMessage } from "@/lib/http";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 
 export default async function AdminProfilesPage() {
-  const { role } = await requireManagementUser();
+  const { role } = await requireAdminArea("admin-settings");
 
   let profiles: Array<Record<string, any>> = [];
   let loadError = "";
@@ -26,7 +28,8 @@ export default async function AdminProfilesPage() {
     loadError = getErrorMessage(error, "Unable to load profile access records right now.");
   }
 
-  const managementProfiles = profiles.filter((profile) => ["owner", "admin", "staff"].includes(profile.role));
+  const ownerEmails = getConfiguredOwnerEmails();
+  const managementProfiles = profiles.filter((profile) => normalizeAdminRole(profile.role));
 
   return (
     <div className="vh-admin-page">
@@ -36,7 +39,7 @@ export default async function AdminProfilesPage() {
 
       <section className="vh-admin-stats-grid vh-admin-stats-grid--3">
         <AdminStatCard href="/admin/profiles" label="Total Profiles" value={profiles.length} delta={`Effective role: ${role}`} icon={Users} />
-        <AdminStatCard href="/admin/profiles?tab=Management" label="Management Users" value={managementProfiles.length} delta="Owner/admin/staff profiles" tone="purple" icon={ShieldCheck} />
+        <AdminStatCard href="/admin/profiles?tab=Management" label="Management Users" value={managementProfiles.length} delta="Role-based admin profiles" tone="purple" icon={ShieldCheck} />
         <AdminStatCard href="/admin/profiles?tab=Customers" label="Customers" value={Math.max(0, profiles.length - managementProfiles.length)} delta="Standard user profiles" tone="blue" icon={UserCog} />
       </section>
 
@@ -65,12 +68,16 @@ export default async function AdminProfilesPage() {
                     </div>
                   </td>
                   <td>{profile.id}</td>
-                  <td><AdminStatusBadge tone={profile.role === "owner" ? "processing" : "active"}>{profile.role || "user"}</AdminStatusBadge></td>
+                  <td><AdminStatusBadge tone={normalizeAdminRole(profile.role) === "super_admin" ? "processing" : "active"}>{getAdminRoleLabel(profile.role)}</AdminStatusBadge></td>
                   <td>{formatDateTime(profile.created_at)}</td>
                   <td>{formatDateTime(profile.updated_at)}</td>
                   <td>
                     <div className="vh-admin-row-actions">
-                      <ProfileRoleForm profileId={profile.id} initialRole={profile.role || "user"} disabled={profile.role === "owner"} />
+                      <ProfileRoleForm
+                        profileId={profile.id}
+                        initialRole={profile.role || "user"}
+                        disabled={normalizeAdminRole(profile.role) === "super_admin" && ownerEmails.includes(String(profile.email || "").toLowerCase())}
+                      />
                     </div>
                   </td>
                 </tr>

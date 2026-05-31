@@ -1,6 +1,6 @@
 import { AdminFilteredModule, type AdminFilteredRow } from "@/components/admin/admin-filtered-module";
 import { loadGa4CampaignSummary } from "@/lib/analytics/ga4";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAdminCampaignRecords, type AdminCampaignRecord } from "@/lib/campaigns";
 import { formatAmountWithUnit } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -66,7 +66,7 @@ function formatChannel(channel: string) {
 }
 
 export default async function AdminMarketingPage() {
-  await requireManagementUser();
+  await requireAdminArea("marketing");
   const admin = createSupabaseAdminClient();
   const [campaigns, campaignAnalytics, ordersResult] = await Promise.all([
     loadAdminCampaignRecords(),

@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage } from "@/lib/http";
 import { fetchEthPhpQuote } from "@/lib/payments/quotes";
 
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "dashboard")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const quote = await fetchEthPhpQuote();

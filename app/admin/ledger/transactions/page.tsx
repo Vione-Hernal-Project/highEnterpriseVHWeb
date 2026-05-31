@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { AdminLedgerShell } from "@/components/admin/admin-ledger-shell";
 import { LedgerTransactionHistory } from "@/components/admin/ledger-transaction-history";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAllocationLedgerSnapshot } from "@/lib/admin/allocation-ledger";
 import { getErrorMessage } from "@/lib/http";
 
@@ -13,7 +13,7 @@ type Props = {
 };
 
 export default async function AdminLedgerTransactionsPage({ searchParams }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("ledger");
 
   const resolvedSearchParams = searchParams ? await searchParams : {};
   let loadError = "";

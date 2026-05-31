@@ -1,5 +1,5 @@
 import { AdminFilteredModule, type AdminFilteredRow } from "@/components/admin/admin-filtered-module";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -17,7 +17,7 @@ function getPaymentTone(status: string): "paid" | "pending" | "cancelled" {
 }
 
 export default async function AdminPaymentsPage() {
-  await requireManagementUser();
+  await requireAdminArea("payments");
 
   let payments: Array<Record<string, any>> = [];
   let loadError = "";

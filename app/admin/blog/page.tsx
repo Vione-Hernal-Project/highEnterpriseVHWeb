@@ -1,6 +1,6 @@
 import { AdminFilteredModule, type AdminFilteredRow } from "@/components/admin/admin-filtered-module";
 import { loadGa4PageViews } from "@/lib/analytics/ga4";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { getStaticBlogPosts, loadAdminBlogPosts, type BlogPostRecord } from "@/lib/blog";
 import { formatDateTime } from "@/lib/utils";
 
@@ -29,7 +29,7 @@ function getStatusTone(status: BlogPostRecord["status"]) {
 }
 
 export default async function AdminBlogPage() {
-  await requireManagementUser();
+  await requireAdminArea("content");
   const cmsPosts = await loadAdminBlogPosts();
   const cmsSlugs = new Set(cmsPosts.map((post) => post.slug));
   const posts = [...cmsPosts, ...getStaticBlogPosts().filter((post) => !cmsSlugs.has(post.slug))];

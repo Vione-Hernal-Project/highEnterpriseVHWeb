@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { COLLECTION_CACHE_TAG, isMissingCollectionsTableError, loadAdminCollectionRecords } from "@/lib/collections";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { PRODUCT_CACHE_TAG } from "@/lib/products";
@@ -41,14 +42,14 @@ function getCollectionStorageErrorResponse() {
 
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "collections")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const collections = await loadAdminCollectionRecords();
@@ -61,14 +62,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "collections")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_COLLECTION_BODY_LIMIT_BYTES);

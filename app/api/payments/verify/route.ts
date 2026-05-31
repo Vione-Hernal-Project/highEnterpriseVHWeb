@@ -13,7 +13,6 @@ import { getEthereumMainnetRpcEnvError, getSolanaRpcEnvError, serverEnv } from "
 import type { Database } from "@/lib/database.types";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { logPaymentDebug } from "@/lib/payments/debug";
-import { resolveMerchantWalletAddress, resolveSolanaMerchantWalletAddress } from "@/lib/payments/merchant-wallet";
 import { getPaymentMethodConfig } from "@/lib/payments/options";
 import { verifyEthereumMainnetPayment } from "@/lib/payments/verify";
 import { verifySolanaPayment } from "@/lib/payments/verify-solana";
@@ -106,6 +105,12 @@ function isEvmTransactionHash(value: string) {
 
 function isSolanaSignature(value: string) {
   return /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(value.trim());
+}
+
+function normalizePaymentTxHash(value: string, isSolanaPayment: boolean) {
+  const trimmed = value.trim();
+
+  return isSolanaPayment ? trimmed : trimmed.toLowerCase();
 }
 
 function resolvePaymentFinalizationStatus(message: string) {
@@ -463,22 +468,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unsupported token for this chain." }, { status: 400 });
     }
 
-    if (payment.payment_type && payment.payment_type !== payment.payment_method) {
+    const isSolanaPayment = paymentConfig.network === "solana";
+    const expectedNetwork = isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet";
+
+    if (payment.payment_type !== payment.payment_method) {
       return NextResponse.json({ error: "Payment type does not match this payment record." }, { status: 400 });
     }
 
-    if (payment.wallet_provider && payment.wallet_provider !== paymentConfig.walletProvider) {
+    if (payment.wallet_provider !== paymentConfig.walletProvider) {
       return NextResponse.json({ error: "Payment wallet provider does not match this payment type." }, { status: 400 });
     }
 
-    if (payment.token_type && payment.token_type !== paymentConfig.tokenType) {
+    if (payment.token_type !== paymentConfig.tokenType) {
       return NextResponse.json({ error: "Unsupported token for this chain." }, { status: 400 });
     }
 
-    const isSolanaPayment = paymentConfig?.network === "solana";
-    const expectedNetwork = isSolanaPayment ? "mainnet-beta" : "ethereum-mainnet";
-
-    if (payment.network && payment.network !== expectedNetwork) {
+    if (payment.network !== expectedNetwork) {
       return NextResponse.json(
         {
           error: isSolanaPayment
@@ -489,7 +494,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (payment.token_standard && payment.token_standard !== paymentConfig.tokenStandard) {
+    if (payment.token_standard !== paymentConfig.tokenStandard) {
       return NextResponse.json({ error: "Unsupported token for this chain." }, { status: 400 });
     }
 
@@ -499,11 +504,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: rpcSetupError }, { status: 400 });
     }
 
-    const txHash = parsed.data.txHash || payment.tx_hash;
+    const rawTxHash = parsed.data.txHash || payment.tx_hash;
+    const txHash = rawTxHash ? normalizePaymentTxHash(rawTxHash, isSolanaPayment) : "";
+    const storedTxHash = payment.tx_hash ? normalizePaymentTxHash(payment.tx_hash, isSolanaPayment) : "";
+    const requestedTxHash = parsed.data.txHash ? normalizePaymentTxHash(parsed.data.txHash, isSolanaPayment) : "";
     const walletAddress = resolveBoundPaymentWalletAddress(payment.payment_method, payment.wallet_address, parsed.data.walletAddress);
-    const merchantWallet = isSolanaPayment ? await resolveSolanaMerchantWalletAddress() : await resolveMerchantWalletAddress();
-    const recipientAddress = payment.recipient_address || merchantWallet.address;
-    const chainId = payment.chain_id || (isSolanaPayment ? SOLANA_MAINNET_CHAIN_ID : ETHEREUM_MAINNET_CHAIN_ID);
+
+    if (!payment.recipient_address?.trim()) {
+      return NextResponse.json(
+        { error: "This payment is missing its saved recipient wallet address. Cancel the order and create a new payment." },
+        { status: 400 },
+      );
+    }
+
+    let recipientAddress: string;
+
+    try {
+      recipientAddress = isSolanaPayment
+        ? normalizeSolanaAddress(payment.recipient_address, "Saved Solana recipient wallet is invalid.")
+        : normalizeWalletAddress(payment.recipient_address, "Saved merchant recipient wallet is invalid.");
+    } catch (recipientError) {
+      return NextResponse.json({ error: getErrorMessage(recipientError, "Saved recipient wallet is invalid.") }, { status: 400 });
+    }
+
+    if (payment.chain_id === null || payment.chain_id === undefined) {
+      return NextResponse.json(
+        { error: "This payment is missing its saved chain ID. Cancel the order and create a new payment." },
+        { status: 400 },
+      );
+    }
+
+    const chainId = Number(payment.chain_id);
+
+    if (!Number.isFinite(chainId) || chainId <= 0) {
+      return NextResponse.json({ error: "Saved payment chain ID is invalid." }, { status: 400 });
+    }
 
     if (!txHash) {
       return NextResponse.json({ error: "No transaction hash was submitted for this payment yet." }, { status: 400 });
@@ -527,7 +562,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (payment.tx_hash && parsed.data.txHash && payment.tx_hash !== parsed.data.txHash && payment.status !== "failed") {
+    if (storedTxHash && requestedTxHash && storedTxHash !== requestedTxHash && payment.status !== "failed") {
       return NextResponse.json(
         {
           error:
@@ -566,12 +601,14 @@ export async function POST(request: Request) {
       paymentMethod: payment.payment_method,
     });
 
-    const { data: duplicatePayment, error: duplicatePaymentError } = await admin
+    const duplicatePaymentQuery = admin
       .from("payments")
       .select("id")
-      .neq("id", payment.id)
-      .eq("tx_hash", txHash)
-      .maybeSingle();
+      .neq("id", payment.id);
+    const { data: duplicatePayment, error: duplicatePaymentError } = await (isSolanaPayment
+      ? duplicatePaymentQuery.eq("tx_hash", txHash)
+      : duplicatePaymentQuery.ilike("tx_hash", txHash)
+    ).maybeSingle();
 
     if (duplicatePaymentError) {
       return NextResponse.json({ error: duplicatePaymentError.message || "Unable to validate this transaction hash." }, { status: 500 });

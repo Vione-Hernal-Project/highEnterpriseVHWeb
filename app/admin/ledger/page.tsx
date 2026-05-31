@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
 
-export default function AdminLedgerPage() {
-  redirect("/admin/orders");
+import { requireAdminArea } from "@/lib/auth";
+
+export default async function AdminLedgerPage() {
+  await requireAdminArea("ledger");
+  redirect("/admin/ledger/transactions");
 }

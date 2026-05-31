@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { COUPON_CACHE_TAG, isMissingCouponsTableError, loadAdminCouponRecords } from "@/lib/coupons";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -46,14 +47,14 @@ function getCouponStorageErrorResponse() {
 
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "coupons")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const snapshot = await loadAdminCouponRecords();
@@ -66,14 +67,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "coupons")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_COUPON_BODY_LIMIT_BYTES);

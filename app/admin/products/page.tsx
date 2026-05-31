@@ -11,7 +11,7 @@ import {
   ExportButton,
   MoreActionsButton,
 } from "@/components/admin/admin-ui";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import type { CatalogProduct } from "@/lib/catalog";
 import { getCatalogPriceLabel } from "@/lib/catalog";
 import { buildAdminCollectionOptions, loadAdminCollectionRecords } from "@/lib/collections";
@@ -104,7 +104,7 @@ function resolveTableTab(value: string | string[] | undefined) {
 }
 
 export default async function AdminProductsPage({ searchParams }: AdminProductsPageProps) {
-  await requireManagementUser();
+  await requireAdminArea("products");
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const selectedInventoryFilter = resolveInventoryFilter(resolvedSearchParams.inventory);
   const selectedCategoryFilter = resolveCategoryFilter(resolvedSearchParams.category);

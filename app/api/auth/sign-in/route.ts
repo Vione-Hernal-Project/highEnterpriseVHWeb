@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
+import { isAdminAccessRole } from "@/lib/admin/access";
 import { getConfiguredOwnerEmails } from "@/lib/env/server";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { buildRateLimitHeaders, applyRateLimit, clearRateLimit, getClientIp } from "@/lib/security/rate-limit";
@@ -52,7 +53,7 @@ async function isManagementEmail(email: string) {
     const admin = createSupabaseAdminClient();
     const { data } = await admin.from("profiles").select("role").eq("email", email).maybeSingle();
 
-    return data?.role === "owner" || data?.role === "admin" || data?.role === "staff";
+    return isAdminAccessRole(data?.role);
   } catch {
     return false;
   }

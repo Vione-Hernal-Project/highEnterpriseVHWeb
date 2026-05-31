@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Archive, ArrowLeft, Circle, Package, PackageX, ShoppingBag } from "lucide-react";
 
 import { AdminPageHeader, AdminStatCard, AdminStatusBadge, EmptyAdminState } from "@/components/admin/admin-ui";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import {
   CATALOG_MENS_DEPARTMENT,
   CATALOG_UNISEX_DEPARTMENT,
@@ -73,7 +73,7 @@ function getDeploymentSections(products: CatalogProduct[]) {
 }
 
 export default async function AdminProductCatalogPage() {
-  await requireManagementUser();
+  await requireAdminArea("products");
   let products: CatalogProduct[] = [];
   let loadError = "";
 

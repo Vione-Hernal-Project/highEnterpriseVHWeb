@@ -1,5 +1,6 @@
 import { AdminOrdersView, type AdminOrderViewRow } from "@/components/admin/admin-orders-view";
 import { requireOrderOperationsUser } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage } from "@/lib/http";
 import { buildOrderItemsByOrderId, getOrderDisplayLines } from "@/lib/order-items";
 import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
@@ -15,7 +16,9 @@ function getPaymentForOrder(payments: Array<Record<string, any>>, order: Record<
 }
 
 export default async function AdminOrdersPage() {
-  const { role, isManagementUser } = await requireOrderOperationsUser();
+  const { role } = await requireOrderOperationsUser();
+  const canUpdateOrders = hasAdminAccess(role, "orders:write");
+  const canViewPaymentDetails = hasAdminAccess(role, "payments") || hasAdminAccess(role, "ledger");
   let orders: Array<Record<string, any>> = [];
   let payments: Array<Record<string, any>> = [];
   let orderItems: Array<Record<string, any>> = [];
@@ -70,7 +73,8 @@ export default async function AdminOrdersPage() {
     <AdminOrdersView
       rows={rows}
       role={role}
-      isManagementUser={isManagementUser}
+      canUpdateOrders={canUpdateOrders}
+      canViewPaymentDetails={canViewPaymentDetails}
       loadError={loadError}
     />
   );

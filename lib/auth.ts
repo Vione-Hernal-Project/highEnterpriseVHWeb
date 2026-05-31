@@ -2,13 +2,19 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 
+import {
+  getDefaultAdminHref,
+  hasAdminAccess,
+  normalizeAdminRole,
+  type AdminAccessArea,
+  type AdminRole,
+  type StoreRole,
+} from "@/lib/admin/access";
 import type { Database } from "@/lib/database.types";
 import { hasPublicSupabaseEnv } from "@/lib/env/public";
 import { getConfiguredOwnerEmails, hasSupabaseAdminEnv } from "@/lib/env/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-export type StoreRole = "user" | "staff" | "admin" | "owner";
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
@@ -17,14 +23,10 @@ function resolveRole(profileRole: string | null | undefined, email: string | nul
   const normalizedEmail = email?.trim().toLowerCase();
 
   if (normalizedEmail && getConfiguredOwnerEmails().includes(normalizedEmail)) {
-    return "owner";
+    return "super_admin";
   }
 
-  if (profileRole === "owner" || profileRole === "admin" || profileRole === "staff") {
-    return profileRole;
-  }
-
-  return "user";
+  return normalizeAdminRole(profileRole) ?? "user";
 }
 
 async function syncOwnerRole(profile: ProfileRow | null, email: string | null | undefined) {
@@ -34,16 +36,16 @@ async function syncOwnerRole(profile: ProfileRow | null, email: string | null | 
     !normalizedEmail ||
     !getConfiguredOwnerEmails().includes(normalizedEmail) ||
     !profile ||
-    profile.role === "owner" ||
+    profile.role === "super_admin" ||
     !hasSupabaseAdminEnv()
   ) {
     return profile;
   }
 
   const admin = createSupabaseAdminClient();
-  const { data } = await admin.from("profiles").update({ role: "owner" }).eq("id", profile.id).select("*").maybeSingle();
+  const { data } = await admin.from("profiles").update({ role: "super_admin" }).eq("id", profile.id).select("*").maybeSingle();
 
-  return data ?? { ...profile, role: "owner" };
+  return data ?? { ...profile, role: "super_admin" };
 }
 
 async function ensureProfileRow(user: NonNullable<Awaited<ReturnType<typeof getCurrentSession>>["user"]>) {
@@ -95,10 +97,12 @@ export async function getCurrentUserContext() {
       user: null,
       profile: null,
       role: "user" as StoreRole,
+      adminRole: null as AdminRole | null,
       isStaffUser: false,
       canManageOrders: false,
       isManagementUser: false,
       isOwner: false,
+      isSuperAdmin: false,
     };
   }
 
@@ -106,16 +110,19 @@ export async function getCurrentUserContext() {
   const ensuredProfile = rawProfile ?? (await ensureProfileRow(user));
   const profile = await syncOwnerRole(ensuredProfile ?? null, user.email);
   const role = resolveRole(profile?.role, user.email);
+  const adminRole = normalizeAdminRole(role);
 
   return {
     supabase,
     user,
     profile,
     role,
-    isStaffUser: role === "staff",
-    canManageOrders: role === "staff" || role === "admin" || role === "owner",
-    isManagementUser: role === "admin" || role === "owner",
-    isOwner: role === "owner",
+    adminRole,
+    isStaffUser: adminRole === "orders_manager",
+    canManageOrders: hasAdminAccess(adminRole, "orders"),
+    isManagementUser: adminRole === "full_admin" || adminRole === "super_admin",
+    isOwner: adminRole === "super_admin",
+    isSuperAdmin: adminRole === "super_admin",
   };
 }
 
@@ -136,28 +143,63 @@ export async function requireManagementUser() {
   const context = await requireUser();
 
   if (!context.isManagementUser) {
-    redirect("/dashboard");
+    redirect(getDefaultAdminHref(context.role));
   }
 
   return context;
 }
 
 export async function requireOrderOperationsUser() {
+  return requireAdminArea("orders");
+}
+
+export async function requireAnyAdminUser() {
   const context = await requireUser();
 
-  if (!context.canManageOrders) {
+  if (!context.adminRole) {
     redirect("/dashboard");
   }
 
   return context;
 }
 
-export async function requireOwner() {
-  const context = await requireUser();
+export async function requireAdminArea(area: AdminAccessArea) {
+  const context = await requireAnyAdminUser();
 
-  if (!context.isOwner) {
-    redirect("/admin");
+  if (!hasAdminAccess(context.role, area)) {
+    redirect(getDefaultAdminHref(context.role));
   }
 
   return context;
+}
+
+export async function requireOwner() {
+  return requireAdminArea("admin-settings");
+}
+
+export async function getAdminApiAccess(area: AdminAccessArea) {
+  const context = await getCurrentUserContext();
+
+  if (!context.user) {
+    return {
+      ok: false as const,
+      status: 401,
+      error: "Authentication required.",
+      context,
+    };
+  }
+
+  if (!context.adminRole || !hasAdminAccess(context.role, area)) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: "Admin access required.",
+      context,
+    };
+  }
+
+  return {
+    ok: true as const,
+    context,
+  };
 }

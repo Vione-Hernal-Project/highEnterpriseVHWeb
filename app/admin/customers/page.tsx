@@ -5,7 +5,7 @@ import {
   MoreActionsButton,
 } from "@/components/admin/admin-ui";
 import { AdminCustomersView, type AdminCustomerListRow, type CustomerTab } from "@/components/admin/admin-customers-view";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAdminManualCustomers } from "@/lib/customers";
 import { getErrorMessage } from "@/lib/http";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -71,7 +71,7 @@ function getProfileName(profile: Record<string, any>) {
 }
 
 export default async function AdminCustomersPage({ searchParams }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("customers");
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const activeTableTab = resolveCustomerTab(resolvedSearchParams.tab);
 

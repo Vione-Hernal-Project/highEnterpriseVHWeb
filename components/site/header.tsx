@@ -7,6 +7,7 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { MobileHeader } from "@/components/site/mobile-header";
 import { HeaderStoreLinks } from "@/components/storefront/header-store-links";
 import { WalletStatus } from "@/components/wallet/wallet-status";
+import { isAdminAccessRole } from "@/lib/admin/access";
 import { hasPublicSupabaseEnv } from "@/lib/env/public";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -52,7 +53,7 @@ async function loadHeaderAuthState({ userKnown = false } = {}) {
 
   return {
     signedIn: true,
-    isManagementUser: profilePayload?.role === "admin" || profilePayload?.role === "owner",
+    isManagementUser: isAdminAccessRole(profilePayload?.role),
   };
 }
 

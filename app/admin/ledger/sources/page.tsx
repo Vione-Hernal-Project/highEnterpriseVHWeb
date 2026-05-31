@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Wallet } from "lucide-react";
 
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAllocationLedgerSnapshot } from "@/lib/admin/allocation-ledger";
 import { getErrorMessage } from "@/lib/http";
 
 export default async function AdminLedgerSourcesPage() {
-  await requireManagementUser();
+  await requireAdminArea("ledger");
 
   let loadError = "";
   let snapshot = null;

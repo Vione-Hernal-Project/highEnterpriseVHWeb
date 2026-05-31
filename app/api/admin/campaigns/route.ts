@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { CAMPAIGN_CACHE_TAG, isMissingCampaignsTableError, loadAdminCampaignRecords } from "@/lib/campaigns";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adminCampaignSchema } from "@/lib/validations/campaign";
@@ -28,14 +29,14 @@ function getCampaignStorageErrorResponse() {
 
 export async function GET() {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "marketing")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const campaigns = await loadAdminCampaignRecords();
@@ -52,14 +53,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "marketing")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_CAMPAIGN_BODY_LIMIT_BYTES);

@@ -37,7 +37,18 @@ function tabMatchesRow(tab: string, row: HTMLTableRowElement) {
   }
 
   if (normalizedTab === "management") {
-    return ["owner", "admin", "staff"].some((role) => rowStatus.includes(role) || rowText.includes(role));
+    return [
+      "super_admin",
+      "full_admin",
+      "product_manager",
+      "orders_manager",
+      "customer_support",
+      "marketing_content_manager",
+      "finance_ledger",
+      "owner",
+      "admin",
+      "staff",
+    ].some((role) => rowStatus.includes(role) || rowText.includes(role));
   }
 
   return rowStatus.includes(normalizedTab) || rowText.includes(normalizedTab);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { normalizeBannerStorageKey } from "@/lib/banners";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
@@ -23,14 +24,14 @@ function getFileExtension(fileName: string) {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "content")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, MAX_BANNER_MEDIA_REQUEST_BYTES);

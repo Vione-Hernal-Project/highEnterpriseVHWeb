@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent, PointerEvent, ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -30,29 +30,38 @@ import {
 import { LogoutButton } from "@/components/auth/logout-button";
 import { AdminRoutePrefetcher } from "@/components/admin/admin-route-prefetcher";
 import { useBrandingAssets } from "@/components/branding/branding-assets";
+import {
+  getAdminRoleLabel,
+  getDefaultAdminHref,
+  hasAdminAccess,
+  type AdminAccessArea,
+  type AdminRole,
+} from "@/lib/admin/access";
 import { cn } from "@/lib/utils";
 
 type Props = {
   children: ReactNode;
   ordersActionableCount?: number;
+  adminRole: AdminRole | null;
+  userEmail: string;
 };
 
 const NAV_ITEMS = [
-  { href: "/admin", label: "Dashboard", icon: Home, exact: true },
-  { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
-  { href: "/admin/products", label: "Products", icon: Package },
-  { href: "/admin/collections", label: "Collections", icon: Boxes },
-  { href: "/admin/customers", label: "Customers", icon: Users },
-  { href: "/admin/reviews", label: "Reviews", icon: Star },
-  { href: "/admin/coupons", label: "Coupons", icon: Tag },
-  { href: "/admin/blog", label: "Blog", icon: BookOpenText },
-  { href: "/admin/pages", label: "Pages", icon: FileText },
-  { href: "/admin/banners", label: "Banners", icon: ImageIcon },
-  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/admin/marketing", label: "Marketing", icon: Megaphone },
-  { href: "/admin/reports", label: "Reports", icon: FileBarChart },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
-];
+  { href: "/admin", label: "Dashboard", icon: Home, exact: true, area: "dashboard" },
+  { href: "/admin/orders", label: "Orders", icon: ShoppingBag, area: "orders" },
+  { href: "/admin/products", label: "Products", icon: Package, area: "products" },
+  { href: "/admin/collections", label: "Collections", icon: Boxes, area: "collections" },
+  { href: "/admin/customers", label: "Customers", icon: Users, area: "customers" },
+  { href: "/admin/reviews", label: "Reviews", icon: Star, area: "reviews" },
+  { href: "/admin/coupons", label: "Coupons", icon: Tag, area: "coupons" },
+  { href: "/admin/blog", label: "Blog", icon: BookOpenText, area: "content" },
+  { href: "/admin/pages", label: "Pages", icon: FileText, area: "content" },
+  { href: "/admin/banners", label: "Banners", icon: ImageIcon, area: "content" },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3, area: "reports" },
+  { href: "/admin/marketing", label: "Marketing", icon: Megaphone, area: "marketing" },
+  { href: "/admin/reports", label: "Reports", icon: FileBarChart, area: "reports" },
+  { href: "/admin/settings", label: "Settings", icon: Settings, area: "settings" },
+] satisfies Array<{ href: string; label: string; icon: typeof Home; exact?: boolean; area: AdminAccessArea }>;
 
 function isActivePath(pathname: string, href: string, exact?: boolean) {
   if (exact) {
@@ -74,9 +83,12 @@ function isPrimaryNavigationEvent(event: MouseEvent<HTMLAnchorElement> | Pointer
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
-export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
+export function AdminShell({ children, ordersActionableCount = 0, adminRole, userEmail }: Props) {
   const pathname = usePathname();
   const branding = useBrandingAssets();
+  const defaultAdminHref = getDefaultAdminHref(adminRole);
+  const roleLabel = getAdminRoleLabel(adminRole);
+  const visibleNavItems = useMemo(() => NAV_ITEMS.filter((item) => hasAdminAccess(adminRole, item.area)), [adminRole]);
   const [activePathname, setActivePathname] = useState(pathname);
   const [ordersBadgeCount, setOrdersBadgeCount] = useState(ordersActionableCount);
 
@@ -92,6 +104,10 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
     let cancelled = false;
 
     async function refreshBadges() {
+      if (!hasAdminAccess(adminRole, "orders")) {
+        return;
+      }
+
       try {
         const response = await fetch("/api/admin/badges", { cache: "no-store" });
 
@@ -111,10 +127,13 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
 
     void refreshBadges();
 
+    window.addEventListener("focus", refreshBadges);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", refreshBadges);
     };
-  }, [pathname]);
+  }, [adminRole]);
 
   const primeSidebarNavigation = (href: string) => {
     setActivePathname(getPathnameFromHref(href));
@@ -126,17 +145,17 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
       <aside className="vh-admin-sidebar" aria-label="Vione Hernal admin navigation">
         <Link
           className="vh-admin-sidebar__brand"
-          href="/admin"
-          prefetch
+          href={defaultAdminHref}
+          prefetch={false}
           aria-label="Vione Hernal admin dashboard"
           onClick={(event) => {
             if (isPrimaryNavigationEvent(event)) {
-              primeSidebarNavigation("/admin");
+              primeSidebarNavigation(defaultAdminHref);
             }
           }}
           onPointerDown={(event) => {
             if (isPrimaryNavigationEvent(event)) {
-              primeSidebarNavigation("/admin");
+              primeSidebarNavigation(defaultAdminHref);
             }
           }}
         >
@@ -145,7 +164,7 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
         </Link>
 
         <nav className="vh-admin-sidebar__nav">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const active = isActivePath(activePathname, item.href, item.exact);
             const badge = item.href === "/admin/orders" && ordersBadgeCount > 0 ? String(ordersBadgeCount) : undefined;
@@ -154,7 +173,7 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
               <Link
                 key={item.href}
                 href={item.href}
-                prefetch
+                prefetch={false}
                 className={cn("vh-admin-sidebar__link", active && "vh-admin-sidebar__link--active")}
                 aria-current={active ? "page" : undefined}
                 onClick={(event) => {
@@ -183,14 +202,15 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
           <div>
             <strong>{branding.storeName}</strong>
             <span>Administrator</span>
-            <small>admin@vionehernal.com</small>
+            <span>{roleLabel}</span>
+            <small>{userEmail}</small>
           </div>
         </div>
 
         <div className="vh-admin-sidebar__footer">
-          <Link
+          {hasAdminAccess(adminRole, "ledger") ? <Link
             href="/admin/ledger/transactions?date=all"
-            prefetch
+            prefetch={false}
             onClick={(event) => {
               if (isPrimaryNavigationEvent(event)) {
                 primeSidebarNavigation("/admin/ledger/transactions?date=all");
@@ -204,10 +224,10 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
           >
             <CalendarDays size={16} strokeWidth={1.8} aria-hidden="true" />
             Transaction History
-          </Link>
-          <Link
+          </Link> : null}
+          {hasAdminAccess(adminRole, "ledger") ? <Link
             href="/admin/ledger/distribution"
-            prefetch
+            prefetch={false}
             onClick={(event) => {
               if (isPrimaryNavigationEvent(event)) {
                 primeSidebarNavigation("/admin/ledger/distribution");
@@ -221,10 +241,10 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
           >
             <Layers3 size={16} strokeWidth={1.8} aria-hidden="true" />
             Allocation Rules
-          </Link>
-          <Link
+          </Link> : null}
+          {hasAdminAccess(adminRole, "wallet-settings") ? <Link
             href="/admin/settings/payment-methods"
-            prefetch
+            prefetch={false}
             onClick={(event) => {
               if (isPrimaryNavigationEvent(event)) {
                 primeSidebarNavigation("/admin/settings/payment-methods");
@@ -238,10 +258,10 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
           >
             <Percent size={16} strokeWidth={1.8} aria-hidden="true" />
             Payment Methods
-          </Link>
-          <Link
+          </Link> : null}
+          {hasAdminAccess(adminRole, "settings") ? <Link
             href="/admin/settings/email"
-            prefetch
+            prefetch={false}
             onClick={(event) => {
               if (isPrimaryNavigationEvent(event)) {
                 primeSidebarNavigation("/admin/settings/email");
@@ -255,10 +275,10 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
           >
             <Mail size={16} strokeWidth={1.8} aria-hidden="true" />
             Email Settings
-          </Link>
-          <Link
+          </Link> : null}
+          {hasAdminAccess(adminRole, "settings") ? <Link
             href="/admin/settings/notifications"
-            prefetch
+            prefetch={false}
             onClick={(event) => {
               if (isPrimaryNavigationEvent(event)) {
                 primeSidebarNavigation("/admin/settings/notifications");
@@ -272,7 +292,7 @@ export function AdminShell({ children, ordersActionableCount = 0 }: Props) {
           >
             <Bell size={16} strokeWidth={1.8} aria-hidden="true" />
             Notifications
-          </Link>
+          </Link> : null}
           <LogoutButton className="vh-admin-sidebar__logout" redirectTo="/" variant="button">
             <LogOut size={16} strokeWidth={1.8} aria-hidden="true" />
             Log out

@@ -1,8 +1,8 @@
 import { AdminCustomerCreateView } from "@/components/admin/admin-customer-create-view";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 
 export default async function AdminNewCustomerPage() {
-  await requireManagementUser();
+  await requireAdminArea("customers");
 
   return <AdminCustomerCreateView />;
 }

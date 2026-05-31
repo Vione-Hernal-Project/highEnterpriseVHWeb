@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
-import { getCurrentUserContext } from "@/lib/auth";
+import { normalizeAdminRole } from "@/lib/admin/access";
+import { getAdminApiAccess } from "@/lib/auth";
 import { getConfiguredOwnerEmails } from "@/lib/env/server";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
@@ -11,16 +13,16 @@ const ADMIN_ROLE_UPDATE_WINDOW_MS = 10 * 60_000;
 const ADMIN_ROLE_UPDATE_LIMIT = 30;
 const ADMIN_ROLE_UPDATE_BODY_LIMIT_BYTES = 8 * 1024;
 
+function isOwnerProfile(profile: { email?: string | null; role?: string | null }, ownerEmails: string[]) {
+  return profile.role === "owner" || Boolean(profile.email && ownerEmails.includes(profile.email.toLowerCase()));
+}
+
 export async function PATCH(request: Request) {
   try {
-    const { user, isOwner } = await getCurrentUserContext();
+    const access = await getAdminApiAccess("admin-settings");
 
-    if (!user) {
-      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    }
-
-    if (!isOwner) {
-      return NextResponse.json({ error: "Owner access required." }, { status: 403 });
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const bodySizeError = getJsonBodySizeError(request, ADMIN_ROLE_UPDATE_BODY_LIMIT_BYTES);
@@ -30,7 +32,7 @@ export async function PATCH(request: Request) {
     }
 
     const userRateLimit = await applyRateLimit({
-      key: `admin:profiles:role:user:${user.id}`,
+      key: `admin:profiles:role:user:${access.context.user.id}`,
       limit: ADMIN_ROLE_UPDATE_LIMIT,
       windowMs: ADMIN_ROLE_UPDATE_WINDOW_MS,
     });
@@ -67,11 +69,17 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Profile not found." }, { status: 404 });
     }
 
-    if (profile.email && getConfiguredOwnerEmails().includes(profile.email.toLowerCase())) {
+    const ownerEmails = getConfiguredOwnerEmails();
+
+    if (isOwnerProfile(profile, ownerEmails)) {
       return NextResponse.json(
-        { error: "Owner access is controlled by STORE_OWNER_EMAILS and cannot be changed here." },
+        { error: "Owner access is protected and cannot be changed here." },
         { status: 400 },
       );
+    }
+
+    if (profile.id === access.context.user.id && normalizeAdminRole(profile.role) === "super_admin" && parsed.data.role === "user") {
+      return NextResponse.json({ error: "You cannot remove your own Super Admin access." }, { status: 400 });
     }
 
     const { data, error } = await admin
@@ -84,6 +92,8 @@ export async function PATCH(request: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    revalidatePath("/admin", "layout");
 
     return NextResponse.json({ profile: data });
   } catch (error) {

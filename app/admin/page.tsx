@@ -10,7 +10,7 @@ import {
 } from "@/components/admin/admin-ui";
 import { AdminLiveRefresh } from "@/components/admin/admin-live-refresh";
 import { loadAdminNotificationCenterRows } from "@/lib/admin/notifications";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import type { CatalogProduct } from "@/lib/catalog";
 import { getErrorMessage } from "@/lib/http";
 import { formatAmountWithUnit } from "@/lib/payments/options";
@@ -147,7 +147,7 @@ function buildSalesOverviewDatasets(payments: Array<Record<string, any>>): Admin
 }
 
 export default async function AdminPage() {
-  await requireManagementUser();
+  await requireAdminArea("dashboard");
 
   let orders: Array<Record<string, any>> = [];
   let payments: Array<Record<string, any>> = [];

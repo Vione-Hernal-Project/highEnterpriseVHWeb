@@ -290,6 +290,18 @@
     display: inline;
   }
 
+  .vh-home-page .story-hero__spring-title {
+    font-size: 2.32rem;
+  }
+
+  .vh-home-page .story-hero__spring-description {
+    font-size: 0.84rem;
+  }
+
+  .vh-home-page .story-hero__spring-link {
+    font-size: 0.78rem;
+  }
+
   .story-hero__spring-copy-mobile {
     display: none;
   }

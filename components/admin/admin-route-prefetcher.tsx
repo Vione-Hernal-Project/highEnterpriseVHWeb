@@ -2,39 +2,6 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { PrefetchKind } from "next/dist/client/components/router-reducer/router-reducer-types";
-
-const ADMIN_WARM_ROUTES = [
-  "/admin",
-  "/admin/orders",
-  "/admin/products",
-  "/admin/collections",
-  "/admin/customers",
-  "/admin/reviews",
-  "/admin/coupons",
-  "/admin/blog",
-  "/admin/pages",
-  "/admin/banners",
-  "/admin/analytics",
-  "/admin/marketing",
-  "/admin/reports",
-  "/admin/settings",
-  "/admin/ledger/transactions?date=all",
-  "/admin/ledger/distribution",
-  "/admin/settings/payment-methods",
-  "/admin/settings/email",
-  "/admin/settings/notifications",
-];
-
-function scheduleIdle(callback: () => void) {
-  if ("requestIdleCallback" in window) {
-    const id = window.requestIdleCallback(callback, { timeout: 1800 });
-    return () => window.cancelIdleCallback(id);
-  }
-
-  const id = globalThis.setTimeout(callback, 300);
-  return () => globalThis.clearTimeout(id);
-}
 
 function getAdminHref(rawHref: string) {
   try {
@@ -63,29 +30,8 @@ export function AdminRoutePrefetcher() {
     }
 
     prefetched.current.add(href);
-    router.prefetch(href, { kind: PrefetchKind.FULL });
+    router.prefetch(href);
   }, [pathname, router]);
-
-  useEffect(() => {
-    let index = 0;
-    let cancelScheduled = () => {};
-
-    const warmNextBatch = () => {
-      const batch = ADMIN_WARM_ROUTES.slice(index, index + 3);
-      batch.forEach(prefetchAdminHref);
-      index += batch.length;
-
-      if (index < ADMIN_WARM_ROUTES.length) {
-        cancelScheduled = scheduleIdle(warmNextBatch);
-      }
-    };
-
-    cancelScheduled = scheduleIdle(warmNextBatch);
-
-    return () => {
-      cancelScheduled();
-    };
-  }, [prefetchAdminHref]);
 
   useEffect(() => {
     const root = document.querySelector(".vh-admin-system");

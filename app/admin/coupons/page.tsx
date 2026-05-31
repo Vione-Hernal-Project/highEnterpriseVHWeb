@@ -1,5 +1,5 @@
 import { AdminCouponsView, COUPON_TABLE_TABS } from "@/components/admin/admin-coupons-view";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/http";
 import { loadAdminCouponRecords, type AdminCouponsSnapshot } from "@/lib/coupons";
 
@@ -27,7 +27,7 @@ function resolveCouponTab(value: string | string[] | undefined) {
 }
 
 export default async function AdminCouponsPage({ searchParams }: AdminCouponsPageProps) {
-  await requireManagementUser();
+  await requireAdminArea("coupons");
 
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const activeTab = resolveCouponTab(resolvedSearchParams.tab);

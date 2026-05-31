@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { AdminReviewFormView } from "@/components/admin/admin-review-form-view";
 import { loadAdminReviewFormOptions } from "@/lib/admin/review-form-options";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAdminProductReview } from "@/lib/reviews";
 
 type Props = {
@@ -12,7 +12,7 @@ type Props = {
 };
 
 export default async function AdminEditReviewPage({ params }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("reviews");
   const { reviewId } = await params;
   const [review, options] = await Promise.all([
     loadAdminProductReview(reviewId),

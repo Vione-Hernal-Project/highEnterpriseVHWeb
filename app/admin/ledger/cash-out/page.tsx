@@ -1,12 +1,12 @@
 import Link from "next/link";
 
 import { LedgerCashOutRoute } from "@/components/admin/ledger-cash-out-route";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadAllocationLedgerSnapshot } from "@/lib/admin/allocation-ledger";
 import { getErrorMessage } from "@/lib/http";
 
 export default async function AdminLedgerCashOutPage() {
-  await requireManagementUser();
+  await requireAdminArea("dashboard");
 
   let loadError = "";
   let snapshot = null;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { saveAdminNotificationReadIds } from "@/lib/admin/notification-reads";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -17,14 +18,14 @@ function normalizeIds(value: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "settings")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const bodySizeError = getJsonBodySizeError(request, NOTIFICATION_READ_BODY_LIMIT_BYTES);

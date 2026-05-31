@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink, Layers3, ReceiptText, ShieldCheck, Wallet } from "lucide-react";
 
 import { AdminLedgerShell } from "@/components/admin/admin-ledger-shell";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import { loadLedgerTransactionDetail } from "@/lib/admin/allocation-ledger";
 
 type Props = {
@@ -30,7 +30,7 @@ function getSectionIcon(title: string) {
 }
 
 export default async function AdminLedgerTransactionDetailPage({ params }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("ledger");
 
   const { kind, id } = await params;
   const detail = await loadLedgerTransactionDetail(kind, id);

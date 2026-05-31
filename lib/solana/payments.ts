@@ -15,8 +15,7 @@ import {
 import { normalizePaymentAmount } from "@/lib/payments/amounts";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { getPaymentMethodConfig, getPaymentMethodSetupError, type PaymentMethod } from "@/lib/payments/options";
-import { assertSolanaMainnetConfig, getSolanaConnection, normalizeSolanaAddress } from "@/lib/solana/network";
-import { SOLANA_MERCHANT_WALLET_ADDRESS } from "@/lib/web3/config";
+import { assertSolanaMainnetConfig, assertSolanaMainnetConnection, getSolanaConnection, normalizeSolanaAddress } from "@/lib/solana/network";
 
 type SolanaProvider = {
   isPhantom?: boolean;
@@ -139,6 +138,16 @@ function getSolanaPaymentConfig(paymentMethod: PaymentMethod) {
   return config;
 }
 
+function resolveRequiredRecipientAddress(recipientAddress: string | null | undefined) {
+  const value = (recipientAddress || "").trim();
+
+  if (!value) {
+    throw new Error("Server-issued Solana recipient wallet address is missing. Refresh checkout and try again.");
+  }
+
+  return normalizeSolanaAddress(value, "Recipient Solana wallet address is invalid.");
+}
+
 export async function connectSolanaWallet(options?: { forcePrompt?: boolean }) {
   const provider = getInjectedPhantomProvider();
 
@@ -173,6 +182,10 @@ export async function disconnectSolanaWallet() {
 
 export async function validateSolanaWalletCanPay(input: SendSolanaPaymentInput) {
   const config = getSolanaPaymentConfig(input.paymentMethod);
+  const connection = getSolanaConnection("confirmed");
+
+  await assertSolanaMainnetConnection(connection);
+
   const wallet = await connectSolanaWallet();
   const expectedWalletAddress = input.expectedWalletAddress
     ? normalizeSolanaAddress(input.expectedWalletAddress, "Expected Solana wallet is invalid.")
@@ -182,7 +195,6 @@ export async function validateSolanaWalletCanPay(input: SendSolanaPaymentInput) 
     throw new Error("Reconnect the Solana wallet that was originally used for this order before paying.");
   }
 
-  const connection = getSolanaConnection("confirmed");
   const amountInBaseUnits = amountToBaseUnits(input.amount, config.decimals, config.label);
   const solBalance = await connection.getBalance(wallet.publicKey, "confirmed");
 
@@ -209,10 +221,7 @@ export async function validateSolanaWalletCanPay(input: SendSolanaPaymentInput) 
   const sourceTokenAccount = await getAssociatedTokenAddress(mint, wallet.publicKey);
   const tokenBalance = await connection.getTokenAccountBalance(sourceTokenAccount, "confirmed").catch(() => null);
   const balanceRaw = BigInt(tokenBalance?.value.amount || "0");
-  const recipientAddress = normalizeSolanaAddress(
-    input.recipientAddress || SOLANA_MERCHANT_WALLET_ADDRESS,
-    "Recipient Solana wallet address is invalid.",
-  );
+  const recipientAddress = resolveRequiredRecipientAddress(input.recipientAddress);
   const recipientTokenAccount = await getAssociatedTokenAddress(mint, new PublicKey(recipientAddress));
   const recipientTokenAccountExists = Boolean(await connection.getAccountInfo(recipientTokenAccount, "confirmed"));
   const feeReserveLamports = recipientTokenAccountExists ? 10_000n : 3_000_000n;
@@ -238,13 +247,11 @@ export async function validateSolanaWalletCanPay(input: SendSolanaPaymentInput) 
 }
 
 export async function sendSolanaPayment(input: SendSolanaPaymentInput): Promise<SendSolanaPaymentResult> {
+  const recipientAddress = resolveRequiredRecipientAddress(input.recipientAddress);
   const config = getSolanaPaymentConfig(input.paymentMethod);
   const wallet = await validateSolanaWalletCanPay(input);
-  const recipientAddress = normalizeSolanaAddress(
-    input.recipientAddress || SOLANA_MERCHANT_WALLET_ADDRESS,
-    "Recipient Solana wallet address is invalid.",
-  );
   const connection = getSolanaConnection("confirmed");
+  await assertSolanaMainnetConnection(connection);
   const transaction = new Transaction();
   const amountInBaseUnits = amountToBaseUnits(input.amount, config.decimals, config.label);
 

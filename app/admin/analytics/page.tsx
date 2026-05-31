@@ -24,7 +24,7 @@ import {
 } from "@/components/admin/admin-analytics-charts";
 import { AdminPageHeader, EmptyAdminState } from "@/components/admin/admin-ui";
 import { loadGa4TrafficOverview } from "@/lib/analytics/ga4";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import type { CatalogProduct } from "@/lib/catalog";
 import { loadAdminManualCustomers } from "@/lib/customers";
 import { getErrorMessage } from "@/lib/http";
@@ -616,7 +616,7 @@ function AnalyticsMetricCard({ label, value, delta, tone = "purple", icon: Icon,
 }
 
 export default async function AdminAnalyticsPage({ searchParams }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("reports");
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const selectedRange = resolveRangeKey(resolvedSearchParams.range);
   const selectedCompare = resolveCompareKey(resolvedSearchParams.compare);

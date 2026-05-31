@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Archive, ArrowLeft, Circle, Package, PackageX, ShoppingBag } from "lucide-react";
 
 import { AdminPageHeader, AdminStatCard, AdminStatusBadge, AdminTableShell, EmptyAdminState } from "@/components/admin/admin-ui";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import type { CatalogProduct } from "@/lib/catalog";
 import { getCatalogPriceLabel } from "@/lib/catalog";
 import { getErrorMessage } from "@/lib/http";
@@ -43,7 +43,7 @@ function formatProductDate(product: CatalogProduct) {
 }
 
 export default async function AdminProductInventoryPage() {
-  await requireManagementUser();
+  await requireAdminArea("products");
   let products: CatalogProduct[] = [];
   let loadError = "";
 

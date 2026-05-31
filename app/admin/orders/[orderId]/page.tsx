@@ -6,6 +6,7 @@ import { AdminPageHeader, AdminStatusBadge } from "@/components/admin/admin-ui";
 import { AdminOrderStatusForm } from "@/components/admin/order-status-form";
 import { VhInteractiveMap, type VhMapMarker } from "@/components/map/vh-interactive-map";
 import { requireOrderOperationsUser } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getOrderDisplayLines } from "@/lib/order-items";
 import { formatAmountWithUnit, getPaymentMethodLabel } from "@/lib/payments/options";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -115,6 +116,8 @@ function getOrderLineTotal(item: Record<string, any>, order: Record<string, any>
 
 export default async function AdminOrderDetailPage({ params }: Props) {
   const { role } = await requireOrderOperationsUser();
+  const canUpdateOrders = hasAdminAccess(role, "orders:write");
+  const canViewPaymentDetails = hasAdminAccess(role, "payments") || hasAdminAccess(role, "ledger");
   const { orderId } = await params;
   const admin = createSupabaseAdminClient();
   const { data: order, error: orderError } = await admin.from("orders").select("*").eq("id", orderId).maybeSingle();
@@ -229,7 +232,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           <ArrowLeft size={16} strokeWidth={1.9} aria-hidden="true" />
           <span>Back to Orders</span>
         </Link>
-        {payment ? (
+        {canViewPaymentDetails && payment ? (
           <Link className="vh-admin-action-button vh-admin-action-button--primary" href={`/admin/ledger/transactions/payment/${payment.id}`}>
             <ExternalLink size={16} strokeWidth={1.9} aria-hidden="true" />
             <span>Ledger Detail</span>
@@ -306,13 +309,15 @@ export default async function AdminOrderDetailPage({ params }: Props) {
               <p>Paid orders remain protected by verified payment confirmation.</p>
             </div>
           </div>
-          {role === "staff" && order.status === "paid" ? (
-            <div className="vh-admin-context-note">Staff cannot edit paid orders.</div>
+          {!canUpdateOrders ? (
+            <div className="vh-admin-context-note">Order records are view-only for this role.</div>
+          ) : role === "orders_manager" && order.status === "paid" ? (
+            <div className="vh-admin-context-note">Orders Manager cannot edit paid orders.</div>
           ) : (
             <AdminOrderStatusForm
               orderId={order.id}
               initialStatus={order.status}
-              allowedStatuses={role === "staff" ? ["pending", "cancelled"] : undefined}
+              allowedStatuses={role === "orders_manager" ? ["pending", "cancelled"] : undefined}
             />
           )}
         </article>
@@ -370,7 +375,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </div>
         </article>
 
-        <article className="vh-admin-panel">
+        {canViewPaymentDetails ? <article className="vh-admin-panel">
           <div className="vh-admin-panel__header">
             <div>
               <h2>Payment / Ledger</h2>
@@ -392,7 +397,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
               </Link>
             ) : null}
           </div>
-        </article>
+        </article> : null}
       </section>
     </div>
   );

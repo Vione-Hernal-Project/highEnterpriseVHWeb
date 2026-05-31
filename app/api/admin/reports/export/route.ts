@@ -8,18 +8,19 @@ import {
   resolveReportTabKey,
 } from "@/lib/admin/reports";
 import { getCurrentUserContext } from "@/lib/auth";
+import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage } from "@/lib/http";
 
 export async function GET(request: Request) {
   try {
-    const { user, isManagementUser } = await getCurrentUserContext();
+    const { user, role } = await getCurrentUserContext();
 
     if (!user) {
       return NextResponse.json({ error: "Authentication required." }, { status: 401 });
     }
 
-    if (!isManagementUser) {
-      return NextResponse.json({ error: "Management access required." }, { status: 403 });
+    if (!hasAdminAccess(role, "reports")) {
+      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
     }
 
     const url = new URL(request.url);

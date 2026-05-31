@@ -4,7 +4,7 @@ import { normalizePaymentAmount } from "@/lib/payments/amounts";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { getPaymentMethodConfig, getPaymentMethodLabel, getPaymentMethodSetupError, type PaymentMethod } from "@/lib/payments/options";
 import { getWeb3ErrorMessage } from "@/lib/web3/errors";
-import { ERC20_PAYMENT_ABI, MERCHANT_WALLET_ADDRESS } from "@/lib/web3/config";
+import { ERC20_PAYMENT_ABI } from "@/lib/web3/config";
 import { connectWallet, ensureEthereumMainnetChain, getBrowserProvider, getCurrentAccount } from "@/lib/web3/metamask";
 import { ETHEREUM_MAINNET_CHAIN_ID } from "@/lib/web3/network";
 
@@ -28,7 +28,11 @@ export type PreparedWalletSession = {
 };
 
 function resolveRecipientAddress(recipientAddress: string | null | undefined) {
-  const value = (recipientAddress || MERCHANT_WALLET_ADDRESS || "").trim();
+  const value = (recipientAddress || "").trim();
+
+  if (!value) {
+    throw new Error("Server-issued recipient wallet address is missing. Refresh checkout and try again.");
+  }
 
   if (!isAddress(value)) {
     throw new Error("Recipient wallet address is invalid.");

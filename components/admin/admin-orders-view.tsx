@@ -46,7 +46,8 @@ export type AdminOrderViewRow = {
 type Props = {
   rows: AdminOrderViewRow[];
   role: string;
-  isManagementUser: boolean;
+  canUpdateOrders: boolean;
+  canViewPaymentDetails: boolean;
   loadError?: string;
 };
 
@@ -373,7 +374,7 @@ function MetricCard({
   );
 }
 
-export function AdminOrdersView({ rows, role, isManagementUser, loadError = "" }: Props) {
+export function AdminOrdersView({ rows, role, canUpdateOrders, canViewPaymentDetails, loadError = "" }: Props) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedOrderFilters>(DEFAULT_ADVANCED_FILTERS);
   const [draftFilters, setDraftFilters] = useState<AdvancedOrderFilters>(DEFAULT_ADVANCED_FILTERS);
@@ -667,13 +668,13 @@ export function AdminOrdersView({ rows, role, isManagementUser, loadError = "" }
                     <td>{row.dateLabel}</td>
                     <td>{row.amountLabel}</td>
                     <td>
-                      {row.paymentDetailHref ? (
+                      {canViewPaymentDetails && row.paymentDetailHref ? (
                         <div className="vh-admin-payment-cell">
                           <strong>{row.paymentMethodLabel}</strong>
                           <small>{row.tokenLabel} · {row.transactionLabel}</small>
                         </div>
                       ) : (
-                        <span className="vh-admin-muted">No payment record</span>
+                        <span className="vh-admin-muted">{canViewPaymentDetails ? "No payment record" : "Restricted"}</span>
                       )}
                     </td>
                     <td><AdminStatusBadge tone={getStatusTone(row.status)}>{row.status}</AdminStatusBadge></td>
@@ -683,13 +684,13 @@ export function AdminOrdersView({ rows, role, isManagementUser, loadError = "" }
                         <Link className="vh-admin-view-button" href={row.detailHref}>
                           View
                         </Link>
-                        {role === "staff" && row.status === "paid" ? null : (
+                        {canUpdateOrders && !(role === "orders_manager" && row.status === "paid") ? (
                           <AdminOrderStatusForm
                             orderId={row.id}
                             initialStatus={row.initialStatus}
-                            allowedStatuses={role === "staff" ? ["pending", "cancelled"] : undefined}
+                            allowedStatuses={role === "orders_manager" ? ["pending", "cancelled"] : undefined}
                           />
-                        )}
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -915,7 +916,7 @@ export function AdminOrdersView({ rows, role, isManagementUser, loadError = "" }
       ) : null}
 
       <div className="vh-admin-context-note">
-        Effective role: {role}. {isManagementUser ? "Management actions are available." : "Staff order actions are limited."}
+        Effective role: {role}. {canUpdateOrders ? "Order actions are available." : "Order records are view-only."}
       </div>
     </div>
   );

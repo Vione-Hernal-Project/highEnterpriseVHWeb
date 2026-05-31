@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Circle, Package, ShoppingBag } from "lucide-react";
 
 import { AdminPageHeader, AdminStatCard, AdminStatusBadge, AdminTableShell } from "@/components/admin/admin-ui";
-import { requireManagementUser } from "@/lib/auth";
+import { requireAdminArea } from "@/lib/auth";
 import type { CatalogProduct } from "@/lib/catalog";
 import { getCatalogPriceLabel } from "@/lib/catalog";
 import { loadAdminCollectionRecords, normalizeCollectionKey } from "@/lib/collections";
@@ -20,7 +20,7 @@ function getProductStock(product: CatalogProduct) {
 }
 
 export default async function AdminCollectionDetailPage({ params }: Props) {
-  await requireManagementUser();
+  await requireAdminArea("collections");
   const { collectionName } = await params;
   const decodedName = decodeURIComponent(collectionName);
   const products = await loadAdminCatalogProducts().catch(() => []);

@@ -8,7 +8,7 @@ import { getSolanaRpcEnvError, serverEnv } from "@/lib/env/server";
 import { normalizePaymentAmount } from "@/lib/payments/amounts";
 import { logPaymentDebug } from "@/lib/payments/debug";
 import { getPaymentMethodConfig, getPaymentMethodSetupError, type PaymentMethod } from "@/lib/payments/options";
-import { normalizeSolanaAddress } from "@/lib/solana/network";
+import { assertSolanaMainnetConnection, normalizeSolanaAddress } from "@/lib/solana/network";
 
 type PaymentRow = Database["public"]["Tables"]["payments"]["Row"];
 
@@ -82,7 +82,13 @@ async function getSolanaProvider() {
   }
 
   if (!solanaConnectionPromise) {
-    solanaConnectionPromise = Promise.resolve(new Connection(serverEnv.solanaRpcUrl, "confirmed")).catch((error) => {
+    solanaConnectionPromise = (async () => {
+      const connection = new Connection(serverEnv.solanaRpcUrl, "confirmed");
+
+      await assertSolanaMainnetConnection(connection);
+
+      return connection;
+    })().catch((error) => {
       solanaConnectionPromise = undefined;
       throw error;
     });
@@ -273,8 +279,8 @@ async function verifySpecificSolanaPayment(input: {
     "A valid Solana payer wallet is required to verify this payment.",
   );
   const expectedRecipient = normalizeSolanaAddress(
-    input.expectedRecipientAddress || input.payment.recipient_address || serverEnv.solanaMerchantWalletAddress,
-    "Solana merchant wallet is invalid. Update NEXT_PUBLIC_MERCHANT_SOLANA_WALLET in .env.local.",
+    input.expectedRecipientAddress || input.payment.recipient_address,
+    "Saved Solana recipient wallet is missing or invalid.",
   );
   const expectedAmount = amountToBaseUnits(input.payment.amount_expected, config.decimals);
 
