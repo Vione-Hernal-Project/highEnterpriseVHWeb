@@ -11,6 +11,8 @@ export const metadata: Metadata = createSeoMetadata({
   image: "/assets/images/model-4.jpg",
 });
 
+export const dynamic = "force-dynamic";
+
 export default function HomePage() {
   return <LandingPage />;
 }

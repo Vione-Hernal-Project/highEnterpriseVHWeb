@@ -43,6 +43,16 @@ function normalizeQuantity(quantity: number) {
   return Math.max(1, Math.floor(Number.isFinite(quantity) ? quantity : 1));
 }
 
+function normalizeStoredQuantity(quantity: unknown) {
+  const parsedQuantity = Number(quantity);
+
+  if (!Number.isFinite(parsedQuantity) || parsedQuantity < 1) {
+    return null;
+  }
+
+  return Math.floor(parsedQuantity);
+}
+
 export function getStorefrontBagItemKey(productId: string, size: string) {
   return `${productId}::${size}`;
 }
@@ -87,10 +97,10 @@ export function readBagItems() {
 
       const candidate = item as Partial<StorefrontBagItem>;
       const productId = typeof candidate.productId === "string" ? candidate.productId : "";
-      const size = typeof candidate.size === "string" ? candidate.size : "One Size";
-      const quantity = normalizeQuantity(Number(candidate.quantity ?? 1));
+      const size = typeof candidate.size === "string" && candidate.size.trim() ? candidate.size : "One Size";
+      const quantity = normalizeStoredQuantity(candidate.quantity);
 
-      if (!productId) {
+      if (!productId || !quantity) {
         return null;
       }
 

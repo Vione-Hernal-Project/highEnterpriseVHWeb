@@ -23,6 +23,87 @@ export type CatalogProduct = {
 
 export type CatalogProductUiMeta = Pick<CatalogProduct, "categoryLabel" | "department" | "sizes">;
 
+export const CATALOG_WOMENS_DEPARTMENT = "Womens";
+export const CATALOG_MENS_DEPARTMENT = "Mens";
+export const CATALOG_UNISEX_DEPARTMENT = "Unisex";
+
+export function normalizeCatalogDepartment(value: string | null | undefined) {
+  const normalizedValue = (value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  if (!normalizedValue) {
+    return "";
+  }
+
+  if (normalizedValue.includes("unisex") || normalizedValue.includes("both")) {
+    return CATALOG_UNISEX_DEPARTMENT;
+  }
+
+  if (normalizedValue.includes("women")) {
+    return CATALOG_WOMENS_DEPARTMENT;
+  }
+
+  if (normalizedValue.includes("men")) {
+    return CATALOG_MENS_DEPARTMENT;
+  }
+
+  return value?.trim() || "";
+}
+
+export function catalogProductMatchesDepartment(productDepartment: string | null | undefined, targetDepartment: string | null | undefined) {
+  const target = normalizeCatalogDepartment(targetDepartment);
+
+  if (!target) {
+    return true;
+  }
+
+  const product = normalizeCatalogDepartment(productDepartment);
+
+  if (
+    product === CATALOG_UNISEX_DEPARTMENT &&
+    (target === CATALOG_WOMENS_DEPARTMENT || target === CATALOG_MENS_DEPARTMENT)
+  ) {
+    return true;
+  }
+
+  return product === target;
+}
+
+function normalizeCatalogProductDedupeValue(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+export function getCatalogProductDedupeKey(product: CatalogProduct) {
+  return [
+    normalizeCatalogProductDedupeValue(product.name),
+    normalizeCatalogProductDedupeValue(product.image),
+    normalizeCatalogProductDedupeValue(product.pricePhpCents),
+  ].join("|");
+}
+
+export function getUniqueCatalogProducts(products: CatalogProduct[]) {
+  const seenProductIds = new Set<string>();
+  const seenProductKeys = new Set<string>();
+
+  return products.filter((product) => {
+    const productKey = getCatalogProductDedupeKey(product);
+
+    if (seenProductIds.has(product.id) || seenProductKeys.has(productKey)) {
+      return false;
+    }
+
+    seenProductIds.add(product.id);
+    seenProductKeys.add(productKey);
+    return true;
+  });
+}
+
 export const featuredProducts: CatalogProduct[] = [
   {
     id: "MIUF-WZ238",

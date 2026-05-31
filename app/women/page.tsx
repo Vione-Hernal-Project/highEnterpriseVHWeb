@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { CatalogRefreshListener } from "@/components/storefront/catalog-refresh-listener";
 import { ProductGrid } from "@/components/storefront/product-grid";
+import { catalogProductMatchesDepartment } from "@/lib/catalog";
 import { loadPublishedCatalogProducts } from "@/lib/products";
 import { breadcrumbJsonLd, createSeoMetadata, JsonLd } from "@/lib/seo";
 
@@ -11,11 +13,14 @@ export const metadata: Metadata = createSeoMetadata({
   path: "/women",
 });
 
+export const dynamic = "force-dynamic";
+
 export default async function WomenPage() {
-  const products = (await loadPublishedCatalogProducts()).filter((product) => product.department === "Womens");
+  const products = (await loadPublishedCatalogProducts()).filter((product) => catalogProductMatchesDepartment(product.department, "Womens"));
 
   return (
     <section className="storefront-app-view">
+      <CatalogRefreshListener />
       <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Women", path: "/women" }])} />
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>

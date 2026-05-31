@@ -22,6 +22,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: process.cwd(),
+  serverExternalPackages: ["bigint-buffer"],
   experimental: {
     dynamicOnHover: true,
     optimisticRouting: true,

@@ -2,7 +2,15 @@ import "server-only";
 
 import { unstable_cache as cache } from "next/cache";
 
-import { featuredProducts, type CatalogProduct } from "@/lib/catalog";
+import {
+  CATALOG_MENS_DEPARTMENT,
+  CATALOG_UNISEX_DEPARTMENT,
+  CATALOG_WOMENS_DEPARTMENT,
+  catalogProductMatchesDepartment,
+  featuredProducts,
+  getUniqueCatalogProducts,
+  type CatalogProduct,
+} from "@/lib/catalog";
 import type { Database, Json } from "@/lib/database.types";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -12,7 +20,7 @@ export const PRODUCT_CACHE_TAG = "catalog-products";
 const PRODUCT_CACHE_REVALIDATE_SECONDS = 30;
 const PRODUCT_QUERY_TIMEOUT_MS = Number(process.env.PRODUCT_QUERY_TIMEOUT_MS?.trim() || "1200");
 
-export const PRODUCT_DEPARTMENT_OPTIONS = ["Womens", "Mens"] as const;
+export const PRODUCT_DEPARTMENT_OPTIONS = [CATALOG_WOMENS_DEPARTMENT, CATALOG_MENS_DEPARTMENT, CATALOG_UNISEX_DEPARTMENT] as const;
 export const PRODUCT_CATEGORY_OPTIONS = ["Ready to Wear", "Tops", "Shoes", "Bags", "Accessories"] as const;
 
 function normalizeFilterToken(value: string | null | undefined) {
@@ -39,12 +47,16 @@ export function normalizeProductDepartment(value: string | null | undefined) {
     return PRODUCT_DEPARTMENT_OPTIONS[0];
   }
 
+  if (normalizedValue.includes("unisex") || normalizedValue.includes("both")) {
+    return CATALOG_UNISEX_DEPARTMENT;
+  }
+
   if (normalizedValue.includes("women")) {
-    return "Womens";
+    return CATALOG_WOMENS_DEPARTMENT;
   }
 
   if (normalizedValue.includes("men")) {
-    return "Mens";
+    return CATALOG_MENS_DEPARTMENT;
   }
 
   return toTitleCase(value || PRODUCT_DEPARTMENT_OPTIONS[0]);
@@ -98,6 +110,30 @@ export function resolveDepartmentFilter(value: string | null | undefined) {
   }
 
   return normalizeProductDepartment(value.replace(/-/g, " "));
+}
+
+function getProductDepartmentFilterValues(value: string | null | undefined) {
+  if (!value) {
+    return [];
+  }
+
+  const department = normalizeProductDepartment(value);
+  const unisexValues = [CATALOG_UNISEX_DEPARTMENT, "Unisex", "unisex", "Both", "both"];
+
+  if (department === CATALOG_WOMENS_DEPARTMENT || department === CATALOG_MENS_DEPARTMENT) {
+    const departmentValues =
+      department === CATALOG_WOMENS_DEPARTMENT
+        ? [CATALOG_WOMENS_DEPARTMENT, "Womens", "womens", "Women", "women"]
+        : [CATALOG_MENS_DEPARTMENT, "Mens", "mens", "Men", "men"];
+
+    return Array.from(new Set([...departmentValues, ...unisexValues]));
+  }
+
+  if (department === CATALOG_UNISEX_DEPARTMENT) {
+    return Array.from(new Set(unisexValues));
+  }
+
+  return [department];
 }
 
 export function resolveCategoryFilter(value: string | null | undefined) {
@@ -226,7 +262,7 @@ function getFallbackCatalogPage(filters: {
   newArrivalsOnly?: boolean;
 }) {
   const fallbackProducts = getFallbackPublishedProducts().filter((product) => {
-    const departmentMatches = filters.department ? product.department === normalizeProductDepartment(filters.department) : true;
+    const departmentMatches = filters.department ? catalogProductMatchesDepartment(product.department, filters.department) : true;
     const categoryMatches = filters.category ? product.categoryLabel === normalizeProductCategory(filters.category) : true;
     const newArrivalMatches = filters.newArrivalsOnly ? product.showInNewArrivals : true;
 
@@ -262,7 +298,8 @@ async function loadProductRows(filters?: ProductRowFilters) {
   }
 
   if (filters?.department) {
-    query = query.eq("department", normalizeProductDepartment(filters.department));
+    const departmentValues = getProductDepartmentFilterValues(filters.department);
+    query = departmentValues.length > 1 ? query.in("department", departmentValues) : query.eq("department", departmentValues[0]);
   }
 
   if (filters?.category) {
@@ -306,7 +343,8 @@ async function loadProductRowsPage(filters: ProductRowFilters & { offset: number
   }
 
   if (filters.department) {
-    query = query.eq("department", normalizeProductDepartment(filters.department));
+    const departmentValues = getProductDepartmentFilterValues(filters.department);
+    query = departmentValues.length > 1 ? query.in("department", departmentValues) : query.eq("department", departmentValues[0]);
   }
 
   if (filters.category) {
@@ -355,20 +393,20 @@ export async function loadPublishedCatalogProducts() {
       return getFallbackPublishedProducts();
     }
 
-    return sortByPublishedNewest(rows.map(mapProductRow));
+    return getUniqueCatalogProducts(sortByPublishedNewest(rows.map(mapProductRow)));
   } catch {
     return getFallbackPublishedProducts();
   }
 }
 
-export async function loadFeaturedCatalogProducts(limit = 3) {
+export async function loadFeaturedCatalogProducts(limit = 3, department?: string | null) {
   try {
-    const rows = await loadCachedProductRows({ featuredOnly: true, limit });
+    const rows = await loadCachedProductRows({ featuredOnly: true, limit: Math.max(limit * 4, limit), department });
     if (!rows) {
       return [];
     }
 
-    return sortByPublishedNewest(rows.map(mapProductRow)).slice(0, limit);
+    return getUniqueCatalogProducts(sortByPublishedNewest(rows.map(mapProductRow))).slice(0, limit);
   } catch {
     return [];
   }
@@ -417,7 +455,7 @@ export async function loadPublishedCatalogProductsPage(filters: {
     }
 
     return {
-      products: page.rows.map(mapProductRow),
+      products: getUniqueCatalogProducts(page.rows.map(mapProductRow)),
       hasMore: page.hasMore,
       total: page.total,
     };

@@ -2,19 +2,19 @@ import Link from "next/link";
 
 import { FeaturedProducts } from "@/components/home/featured-products";
 import { WomenEditorialOverlayMotion } from "@/components/site/women-editorial-overlay-motion";
+import { CatalogRefreshListener } from "@/components/storefront/catalog-refresh-listener";
 import { getCurrentUserContext } from "@/lib/auth";
-import { getCatalogProductPageHref } from "@/lib/catalog";
 import { loadFeaturedCatalogProducts } from "@/lib/products";
 
 export async function LandingPage() {
   const { user } = await getCurrentUserContext();
-  const featuredProducts = await loadFeaturedCatalogProducts(3);
+  const featuredProducts = await loadFeaturedCatalogProducts(24, "Womens");
   const heroBackgroundSrc: string | null = null;
-  const heroProductHref = featuredProducts[0] ? getCatalogProductPageHref(featuredProducts[0].id) : "/shop";
   const accountCtaHref = user ? "/dashboard" : "/sign-up";
 
   return (
     <div className="storefront-app-view vh-home-page">
+      <CatalogRefreshListener />
       <h1 className="u-screen-reader">Vione Hernal Homepage</h1>
       <section className="u-screen-reader" aria-label="Vione Hernal SEO overview">
         <h2>Blockchain Fashion</h2>
@@ -71,7 +71,7 @@ export async function LandingPage() {
               <br />
               seamlessly integrated without disrupting the experience of luxury.
             </p>
-            <Link className="story-hero__copy-link" href={heroProductHref}>
+            <Link className="story-hero__copy-link" href="/shop">
               Shop
             </Link>
           </div>

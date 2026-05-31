@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
+import { after, NextResponse } from "next/server";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { tryDispatchAdminNotification } from "@/lib/admin/notifications";
 import { getCurrentUserContext } from "@/lib/auth";
@@ -119,6 +119,18 @@ function buildProductPayload(input: ReturnType<typeof adminProductSchema.parse>,
   };
 }
 
+function revalidateProductCatalog(productId?: string) {
+  revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
+  revalidatePath("/");
+  revalidatePath("/women");
+  revalidatePath("/men");
+  revalidatePath("/shop");
+
+  if (productId) {
+    revalidatePath(`/product/${encodeURIComponent(productId)}`);
+  }
+}
+
 export async function GET() {
   try {
     const { user, isManagementUser } = await getCurrentUserContext();
@@ -206,8 +218,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error?.message || "Unable to save the product right now." }, { status: 500 });
     }
 
-    revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
-    await dispatchInventoryNotification({ id: data.id, name: data.name }, parsed.data.sizeInventoryRows);
+    revalidateProductCatalog(data.id);
+    after(() => dispatchInventoryNotification({ id: data.id, name: data.name }, parsed.data.sizeInventoryRows));
 
     return NextResponse.json({ product: data });
   } catch (error) {
@@ -289,8 +301,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: error?.message || "Unable to update the product right now." }, { status: 500 });
     }
 
-    revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
-    await dispatchInventoryNotification({ id: data.id, name: data.name }, parsed.data.sizeInventoryRows);
+    revalidateProductCatalog(data.id);
+    after(() => dispatchInventoryNotification({ id: data.id, name: data.name }, parsed.data.sizeInventoryRows));
 
     return NextResponse.json({ product: data });
   } catch (error) {
@@ -366,7 +378,7 @@ export async function DELETE(request: Request) {
       await admin.storage.from("product-media").remove(storagePaths);
     }
 
-    revalidateTag(PRODUCT_CACHE_TAG, { expire: 0 });
+    revalidateProductCatalog(productId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

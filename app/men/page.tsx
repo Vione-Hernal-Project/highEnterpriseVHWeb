@@ -1,8 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { FeaturedProducts } from "@/components/home/featured-products";
 import { MenEditorialOverlayMotion } from "@/components/site/men-editorial-overlay-motion";
-import { breadcrumbJsonLd, createSeoMetadata, JsonLd } from "@/lib/seo";
+import { CatalogRefreshListener } from "@/components/storefront/catalog-refresh-listener";
+import { ProductGrid } from "@/components/storefront/product-grid";
+import { catalogProductMatchesDepartment, type CatalogProduct } from "@/lib/catalog";
+import { loadFeaturedCatalogProducts, loadPublishedCatalogProducts } from "@/lib/products";
+import { absoluteUrl, createSeoMetadata, JsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = createSeoMetadata({
   title: "Men - Luxury Streetwear",
@@ -10,10 +15,65 @@ export const metadata: Metadata = createSeoMetadata({
   path: "/men",
 });
 
-export default function MenPage() {
+export const dynamic = "force-dynamic";
+
+const menBreadcrumbJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Home",
+      item: absoluteUrl("/"),
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: "Men",
+      item: absoluteUrl("/men"),
+    },
+  ],
+};
+
+function getProductDedupeKey(product: CatalogProduct) {
+  const name = String(product.name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const image = String(product.image ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const price = String(product.pricePhpCents ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+  return `${name}|${image}|${price}`;
+}
+
+export default async function MenPage() {
+  const allProducts = await loadPublishedCatalogProducts();
+  const products: CatalogProduct[] = [];
+
+  for (const product of allProducts) {
+    if (catalogProductMatchesDepartment(product.department, "Mens")) {
+      products.push(product);
+    }
+  }
+
+  const featuredProducts = await loadFeaturedCatalogProducts(24, "Mens");
+  const featuredProductIds = new Set<string>();
+  const featuredProductKeys = new Set<string>();
+  const listedProducts: CatalogProduct[] = [];
+
+  for (const product of featuredProducts) {
+    featuredProductIds.add(product.id);
+    featuredProductKeys.add(getProductDedupeKey(product));
+  }
+
+  for (const product of products) {
+    if (!featuredProductIds.has(product.id) && !featuredProductKeys.has(getProductDedupeKey(product))) {
+      listedProducts.push(product);
+    }
+  }
+
   return (
     <section className="storefront-app-view vh-men-page">
-      <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Men", path: "/men" }])} />
+      <CatalogRefreshListener />
+      <JsonLd data={menBreadcrumbJsonLd} />
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
@@ -54,8 +114,19 @@ export default function MenPage() {
           </figure>
         </div>
 
-        <section className="vh-men-featured" aria-label="Featured menswear" />
+        <section className="vh-men-featured" aria-label="Featured menswear">
+          {featuredProducts.length ? (
+            <div className="vh-home-page__featured-shell">
+              <div className="vh-home-page__featured-header">
+                <h3 className="vh-home-page__featured-title u-margin-tb--none">Featured Items</h3>
+              </div>
+              <FeaturedProducts products={featuredProducts} />
+            </div>
+          ) : null}
+        </section>
       </div>
+
+      {listedProducts.length ? <ProductGrid products={listedProducts} showCta={false} /> : null}
     </section>
   );
 }

@@ -14,9 +14,35 @@ type Props = {
   showCta?: boolean;
 };
 
+function getProductDedupeKey(product: CatalogProduct) {
+  const name = String(product.name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const image = String(product.image ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const price = String(product.pricePhpCents ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+  return `${name}|${image}|${price}`;
+}
+
+function getDisplayedProducts(products: CatalogProduct[]) {
+  const seenProductIds = new Set<string>();
+  const seenProductKeys = new Set<string>();
+
+  return products.filter((product) => {
+    const productKey = getProductDedupeKey(product);
+
+    if (seenProductIds.has(product.id) || seenProductKeys.has(productKey)) {
+      return false;
+    }
+
+    seenProductIds.add(product.id);
+    seenProductKeys.add(productKey);
+    return true;
+  });
+}
+
 function ProductGridComponent({ ctaLabel = "View This Piece", products = [], showCta = true }: Props) {
   const router = useRouter();
-  const productHrefs = useMemo(() => products.map((product) => getCatalogProductPageHref(product.id)), [products]);
+  const displayedProducts = useMemo(() => getDisplayedProducts(products), [products]);
+  const productHrefs = useMemo(() => displayedProducts.map((product) => getCatalogProductPageHref(product.id)), [displayedProducts]);
 
   useEffect(() => {
     const prefetchVisibleProducts = () => {
@@ -38,7 +64,7 @@ function ProductGridComponent({ ctaLabel = "View This Piece", products = [], sho
 
   return (
     <div className="g n-block-grid--4 product-grids js-product-opt-view">
-      {products.map((product, index) => {
+      {displayedProducts.map((product, index) => {
         const productHref = productHrefs[index];
 
         function prefetchProduct() {

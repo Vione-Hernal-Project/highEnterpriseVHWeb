@@ -11,7 +11,14 @@ import {
   getCatalogSubtotalPhpCents,
   type CatalogProduct,
 } from "@/lib/catalog";
-import { readBagItems, removeBagItem, subscribeToStorefrontState, updateBagItemQuantity, type StorefrontBagItem } from "@/lib/storefront/storage";
+import {
+  readBagItems,
+  removeBagItem,
+  subscribeToStorefrontState,
+  updateBagItemQuantity,
+  writeBagItems,
+  type StorefrontBagItem,
+} from "@/lib/storefront/storage";
 
 type BagLineItem = StorefrontBagItem & {
   brand: string;
@@ -27,11 +34,13 @@ type Props = {
 
 export function BagPageView({ products }: Props) {
   const [bagItems, setBagItems] = useState<StorefrontBagItem[]>([]);
+  const [hasSyncedBag, setHasSyncedBag] = useState(false);
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
   useEffect(() => {
     function syncBag() {
       setBagItems(readBagItems());
+      setHasSyncedBag(true);
     }
 
     syncBag();
@@ -62,6 +71,18 @@ export function BagPageView({ products }: Props) {
     [bagItems, productMap],
   );
 
+  useEffect(() => {
+    if (!hasSyncedBag || bagItems.length === 0 || products.length === 0) {
+      return;
+    }
+
+    const availableBagItems = bagItems.filter((item) => productMap.has(item.productId));
+
+    if (availableBagItems.length !== bagItems.length) {
+      writeBagItems(availableBagItems);
+    }
+  }, [bagItems, hasSyncedBag, productMap, products.length]);
+
   const subtotalPhpCents = items.reduce(
     (total, item) => total + getCatalogSubtotalPhpCents(item.pricePhpCents, item.quantity),
     0,
@@ -79,7 +100,11 @@ export function BagPageView({ products }: Props) {
 
       <h1 className="h2 u-margin-b--xl">My Bag</h1>
 
-      {items.length ? (
+      {!hasSyncedBag ? (
+        <div className="storefront-app-empty" aria-busy="true">
+          <p className="u-margin-b--none">Loading your bag...</p>
+        </div>
+      ) : items.length ? (
         <div className="storefront-app-grid">
           <div className="storefront-app-list">
             {items.map((item) => {

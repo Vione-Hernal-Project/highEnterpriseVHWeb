@@ -4,8 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useState, type ChangeEvent } from "react";
 
-import { getCatalogPriceLabel, getCatalogProductPageHref, type CatalogProduct } from "@/lib/catalog";
+import {
+  CATALOG_MENS_DEPARTMENT,
+  CATALOG_UNISEX_DEPARTMENT,
+  CATALOG_WOMENS_DEPARTMENT,
+  getCatalogPriceLabel,
+  getCatalogProductPageHref,
+  type CatalogProduct,
+} from "@/lib/catalog";
 import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/http";
+import { CATALOG_REFRESH_STORAGE_KEY } from "@/lib/storefront/catalog-refresh";
 
 type Props = {
   initialProducts: CatalogProduct[];
@@ -29,8 +37,13 @@ type ProductFormState = {
   showInFeatured: boolean;
 };
 
-const PRODUCT_DEPARTMENT_OPTIONS = ["Womens", "Mens"];
+const PRODUCT_DEPARTMENT_OPTIONS = [CATALOG_WOMENS_DEPARTMENT, CATALOG_MENS_DEPARTMENT, CATALOG_UNISEX_DEPARTMENT];
 const PRODUCT_CATEGORY_OPTIONS = ["Ready to Wear", "Tops", "Shoes", "Bags", "Accessories"];
+const PRODUCT_DEPLOYMENT_OPTIONS = [
+  { label: "Women", value: CATALOG_WOMENS_DEPARTMENT },
+  { label: "Men", value: CATALOG_MENS_DEPARTMENT },
+  { label: "Both", value: CATALOG_UNISEX_DEPARTMENT },
+];
 
 function uniqueOptions(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((first, second) => first.localeCompare(second));
@@ -100,6 +113,72 @@ function createFormStateFromProduct(product: CatalogProduct): ProductFormState {
   };
 }
 
+function getProductDeploymentLabel(department: string) {
+  return PRODUCT_DEPLOYMENT_OPTIONS.find((option) => option.value === department)?.label || department;
+}
+
+function buildSizeInventoryFromFormRows(rows: ProductFormState["sizeInventoryRows"]) {
+  return rows.reduce<Record<string, number>>((inventory, row) => {
+    const size = row.size.trim();
+    const stock = Number(row.stock.trim() || "0");
+
+    if (size) {
+      inventory[size] = Math.max(0, Math.floor(Number.isFinite(stock) ? stock : 0));
+    }
+
+    return inventory;
+  }, {});
+}
+
+function createCatalogProductFromForm(form: ProductFormState, currentProduct: CatalogProduct | null): CatalogProduct {
+  const sizeInventory = buildSizeInventoryFromFormRows(form.sizeInventoryRows);
+  const sizes = Object.keys(sizeInventory);
+  const now = new Date().toISOString();
+
+  return {
+    id: form.id.trim(),
+    name: form.name.trim(),
+    brand: form.brand.trim(),
+    description: form.description.trim(),
+    pricePhpCents: parsePhpInputToCents(form.pricePhp),
+    image: form.mainImageUrl.trim(),
+    hoverImage: form.hoverImageUrl.trim() || form.mainImageUrl.trim(),
+    categoryLabel: form.categoryLabel.trim(),
+    department: form.department.trim(),
+    sizes: sizes.length ? sizes : ["One Size"],
+    sizeInventory: sizes.length ? sizeInventory : { "One Size": 0 },
+    galleryImages: form.galleryImageUrls.map((url) => url.trim()).filter(Boolean),
+    status: form.status,
+    showInFeatured: form.showInFeatured,
+    showInNewArrivals: form.showInNewArrivals,
+    publishedAt: form.status === "published" ? currentProduct?.publishedAt || now : null,
+    createdAt: currentProduct?.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function notifyCatalogProductsUpdated() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const timestamp = String(Date.now());
+
+  try {
+    window.localStorage.setItem(CATALOG_REFRESH_STORAGE_KEY, timestamp);
+  } catch {
+    // The custom event still updates the current tab if storage is unavailable.
+  }
+
+  if ("BroadcastChannel" in window) {
+    const channel = new BroadcastChannel(CATALOG_REFRESH_STORAGE_KEY);
+    channel.postMessage(timestamp);
+    channel.close();
+  }
+
+  window.dispatchEvent(new Event(CATALOG_REFRESH_STORAGE_KEY));
+}
+
 function buildProductPayload(form: ProductFormState) {
   return {
     id: form.id.trim(),
@@ -143,6 +222,10 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
     ...products.map((product) => product.categoryLabel),
     ...PRODUCT_CATEGORY_OPTIONS,
   ]);
+  const productSections = PRODUCT_DEPLOYMENT_OPTIONS.map((option) => ({
+    ...option,
+    products: products.filter((product) => product.department === option.value),
+  }));
 
   async function refreshProducts(nextSelectedProductId: string | null) {
     const response = await fetch("/api/admin/products", {
@@ -295,8 +378,23 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
         throw new Error(getResponseErrorMessage(payload, "Unable to save the product."));
       }
 
-      await refreshProducts(form.id.trim());
+      const savedProduct = createCatalogProductFromForm(form, selectedProduct);
+
+      setProducts((currentProducts) => {
+        const existingProductIndex = currentProducts.findIndex((product) => product.id === savedProduct.id);
+
+        if (existingProductIndex < 0) {
+          return [savedProduct, ...currentProducts];
+        }
+
+        return currentProducts.map((product, productIndex) => (productIndex === existingProductIndex ? savedProduct : product));
+      });
+      setSelectedProductId(savedProduct.id);
+      setForm(createFormStateFromProduct(savedProduct));
+      setDraftUploadKey(savedProduct.id);
       setMessage(isEditingExisting ? "Product updated." : "Product created.");
+      notifyCatalogProductsUpdated();
+      void refreshProducts(savedProduct.id).catch(() => undefined);
       startTransition(() => {
         router.refresh();
       });
@@ -438,7 +536,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
             >
               {PRODUCT_DEPARTMENT_OPTIONS.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {getProductDeploymentLabel(option)}
                 </option>
               ))}
             </select>
@@ -692,6 +790,23 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
           <span>Show in Featured Items</span>
         </label>
 
+        <div className="vh-field">
+          <label htmlFor="product-deployment">Deploy To</label>
+          <select
+            id="product-deployment"
+            className="vh-input"
+            value={form.department}
+            onChange={(event) => setForm((currentForm) => ({ ...currentForm, department: event.target.value }))}
+            disabled={loading || Boolean(uploadingSlot)}
+          >
+            {PRODUCT_DEPLOYMENT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {uploadingSlot ? <div className="vh-status">Uploading {uploadingSlot} image...</div> : null}
         {error ? <div className="vh-status vh-status--error">{error}</div> : null}
         {message ? <div className="vh-status vh-status--success">{message}</div> : null}
@@ -732,7 +847,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
               <p className="vh-editorial-summary__description">{form.description || "Product description preview."}</p>
               <p className="vh-editorial-summary__price">{previewPriceLabel}</p>
               <p className="u-margin-b--none" style={{ color: "#6c6c6c" }}>
-                {form.department || "Department"} · {form.categoryLabel || "Collection"} · {form.status}
+                {getProductDeploymentLabel(form.department) || "Department"} · {form.categoryLabel || "Collection"} · {form.status}
               </p>
               <p className="u-margin-b--none" style={{ color: "#6c6c6c" }}>
                 Featured: {form.showInFeatured ? "Yes" : "No"} · New Arrivals: {form.showInNewArrivals ? "Yes" : "No"}
@@ -768,37 +883,49 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
 
           <div className="vh-product-picker vh-product-picker--scroll">
             {products.length ? (
-              products.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  className={`vh-product-option ${selectedProductId === product.id ? "vh-product-option--selected" : ""}`}
-                  onClick={() => selectExistingProduct(product)}
-                  disabled={loading || Boolean(uploadingSlot)}
-                >
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: "16px",
-                      height: "16px",
-                      borderRadius: "999px",
-                      border: "1px solid #111114",
-                      background: selectedProductId === product.id ? "#111114" : "#fff",
-                      display: "inline-block",
-                    }}
-                  />
-                  <img className="vh-product-option__image" src={product.image} alt={product.name} />
-                  <span className="vh-product-option__copy">
-                    <span className="vh-product-option__brand">{product.brand}</span>
-                    <span className="vh-product-option__name">{product.name}</span>
-                    <span className="vh-product-option__price">{getCatalogPriceLabel(product.pricePhpCents)}</span>
-                    <span style={{ color: "#6c6c6c", fontSize: "0.78rem" }}>
-                      {product.id} · {product.status}
-                      {product.showInFeatured ? " · Featured" : ""}
-                      {product.showInNewArrivals ? " · New" : ""}
-                    </span>
-                  </span>
-                </button>
+              productSections.map((section) => (
+                <div key={section.value} className="vh-product-picker__section" style={{ display: "grid", gap: "0.75rem" }}>
+                  <div className="vh-field__row" style={{ marginBottom: "0.65rem" }}>
+                    <p className="vh-field__label" style={{ marginBottom: 0 }}>{section.label}</p>
+                    <span style={{ color: "#6c6c6c", fontSize: "0.78rem" }}>{section.products.length} total</span>
+                  </div>
+                  {section.products.length ? (
+                    section.products.map((product) => (
+                      <button
+                        key={product.id}
+                        type="button"
+                        className={`vh-product-option ${selectedProductId === product.id ? "vh-product-option--selected" : ""}`}
+                        onClick={() => selectExistingProduct(product)}
+                        disabled={loading || Boolean(uploadingSlot)}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: "16px",
+                            height: "16px",
+                            borderRadius: "999px",
+                            border: "1px solid #111114",
+                            background: selectedProductId === product.id ? "#111114" : "#fff",
+                            display: "inline-block",
+                          }}
+                        />
+                        <img className="vh-product-option__image" src={product.image} alt={product.name} />
+                        <span className="vh-product-option__copy">
+                          <span className="vh-product-option__brand">{product.brand}</span>
+                          <span className="vh-product-option__name">{product.name}</span>
+                          <span className="vh-product-option__price">{getCatalogPriceLabel(product.pricePhpCents)}</span>
+                          <span style={{ color: "#6c6c6c", fontSize: "0.78rem" }}>
+                            {product.id} · {product.status}
+                            {product.showInFeatured ? " · Featured" : ""}
+                            {product.showInNewArrivals ? " · New" : ""}
+                          </span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="vh-empty">No {section.label.toLowerCase()} products created yet.</div>
+                  )}
+                </div>
               ))
             ) : (
               <div className="vh-empty">No products created yet.</div>

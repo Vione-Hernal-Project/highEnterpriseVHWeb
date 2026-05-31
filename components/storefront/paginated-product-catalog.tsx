@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, ReactNode } from "react";
 
 import { ProductGrid } from "@/components/storefront/product-grid";
-import type { CatalogProduct } from "@/lib/catalog";
+import { catalogProductMatchesDepartment, type CatalogProduct } from "@/lib/catalog";
 
 type CatalogPageResponse = {
   products?: CatalogProduct[];
@@ -92,7 +92,9 @@ function resolveShopFilterOption(value: string | null, options: readonly string[
 
 function productMatchesFilters(product: CatalogProduct, filters: CatalogFilters) {
   const normalizedFilters = normalizeCatalogFilters(filters);
-  const departmentMatches = normalizedFilters.department ? product.department === normalizedFilters.department : true;
+  const departmentMatches = normalizedFilters.department
+    ? catalogProductMatchesDepartment(product.department, normalizedFilters.department)
+    : true;
   const categoryMatches = normalizedFilters.category ? product.categoryLabel === normalizedFilters.category : true;
   const newArrivalMatches = normalizedFilters.newArrivals ? product.showInNewArrivals : true;
 

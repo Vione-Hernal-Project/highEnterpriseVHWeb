@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PaginatedProductCatalog } from "@/components/storefront/paginated-product-catalog";
-import type { CatalogProduct } from "@/lib/catalog";
+import { CatalogRefreshListener } from "@/components/storefront/catalog-refresh-listener";
+import { CATALOG_UNISEX_DEPARTMENT, catalogProductMatchesDepartment, type CatalogProduct } from "@/lib/catalog";
 import {
   PRODUCT_CATEGORY_OPTIONS,
   PRODUCT_DEPARTMENT_OPTIONS,
@@ -18,6 +19,10 @@ export const metadata: Metadata = createSeoMetadata({
   path: "/shop",
 });
 
+export const dynamic = "force-dynamic";
+
+const SHOP_DEPARTMENT_OPTIONS = PRODUCT_DEPARTMENT_OPTIONS.filter((department) => department !== CATALOG_UNISEX_DEPARTMENT);
+
 type Props = {
   searchParams: Promise<{
     department?: string;
@@ -27,7 +32,7 @@ type Props = {
 
 function getFilteredProducts(products: CatalogProduct[], filters: { department?: string | null; category?: string | null }) {
   return products.filter((product) => {
-    const departmentMatches = filters.department ? product.department === filters.department : true;
+    const departmentMatches = filters.department ? catalogProductMatchesDepartment(product.department, filters.department) : true;
     const categoryMatches = filters.category ? product.categoryLabel === filters.category : true;
 
     return departmentMatches && categoryMatches;
@@ -50,6 +55,7 @@ export default async function ShopPage({ searchParams }: Props) {
 
   return (
     <section className="storefront-app-view vh-shop-page">
+      <CatalogRefreshListener />
       <nav className="storefront-app-breadcrumb" aria-label="Breadcrumb">
         <Link href="/">Home</Link>
         <span>/</span>
@@ -80,7 +86,7 @@ export default async function ShopPage({ searchParams }: Props) {
         clientProducts={products}
         shopFilters={{
           categoryOptions: PRODUCT_CATEGORY_OPTIONS,
-          departmentOptions: PRODUCT_DEPARTMENT_OPTIONS,
+          departmentOptions: SHOP_DEPARTMENT_OPTIONS,
         }}
       />
     </section>
