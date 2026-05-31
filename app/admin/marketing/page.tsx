@@ -94,6 +94,7 @@ export default async function AdminMarketingPage() {
       status: campaign.status,
       tabKeys: ["Campaigns", statusLabel],
       date: campaign.createdAt,
+      href: `/admin/marketing/${campaign.id}`,
       searchText: [campaign.name, campaign.description, campaign.goal, campaign.campaignType, channels, statusLabel].join(" "),
       sortText: campaign.name,
       facets: {
@@ -114,7 +115,7 @@ export default async function AdminMarketingPage() {
         { kind: "text", text: "—" },
         { kind: "text", text: formatAmountWithUnit(revenue, "PHP") },
         { kind: "text", text: formatDateTime(campaign.createdAt) },
-        { kind: "muted", text: "Saved" },
+        { kind: "link", href: `/admin/marketing/${campaign.id}`, text: "Edit" },
       ],
     };
   });

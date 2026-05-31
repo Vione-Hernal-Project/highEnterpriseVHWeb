@@ -103,7 +103,7 @@ with check (public.is_management_user());
 drop policy if exists "admin_settings_update_management" on public.admin_settings;
 create policy "admin_settings_update_management"
 on public.admin_settings
-for updats
+for update
 using (public.is_management_user())
 with check (public.is_management_user());
 

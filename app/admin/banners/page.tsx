@@ -1,7 +1,7 @@
 import { AdminFilteredModule, type AdminFilteredRow } from "@/components/admin/admin-filtered-module";
 import { loadGa4BannerSummary } from "@/lib/analytics/ga4";
 import { requireAdminArea } from "@/lib/auth";
-import { loadAdminBanners, type BannerRecord } from "@/lib/banners";
+import { loadAdminBanners, loadBannerEventCounts, type BannerRecord } from "@/lib/banners";
 import { formatDateTime } from "@/lib/utils";
 
 function formatAnalyticsNumber(value: number | null | undefined) {
@@ -26,17 +26,24 @@ function getStatusLabel(status: BannerRecord["status"]) {
 
 export default async function AdminBannersPage() {
   await requireAdminArea("content");
-  const banners = await loadAdminBanners();
-  const analytics = await loadGa4BannerSummary();
+  const [banners, analytics, eventCounts] = await Promise.all([
+    loadAdminBanners(),
+    loadGa4BannerSummary(),
+    loadBannerEventCounts(),
+  ]);
+  const trackedImpressions = Array.from(eventCounts.values()).reduce((total, current) => total + current.impressions, 0);
+  const trackedClicks = Array.from(eventCounts.values()).reduce((total, current) => total + current.clicks, 0);
   const rows: AdminFilteredRow[] = banners.map((banner) => {
     const statusLabel = getStatusLabel(banner.status);
     const tabKey = banner.status === "active" ? "Active Banners" : "Inactive Banners";
+    const counts = eventCounts.get(banner.id) || { impressions: 0, clicks: 0 };
 
     return {
       id: banner.id,
       status: banner.status,
       tabKeys: [statusLabel, tabKey],
       date: banner.createdAt,
+      href: `/admin/banners/${banner.id}`,
       searchText: [banner.title, banner.heading, banner.displayOn, statusLabel].join(" "),
       sortText: banner.title,
       facets: {
@@ -49,10 +56,10 @@ export default async function AdminBannersPage() {
         { kind: "text", text: banner.displayOn },
         { kind: "status", text: statusLabel, tone: getStatusTone(banner.status) },
         { kind: "text", text: String(banner.priority) },
-        { kind: "text", text: "—" },
-        { kind: "text", text: "—" },
+        { kind: "text", text: formatAnalyticsNumber(counts.impressions) },
+        { kind: "text", text: formatAnalyticsNumber(counts.clicks) },
         { kind: "text", text: formatDateTime(banner.createdAt) },
-        { kind: "muted", text: banner.linkUrl ? "Linked" : "Saved" },
+        { kind: "link", href: `/admin/banners/${banner.id}`, text: "Edit" },
       ],
     };
   });
@@ -67,7 +74,15 @@ export default async function AdminBannersPage() {
         { key: "total", label: "Total Banners", valueKind: "count", delta: "Banner records", icon: "image", activeTabs: ["All Banners"] },
         { key: "active", label: "Active Banners", valueKind: "count", statusTabs: ["Active Banners"], delta: "Visible placements", tone: "green", icon: "check", activeTabs: ["Active Banners"] },
         { key: "inactive", label: "Inactive Banners", valueKind: "count", statusTabs: ["Inactive Banners"], delta: "Paused or draft banners", tone: "gold", icon: "pause", activeTabs: ["Inactive Banners"] },
-        { key: "impressions", label: "Total Impressions", valueKind: "static", staticValue: formatAnalyticsNumber(analytics.impressions), delta: analytics.connected ? `${formatAnalyticsNumber(analytics.clicks)} clicks tracked` : "Analytics not connected", tone: "purple", icon: "eye" },
+        {
+          key: "impressions",
+          label: "Total Impressions",
+          valueKind: "static",
+          staticValue: formatAnalyticsNumber(trackedImpressions || analytics.impressions || 0),
+          delta: trackedImpressions ? `${formatAnalyticsNumber(trackedClicks)} clicks tracked` : analytics.connected ? `${formatAnalyticsNumber(analytics.clicks || 0)} GA4 clicks tracked` : "No banner events yet",
+          tone: "purple",
+          icon: "eye",
+        },
       ]}
       tabs={["All Banners", "Active Banners", "Inactive Banners"]}
       searchPlaceholder="Search banners..."

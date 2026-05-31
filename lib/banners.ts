@@ -128,3 +128,83 @@ export async function loadAdminBanners() {
 
   return rows.map(mapBannerRow);
 }
+
+function locationMatchesPath(displayOn: string, path: string) {
+  const normalizedLocation = displayOn.toLowerCase();
+
+  if (normalizedLocation === "all locations") {
+    return true;
+  }
+
+  if (normalizedLocation === "homepage") {
+    return path === "/";
+  }
+
+  if (normalizedLocation === "shop") {
+    return path === "/shop" || path === "/new" || path === "/women" || path === "/men" || path === "/bags" || path.startsWith("/product/");
+  }
+
+  if (normalizedLocation === "product pages") {
+    return path.startsWith("/product/") || path.startsWith("/products/");
+  }
+
+  if (normalizedLocation === "editorial") {
+    return path === "/editorial" || path.startsWith("/editorial/");
+  }
+
+  return false;
+}
+
+export async function loadPublishedBannersForPath(path: string) {
+  const now = Date.now();
+  const normalizedPath = path.split(/[?#]/)[0] || "/";
+  const rows = await loadCachedBannerRows();
+
+  return rows
+    .map(mapBannerRow)
+    .filter((banner) => banner.status === "active" && banner.visibility === "public")
+    .filter((banner) => !banner.startsAt || Date.parse(banner.startsAt) <= now)
+    .filter((banner) => !banner.endsAt || Date.parse(banner.endsAt) >= now)
+    .filter((banner) => !banner.showHomepageOnly || normalizedPath === "/")
+    .filter((banner) => locationMatchesPath(banner.displayOn, normalizedPath));
+}
+
+export async function loadBannerEventCounts() {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("banner_events")
+    .select("banner_id,event_type")
+    .limit(10000);
+
+  if (error) {
+    const message = String(error.message || "");
+
+    if (message.includes("Could not find the table") || message.includes("relation \"public.banner_events\" does not exist") || message.includes("schema cache")) {
+      return new Map<string, { impressions: number; clicks: number }>();
+    }
+
+    throw new Error(error.message);
+  }
+
+  const counts = new Map<string, { impressions: number; clicks: number }>();
+
+  for (const event of data || []) {
+    const bannerId = typeof event.banner_id === "string" ? event.banner_id : "";
+
+    if (!bannerId) {
+      continue;
+    }
+
+    const current = counts.get(bannerId) || { impressions: 0, clicks: 0 };
+
+    if (event.event_type === "click") {
+      current.clicks += 1;
+    } else if (event.event_type === "impression") {
+      current.impressions += 1;
+    }
+
+    counts.set(bannerId, current);
+  }
+
+  return counts;
+}

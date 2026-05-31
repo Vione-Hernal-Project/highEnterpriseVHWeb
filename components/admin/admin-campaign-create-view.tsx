@@ -9,6 +9,26 @@ import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/
 import { CAMPAIGN_CHANNELS } from "@/lib/validations/campaign";
 
 type CampaignChannel = (typeof CAMPAIGN_CHANNELS)[number];
+type CampaignStatus = "draft" | "active" | "scheduled" | "paused" | "completed" | "disabled";
+
+export type AdminCampaignFormInitialCampaign = {
+  id: string;
+  name: string;
+  campaignType: string;
+  goal: string;
+  description: string;
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  budgetAmount: string | null;
+  dailyBudgetAmount: string | null;
+  tags: string[];
+  channels: CampaignChannel[];
+  audienceType: string;
+  audience: string;
+  trackConversions: boolean;
+  abTestEnabled: boolean;
+};
 
 const CHANNEL_OPTIONS: Array<{
   value: CampaignChannel;
@@ -23,7 +43,9 @@ const CHANNEL_OPTIONS: Array<{
   { value: "banner", label: "Website Banner", copy: "Display banners on your website", icon: Monitor },
 ];
 
-function toLocalDateTimeValue(date = new Date()) {
+function toLocalDateTimeValue(value?: string | null) {
+  const parsedDate = value ? new Date(value) : null;
+  const date = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : new Date();
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
 
   return offsetDate.toISOString().slice(0, 16);
@@ -63,23 +85,29 @@ function ToggleControl({
   );
 }
 
-export function AdminCampaignCreateView() {
+function normalizeStatus(value: string | null | undefined): CampaignStatus {
+  return value === "draft" || value === "scheduled" || value === "paused" || value === "completed" || value === "disabled" ? value : "active";
+}
+
+export function AdminCampaignCreateView({ campaign }: { campaign?: AdminCampaignFormInitialCampaign }) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [campaignType, setCampaignType] = useState("");
-  const [goal, setGoal] = useState("");
-  const [description, setDescription] = useState("");
-  const [startsAt, setStartsAt] = useState(toLocalDateTimeValue());
-  const [endsAt, setEndsAt] = useState("");
-  const [budgetAmount, setBudgetAmount] = useState("");
-  const [dailyBudgetAmount, setDailyBudgetAmount] = useState("");
+  const isEditing = Boolean(campaign);
+  const [name, setName] = useState(campaign?.name || "");
+  const [campaignType, setCampaignType] = useState(campaign?.campaignType || "");
+  const [goal, setGoal] = useState(campaign?.goal || "");
+  const [description, setDescription] = useState(campaign?.description || "");
+  const [status, setStatus] = useState<CampaignStatus>(normalizeStatus(campaign?.status));
+  const [startsAt, setStartsAt] = useState(() => toLocalDateTimeValue(campaign?.startsAt));
+  const [endsAt, setEndsAt] = useState(() => campaign?.endsAt ? toLocalDateTimeValue(campaign.endsAt) : "");
+  const [budgetAmount, setBudgetAmount] = useState(campaign?.budgetAmount || "");
+  const [dailyBudgetAmount, setDailyBudgetAmount] = useState(campaign?.dailyBudgetAmount || "");
   const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [channels, setChannels] = useState<CampaignChannel[]>(["email"]);
-  const [audienceType, setAudienceType] = useState("");
-  const [audience, setAudience] = useState("");
-  const [trackConversions, setTrackConversions] = useState(true);
-  const [abTestEnabled, setAbTestEnabled] = useState(false);
+  const [tags, setTags] = useState<string[]>(campaign?.tags || []);
+  const [channels, setChannels] = useState<CampaignChannel[]>(campaign?.channels?.length ? campaign.channels : ["email"]);
+  const [audienceType, setAudienceType] = useState(campaign?.audienceType || "");
+  const [audience, setAudience] = useState(campaign?.audience || "");
+  const [trackConversions, setTrackConversions] = useState(campaign?.trackConversions ?? true);
+  const [abTestEnabled, setAbTestEnabled] = useState(campaign?.abTestEnabled ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -121,13 +149,15 @@ export function AdminCampaignCreateView() {
 
     try {
       const response = await fetch("/api/admin/campaigns", {
-        method: "POST",
+        method: isEditing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: campaign?.id,
           name,
           campaignType,
           goal,
           description,
+          status,
           startsAt: toIsoDateTime(startsAt),
           endsAt: toIsoDateTime(endsAt),
           budgetAmount,
@@ -155,11 +185,40 @@ export function AdminCampaignCreateView() {
     }
   }
 
+  async function handleDelete() {
+    if (!campaign || !window.confirm("Delete this campaign? This cannot be undone.")) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/admin/campaigns", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: campaign.id }),
+      });
+      const payload = await readJsonSafely<{ error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to delete the campaign."));
+      }
+
+      router.push("/admin/marketing");
+      router.refresh();
+    } catch (deleteError) {
+      setError(getErrorMessage(deleteError, "Unable to delete the campaign."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <form className="vh-admin-create-collection" onSubmit={handleSubmit}>
       <header className="vh-admin-create-collection__header">
         <div>
-          <h1>Create Campaign</h1>
+          <h1>{isEditing ? "Edit Campaign" : "Create Campaign"}</h1>
           <nav className="vh-admin-breadcrumb" aria-label="Breadcrumb">
             <Link href="/admin">Dashboard</Link>
             <ChevronRight size={14} aria-hidden="true" />
@@ -167,10 +226,15 @@ export function AdminCampaignCreateView() {
             <ChevronRight size={14} aria-hidden="true" />
             <Link href="/admin/marketing">Campaigns</Link>
             <ChevronRight size={14} aria-hidden="true" />
-            <span>Create Campaign</span>
+            <span>{isEditing ? "Edit Campaign" : "Create Campaign"}</span>
           </nav>
         </div>
         <div className="vh-admin-create-collection__actions">
+          {isEditing ? (
+            <button className="vh-admin-action-button" type="button" onClick={() => void handleDelete()} disabled={saving}>
+              Delete
+            </button>
+          ) : null}
           <Link className="vh-admin-action-button" href="/admin/marketing">Cancel</Link>
           <button className="vh-admin-action-button vh-admin-action-button--primary" type="submit" disabled={saving}>
             <Save size={16} strokeWidth={1.9} aria-hidden="true" />
@@ -232,6 +296,18 @@ export function AdminCampaignCreateView() {
               <p>Configure the scheduling and budget for your campaign.</p>
             </div>
             <div className="vh-admin-form-grid">
+              <label className="vh-admin-form-field">
+                <span>Status</span>
+                <select value={status} onChange={(event) => setStatus(event.target.value as CampaignStatus)}>
+                  <option value="active">Active</option>
+                  <option value="draft">Draft</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="paused">Paused</option>
+                  <option value="completed">Completed</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+                <small>Pause or disable campaigns without deleting historical attribution.</small>
+              </label>
               <label className="vh-admin-form-field">
                 <span>Start Date <b>*</b></span>
                 <input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} required />

@@ -28,6 +28,23 @@ export type AdminBlogPostFormOptions = {
   authors: string[];
 };
 
+export type AdminBlogPostFormInitialPost = {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  featuredImageUrl: string | null;
+  content: string;
+  status: BlogPostStatus;
+  visibility: BlogPostVisibility;
+  categories: string[];
+  tags: string[];
+  authorName: string;
+  publishAt: string | null;
+  metaTitle: string;
+  metaDescription: string;
+};
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -37,8 +54,10 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-function getLocalDateTimeValue() {
-  const date = new Date();
+function getLocalDateTimeValue(value?: string | null) {
+  const parsedDate = value ? new Date(value) : null;
+  const date = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : new Date();
+
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
 
   return date.toISOString().slice(0, 16);
@@ -72,24 +91,25 @@ function addUniqueValue(list: string[], value: string, limit = 20) {
   return [...list, nextValue].slice(0, limit);
 }
 
-export function AdminBlogPostFormView({ options }: { options: AdminBlogPostFormOptions }) {
+export function AdminBlogPostFormView({ options, post }: { options: AdminBlogPostFormOptions; post?: AdminBlogPostFormInitialPost }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [excerpt, setExcerpt] = useState("");
-  const [featuredImageUrl, setFeaturedImageUrl] = useState("");
-  const [imagePreview, setImagePreview] = useState("");
-  const [content, setContent] = useState("");
-  const [status, setStatus] = useState<BlogPostStatus>("published");
-  const [visibility, setVisibility] = useState<BlogPostVisibility>("public");
-  const [categories, setCategories] = useState<string[]>([]);
+  const isEditing = Boolean(post);
+  const [title, setTitle] = useState(post?.title || "");
+  const [slug, setSlug] = useState(post?.slug || "");
+  const [excerpt, setExcerpt] = useState(post?.excerpt || "");
+  const [featuredImageUrl, setFeaturedImageUrl] = useState(post?.featuredImageUrl || "");
+  const [imagePreview, setImagePreview] = useState(post?.featuredImageUrl || "");
+  const [content, setContent] = useState(post?.content || "");
+  const [status, setStatus] = useState<BlogPostStatus>(post?.status || "published");
+  const [visibility, setVisibility] = useState<BlogPostVisibility>(post?.visibility || "public");
+  const [categories, setCategories] = useState<string[]>(post?.categories || []);
   const [categoryInput, setCategoryInput] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>(post?.tags || []);
   const [tagInput, setTagInput] = useState("");
-  const [publishDate, setPublishDate] = useState(getLocalDateTimeValue);
-  const [authorName, setAuthorName] = useState(options.authors[0] || "Admin");
-  const [metaTitle, setMetaTitle] = useState("");
-  const [metaDescription, setMetaDescription] = useState("");
+  const [publishDate, setPublishDate] = useState(() => getLocalDateTimeValue(post?.publishAt));
+  const [authorName, setAuthorName] = useState(post?.authorName || options.authors[0] || "Admin");
+  const [metaTitle, setMetaTitle] = useState(post?.metaTitle || "");
+  const [metaDescription, setMetaDescription] = useState(post?.metaDescription || "");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
@@ -196,11 +216,12 @@ export function AdminBlogPostFormView({ options }: { options: AdminBlogPostFormO
 
     try {
       const response = await fetch("/api/admin/blog", {
-        method: "POST",
+        method: isEditing ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          id: post?.id,
           title,
           slug,
           excerpt,
@@ -232,20 +253,57 @@ export function AdminBlogPostFormView({ options }: { options: AdminBlogPostFormO
     }
   }
 
+  async function handleDelete() {
+    if (!post || !window.confirm("Delete this blog post? This cannot be undone.")) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/blog", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: post.id }),
+      });
+      const payload = await readJsonSafely<{ error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to delete the post."));
+      }
+
+      router.push("/admin/blog");
+      router.refresh();
+    } catch (deleteError) {
+      setError(getErrorMessage(deleteError, "Unable to delete the post."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <form className="vh-admin-create-collection vh-admin-create-blog-post" onSubmit={handleSubmit}>
       <header className="vh-admin-create-collection__header">
         <div>
-          <h1>Add New Post</h1>
+          <h1>{isEditing ? "Edit Post" : "Add New Post"}</h1>
           <nav className="vh-admin-breadcrumb" aria-label="Breadcrumb">
             <Link href="/admin">Dashboard</Link>
             <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
             <Link href="/admin/blog">Blog</Link>
             <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
-            <span>Add New Post</span>
+            <span>{isEditing ? "Edit Post" : "Add New Post"}</span>
           </nav>
         </div>
         <div className="vh-admin-create-collection__actions">
+          {isEditing ? (
+            <button className="vh-admin-action-button" type="button" onClick={() => void handleDelete()} disabled={loading || uploading}>
+              Delete
+            </button>
+          ) : null}
           <Link className="vh-admin-action-button" href="/admin/blog">Cancel</Link>
           <button className="vh-admin-action-button vh-admin-action-button--primary" type="submit" disabled={loading || uploading}>
             <Save size={16} strokeWidth={1.9} aria-hidden="true" />

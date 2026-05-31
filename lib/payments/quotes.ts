@@ -1,8 +1,5 @@
 import "server-only";
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
 import { getCatalogSubtotalPhpCents, getProductAvailableSizes, type CatalogProduct } from "@/lib/catalog";
 import { DEFAULT_GENERAL_SETTINGS, loadFreshAdminGeneralSettings, type AdminGeneralSettings } from "@/lib/admin/settings";
 import {
@@ -37,7 +34,13 @@ const STALE_QUOTE_TTL_MS = 15 * 60_000;
 const DEFAULT_QUOTE_TTL_SECONDS = 60;
 const DEFAULT_PRICE_DIFF_TOLERANCE_PERCENT = 2;
 const DEFAULT_SLIPPAGE_BUFFER_PERCENT = 1.5;
-const execFileAsync = promisify(execFile);
+const QUOTE_FETCH_TIMEOUT_MS = 15_000;
+const ALLOWED_QUOTE_ENDPOINT_HOSTS = new Set([
+  "api.coingecko.com",
+  "api.binance.com",
+  "api.coinbase.com",
+  "min-api.cryptocompare.com",
+]);
 
 export type EthPhpQuote = {
   phpPerEth: number;
@@ -366,78 +369,25 @@ function buildEstimatedTotalLabel(requiredCryptoAmount: string, cryptoSymbol: st
   return `${formatCryptoAmountLabel(requiredCryptoAmount, cryptoSymbol)} + ${formatCryptoAmountLabel(networkFee.amount, networkFee.symbol)} fee`;
 }
 
-function getErrorCode(error: unknown) {
-  if (typeof error === "object" && error && "code" in error) {
-    const code = (error as { code?: unknown }).code;
+function assertAllowedQuoteEndpoint(url: string) {
+  const endpoint = new URL(url);
 
-    if (typeof code === "string" && code.trim()) {
-      return code;
-    }
-  }
-
-  if (typeof error === "object" && error && "cause" in error) {
-    const cause = (error as { cause?: unknown }).cause;
-
-    if (typeof cause === "object" && cause && "code" in cause) {
-      const causeCode = (cause as { code?: unknown }).code;
-
-      if (typeof causeCode === "string" && causeCode.trim()) {
-        return causeCode;
-      }
-    }
-  }
-
-  return "";
-}
-
-function isRetryableTransportError(error: unknown) {
-  const message = getErrorMessage(error, "");
-  const code = getErrorCode(error);
-
-  return (
-    message === "fetch failed" ||
-    code === "ENOTFOUND" ||
-    code === "EAI_AGAIN" ||
-    code === "ECONNRESET" ||
-    code === "ECONNREFUSED" ||
-    code === "ETIMEDOUT" ||
-    code === "EPERM"
-  );
-}
-
-async function parseJsonResponse<T>(responseText: string, errorMessage: string) {
-  try {
-    return JSON.parse(responseText) as T;
-  } catch {
-    throw new Error(errorMessage);
-  }
-}
-
-async function fetchJsonViaCurl<T>(url: string, headers: Record<string, string>, errorMessage: string) {
-  const args = ["-fsSL", "--connect-timeout", "10", "--max-time", "15"];
-
-  for (const [headerName, headerValue] of Object.entries(headers)) {
-    args.push("-H", `${headerName}: ${headerValue}`);
-  }
-
-  args.push(url);
-
-  try {
-    const { stdout } = await execFileAsync("curl", args, {
-      maxBuffer: 1024 * 1024,
-    });
-
-    return await parseJsonResponse<T>(stdout, errorMessage);
-  } catch (error) {
-    throw new Error(getErrorMessage(error, errorMessage));
+  if (endpoint.protocol !== "https:" || !ALLOWED_QUOTE_ENDPOINT_HOSTS.has(endpoint.hostname)) {
+    throw new Error("Configured crypto quote endpoint is not allowed.");
   }
 }
 
 async function fetchJsonWithTransportFallback<T>(url: string, headers: Record<string, string>, errorMessage: string) {
+  assertAllowedQuoteEndpoint(url);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), QUOTE_FETCH_TIMEOUT_MS);
+
   try {
     const response = await fetch(url, {
       headers,
       cache: "no-store",
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -446,16 +396,14 @@ async function fetchJsonWithTransportFallback<T>(url: string, headers: Record<st
 
     return (await response.json()) as T;
   } catch (error) {
-    if (!isRetryableTransportError(error)) {
-      throw error;
-    }
-
-    logPaymentDebug("quote-fetch-curl-fallback", {
+    logPaymentDebug("quote-fetch-failed", {
       error: getErrorMessage(error, errorMessage),
       url,
     });
 
-    return fetchJsonViaCurl<T>(url, headers, errorMessage);
+    throw new Error(errorMessage);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

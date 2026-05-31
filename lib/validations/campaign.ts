@@ -46,6 +46,7 @@ export const adminCampaignSchema = z
     endsAt: optionalDateTime,
     budgetAmount: optionalMoney("Budget"),
     dailyBudgetAmount: optionalMoney("Daily budget"),
+    status: z.enum(["draft", "active", "scheduled", "paused", "completed", "disabled"]).optional().default("active"),
     tags: z.array(z.string().trim().min(1).max(60)).max(20, "Too many tags.").default([]),
     channels: z.array(z.enum(CAMPAIGN_CHANNELS)).min(1, "Select at least one campaign channel.").max(CAMPAIGN_CHANNELS.length),
     audienceType: z.string().trim().min(1, "Audience type is required.").max(80, "Audience type is too long."),

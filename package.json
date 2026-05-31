@@ -23,6 +23,7 @@
     "nodemailer": "^7.0.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "sharp": "^0.34.5",
     "use-postal-ph": "^1.1.14",
     "zod": "^3.25.76",
     "zxcvbn": "^4.4.2"

@@ -16,6 +16,24 @@ type PageParentOption = {
   href: string;
 };
 
+export type AdminPageFormInitialPage = {
+  id: string;
+  title: string;
+  slug: string;
+  pageType: string;
+  parentPageId: string | null;
+  metaDescription: string;
+  content: string;
+  featuredImageUrl: string | null;
+  status: PageStatus;
+  visibility: PageVisibility;
+  template: string;
+  showInNavigation: boolean;
+  displayOrder: number;
+  metaTitle: string;
+  metaKeywords: string;
+};
+
 const PAGE_TYPES = ["Custom Page", "Landing Page", "Policy Page", "Legal Page", "Support Page", "Editorial Page"];
 const PAGE_TEMPLATES = ["Default Template", "Editorial Template", "Landing Template", "Policy Template", "Minimal Template"];
 
@@ -28,23 +46,24 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export function AdminPageCreateView({ parentOptions }: { parentOptions: PageParentOption[] }) {
+export function AdminPageCreateView({ parentOptions, page }: { parentOptions: PageParentOption[]; page?: AdminPageFormInitialPage }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [pageType, setPageType] = useState(PAGE_TYPES[0]);
-  const [parentPageId, setParentPageId] = useState("");
-  const [metaDescription, setMetaDescription] = useState("");
-  const [content, setContent] = useState("");
-  const [featuredImageUrl, setFeaturedImageUrl] = useState("");
-  const [imagePreview, setImagePreview] = useState("");
-  const [status, setStatus] = useState<PageStatus>("published");
-  const [visibility, setVisibility] = useState<PageVisibility>("public");
-  const [template, setTemplate] = useState(PAGE_TEMPLATES[0]);
-  const [showInNavigation, setShowInNavigation] = useState(true);
-  const [displayOrder, setDisplayOrder] = useState("0");
-  const [metaTitle, setMetaTitle] = useState("");
-  const [metaKeywords, setMetaKeywords] = useState("");
+  const isEditing = Boolean(page);
+  const [title, setTitle] = useState(page?.title || "");
+  const [slug, setSlug] = useState(page?.slug || "");
+  const [pageType, setPageType] = useState(page?.pageType || PAGE_TYPES[0]);
+  const [parentPageId, setParentPageId] = useState(page?.parentPageId || "");
+  const [metaDescription, setMetaDescription] = useState(page?.metaDescription || "");
+  const [content, setContent] = useState(page?.content || "");
+  const [featuredImageUrl, setFeaturedImageUrl] = useState(page?.featuredImageUrl || "");
+  const [imagePreview, setImagePreview] = useState(page?.featuredImageUrl || "");
+  const [status, setStatus] = useState<PageStatus>(page?.status || "published");
+  const [visibility, setVisibility] = useState<PageVisibility>(page?.visibility || "public");
+  const [template, setTemplate] = useState(page?.template || PAGE_TEMPLATES[0]);
+  const [showInNavigation, setShowInNavigation] = useState(page?.showInNavigation ?? true);
+  const [displayOrder, setDisplayOrder] = useState(String(page?.displayOrder ?? 0));
+  const [metaTitle, setMetaTitle] = useState(page?.metaTitle || "");
+  const [metaKeywords, setMetaKeywords] = useState(page?.metaKeywords || "");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
@@ -113,11 +132,12 @@ export function AdminPageCreateView({ parentOptions }: { parentOptions: PagePare
 
     try {
       const response = await fetch("/api/admin/pages", {
-        method: "POST",
+        method: isEditing ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          id: page?.id,
           title,
           slug,
           pageType,
@@ -150,20 +170,57 @@ export function AdminPageCreateView({ parentOptions }: { parentOptions: PagePare
     }
   }
 
+  async function handleDelete() {
+    if (!page || !window.confirm("Delete this page? This cannot be undone.")) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/pages", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: page.id }),
+      });
+      const payload = await readJsonSafely<{ error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to delete the page."));
+      }
+
+      router.push("/admin/pages");
+      router.refresh();
+    } catch (deleteError) {
+      setError(getErrorMessage(deleteError, "Unable to delete the page."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <form className="vh-admin-create-collection vh-admin-create-page" onSubmit={handleSubmit}>
       <header className="vh-admin-create-collection__header">
         <div>
-          <h1>Add New Page</h1>
+          <h1>{isEditing ? "Edit Page" : "Add New Page"}</h1>
           <nav className="vh-admin-breadcrumb" aria-label="Breadcrumb">
             <Link href="/admin">Dashboard</Link>
             <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
             <Link href="/admin/pages">Pages</Link>
             <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
-            <span>Add New Page</span>
+            <span>{isEditing ? "Edit Page" : "Add New Page"}</span>
           </nav>
         </div>
         <div className="vh-admin-create-collection__actions">
+          {isEditing ? (
+            <button className="vh-admin-action-button" type="button" onClick={() => void handleDelete()} disabled={loading || uploading}>
+              Delete
+            </button>
+          ) : null}
           <Link className="vh-admin-action-button" href="/admin/pages">Cancel</Link>
           <button className="vh-admin-action-button vh-admin-action-button--primary" type="submit" disabled={loading || uploading}>
             <Save size={16} strokeWidth={1.9} aria-hidden="true" />

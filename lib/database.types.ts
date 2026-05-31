@@ -579,6 +579,40 @@ export type Database = {
         };
         Relationships: [];
       };
+      banner_events: {
+        Row: {
+          id: string;
+          banner_id: string;
+          event_type: string;
+          location: string;
+          path: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          banner_id: string;
+          event_type: string;
+          location?: string;
+          path?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          banner_id?: string;
+          event_type?: string;
+          location?: string;
+          path?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "banner_events_banner_id_fkey";
+            columns: ["banner_id"];
+            referencedRelation: "banners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       coupons: {
         Row: {
           id: string;

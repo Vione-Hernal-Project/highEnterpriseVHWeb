@@ -1230,6 +1230,16 @@ create table if not exists public.banners (
   constraint banners_date_range_check check (starts_at is null or ends_at is null or starts_at <= ends_at)
 );
 
+create table if not exists public.banner_events (
+  id uuid primary key default gen_random_uuid(),
+  banner_id uuid not null references public.banners(id) on delete cascade,
+  event_type text not null,
+  location text not null default '',
+  path text not null default '',
+  created_at timestamptz not null default timezone('utc', now()),
+  constraint banner_events_type_check check (event_type in ('impression', 'click'))
+);
+
 alter table public.banners add column if not exists id uuid default gen_random_uuid();
 alter table public.banners add column if not exists title text;
 alter table public.banners add column if not exists banner_type text not null default 'Homepage Hero';
@@ -1706,6 +1716,7 @@ create index if not exists site_pages_status_order_idx on public.site_pages (sta
 create index if not exists site_pages_parent_idx on public.site_pages (parent_page_id);
 create index if not exists banners_status_order_idx on public.banners (status, visibility, priority, display_order, created_at desc);
 create index if not exists banners_display_on_idx on public.banners (display_on, device, priority, display_order);
+create index if not exists banner_events_banner_type_idx on public.banner_events (banner_id, event_type, created_at desc);
 create index if not exists fund_allocation_rules_active_order_idx on public.fund_allocation_rules (is_active, display_order);
 create index if not exists payments_user_created_idx on public.payments (user_id, created_at desc);
 create index if not exists payments_order_id_idx on public.payments (order_id);
@@ -2889,6 +2900,7 @@ alter table public.reviews enable row level security;
 alter table public.blog_posts enable row level security;
 alter table public.site_pages enable row level security;
 alter table public.banners enable row level security;
+alter table public.banner_events enable row level security;
 alter table public.coupons enable row level security;
 alter table public.coupon_redemptions enable row level security;
 alter table public.payments enable row level security;
@@ -3038,6 +3050,12 @@ for update
 using (public.has_admin_access('marketing'))
 with check (public.has_admin_access('marketing'));
 
+drop policy if exists "campaigns_delete_management" on public.campaigns;
+create policy "campaigns_delete_management"
+on public.campaigns
+for delete
+using (public.has_admin_access('marketing'));
+
 drop policy if exists "orders_select_own" on public.orders;
 create policy "orders_select_own"
 on public.orders
@@ -3123,6 +3141,12 @@ for update
 using (public.has_admin_access('content'))
 with check (public.has_admin_access('content'));
 
+drop policy if exists "blog_posts_delete_management" on public.blog_posts;
+create policy "blog_posts_delete_management"
+on public.blog_posts
+for delete
+using (public.has_admin_access('content'));
+
 drop policy if exists "site_pages_select_published" on public.site_pages;
 create policy "site_pages_select_published"
 on public.site_pages
@@ -3147,6 +3171,12 @@ on public.site_pages
 for update
 using (public.has_admin_access('content'))
 with check (public.has_admin_access('content'));
+
+drop policy if exists "site_pages_delete_management" on public.site_pages;
+create policy "site_pages_delete_management"
+on public.site_pages
+for delete
+using (public.has_admin_access('content'));
 
 drop policy if exists "banners_select_public_active" on public.banners;
 create policy "banners_select_public_active"
@@ -3189,6 +3219,18 @@ on public.banners
 for update
 using (public.has_admin_access('content'))
 with check (public.has_admin_access('content'));
+
+drop policy if exists "banners_delete_management" on public.banners;
+create policy "banners_delete_management"
+on public.banners
+for delete
+using (public.has_admin_access('content'));
+
+drop policy if exists "banner_events_select_management" on public.banner_events;
+create policy "banner_events_select_management"
+on public.banner_events
+for select
+using (public.has_admin_access('content') or public.has_admin_access('reports'));
 
 drop policy if exists "coupons_select_active" on public.coupons;
 create policy "coupons_select_active"

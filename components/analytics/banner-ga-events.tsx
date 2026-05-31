@@ -18,6 +18,26 @@ function getBannerPayload(element: Element) {
   };
 }
 
+function trackBannerEvent(element: Element, eventType: "impression" | "click") {
+  const payload = getBannerPayload(element);
+
+  window.gtag?.("event", eventType === "impression" ? "vh_banner_impression" : "vh_banner_click", payload);
+
+  void fetch("/api/banners/track", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    keepalive: true,
+    body: JSON.stringify({
+      bannerId: payload.banner_id,
+      eventType,
+      location: payload.banner_location,
+      path: window.location.pathname,
+    }),
+  }).catch(() => undefined);
+}
+
 export function BannerGaEvents() {
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -31,7 +51,7 @@ export function BannerGaEvents() {
       }
 
       trackedImpressions.add(element);
-      window.gtag?.("event", "vh_banner_impression", getBannerPayload(element));
+      trackBannerEvent(element, "impression");
     };
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
@@ -51,7 +71,7 @@ export function BannerGaEvents() {
         return;
       }
 
-      window.gtag?.("event", "vh_banner_click", getBannerPayload(banner));
+      trackBannerEvent(banner, "click");
     };
     const mutationObserver = new MutationObserver(observeBanners);
 

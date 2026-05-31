@@ -16,6 +16,30 @@ const DISPLAY_LOCATIONS = ["All Locations", "Homepage", "Shop", "Product Pages",
 const DEVICES = ["All Devices", "Desktop Only", "Mobile Only"];
 const BUTTON_STYLES = ["Primary", "Secondary", "Text Link", "Outline"];
 
+export type AdminBannerFormInitialBanner = {
+  id: string;
+  title: string;
+  bannerType: string;
+  linkUrl: string | null;
+  linkTarget: LinkTarget;
+  priority: number;
+  displayOrder: number;
+  imageUrl: string | null;
+  mobileImageUrl: string | null;
+  heading: string;
+  subheading: string;
+  description: string;
+  buttonText: string;
+  buttonStyle: string;
+  status: BannerStatus;
+  visibility: BannerVisibility;
+  displayOn: string;
+  device: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  showHomepageOnly: boolean;
+};
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -39,30 +63,47 @@ function toIsoDateTime(value: string) {
   return date.toISOString();
 }
 
-export function AdminBannerCreateView() {
+function toLocalDateTimeValue(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+
+  return date.toISOString().slice(0, 16);
+}
+
+export function AdminBannerCreateView({ banner }: { banner?: AdminBannerFormInitialBanner }) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [bannerType, setBannerType] = useState(BANNER_TYPES[0]);
-  const [linkUrl, setLinkUrl] = useState("");
-  const [linkTarget, setLinkTarget] = useState<LinkTarget>("same_window");
-  const [priority, setPriority] = useState("1");
-  const [displayOrder, setDisplayOrder] = useState("0");
-  const [imageUrl, setImageUrl] = useState("");
-  const [imagePreview, setImagePreview] = useState("");
-  const [mobileImageUrl, setMobileImageUrl] = useState("");
-  const [mobileImagePreview, setMobileImagePreview] = useState("");
-  const [heading, setHeading] = useState("");
-  const [subheading, setSubheading] = useState("");
-  const [description, setDescription] = useState("");
-  const [buttonText, setButtonText] = useState("");
-  const [buttonStyle, setButtonStyle] = useState(BUTTON_STYLES[0]);
-  const [status, setStatus] = useState<BannerStatus>("active");
-  const [visibility, setVisibility] = useState<BannerVisibility>("public");
-  const [displayOn, setDisplayOn] = useState(DISPLAY_LOCATIONS[0]);
-  const [device, setDevice] = useState(DEVICES[0]);
-  const [startsAt, setStartsAt] = useState("");
-  const [endsAt, setEndsAt] = useState("");
-  const [showHomepageOnly, setShowHomepageOnly] = useState(false);
+  const isEditing = Boolean(banner);
+  const [title, setTitle] = useState(banner?.title || "");
+  const [bannerType, setBannerType] = useState(banner?.bannerType || BANNER_TYPES[0]);
+  const [linkUrl, setLinkUrl] = useState(banner?.linkUrl || "");
+  const [linkTarget, setLinkTarget] = useState<LinkTarget>(banner?.linkTarget || "same_window");
+  const [priority, setPriority] = useState(String(banner?.priority ?? 1));
+  const [displayOrder, setDisplayOrder] = useState(String(banner?.displayOrder ?? 0));
+  const [imageUrl, setImageUrl] = useState(banner?.imageUrl || "");
+  const [imagePreview, setImagePreview] = useState(banner?.imageUrl || "");
+  const [mobileImageUrl, setMobileImageUrl] = useState(banner?.mobileImageUrl || "");
+  const [mobileImagePreview, setMobileImagePreview] = useState(banner?.mobileImageUrl || "");
+  const [heading, setHeading] = useState(banner?.heading || "");
+  const [subheading, setSubheading] = useState(banner?.subheading || "");
+  const [description, setDescription] = useState(banner?.description || "");
+  const [buttonText, setButtonText] = useState(banner?.buttonText || "");
+  const [buttonStyle, setButtonStyle] = useState(banner?.buttonStyle || BUTTON_STYLES[0]);
+  const [status, setStatus] = useState<BannerStatus>(banner?.status || "active");
+  const [visibility, setVisibility] = useState<BannerVisibility>(banner?.visibility || "public");
+  const [displayOn, setDisplayOn] = useState(banner?.displayOn || DISPLAY_LOCATIONS[0]);
+  const [device, setDevice] = useState(banner?.device || DEVICES[0]);
+  const [startsAt, setStartsAt] = useState(() => toLocalDateTimeValue(banner?.startsAt));
+  const [endsAt, setEndsAt] = useState(() => toLocalDateTimeValue(banner?.endsAt));
+  const [showHomepageOnly, setShowHomepageOnly] = useState(banner?.showHomepageOnly ?? false);
   const [loading, setLoading] = useState(false);
   const [uploadingSlot, setUploadingSlot] = useState<"desktop" | "mobile" | null>(null);
   const [message, setMessage] = useState("");
@@ -137,11 +178,12 @@ export function AdminBannerCreateView() {
 
     try {
       const response = await fetch("/api/admin/banners", {
-        method: "POST",
+        method: isEditing ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          id: banner?.id,
           title,
           bannerType,
           linkUrl: linkUrl || null,
@@ -180,20 +222,57 @@ export function AdminBannerCreateView() {
     }
   }
 
+  async function handleDelete() {
+    if (!banner || !window.confirm("Delete this banner? This cannot be undone.")) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/admin/banners", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: banner.id }),
+      });
+      const payload = await readJsonSafely<{ error?: string }>(response);
+
+      if (!response.ok) {
+        throw new Error(getResponseErrorMessage(payload, "Unable to delete the banner."));
+      }
+
+      router.push("/admin/banners");
+      router.refresh();
+    } catch (deleteError) {
+      setError(getErrorMessage(deleteError, "Unable to delete the banner."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <form className="vh-admin-create-collection vh-admin-create-banner" onSubmit={handleSubmit}>
       <header className="vh-admin-create-collection__header">
         <div>
-          <h1>Add New Banner</h1>
+          <h1>{isEditing ? "Edit Banner" : "Add New Banner"}</h1>
           <nav className="vh-admin-breadcrumb" aria-label="Breadcrumb">
             <Link href="/admin">Dashboard</Link>
             <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
             <Link href="/admin/banners">Banners</Link>
             <ChevronRight size={14} strokeWidth={1.8} aria-hidden="true" />
-            <span>Add New Banner</span>
+            <span>{isEditing ? "Edit Banner" : "Add New Banner"}</span>
           </nav>
         </div>
         <div className="vh-admin-create-collection__actions">
+          {isEditing ? (
+            <button className="vh-admin-action-button" type="button" onClick={() => void handleDelete()} disabled={loading || Boolean(uploadingSlot)}>
+              Delete
+            </button>
+          ) : null}
           <Link className="vh-admin-action-button" href="/admin/banners">Cancel</Link>
           <button className="vh-admin-action-button vh-admin-action-button--primary" type="submit" disabled={loading || Boolean(uploadingSlot)}>
             <Save size={16} strokeWidth={1.9} aria-hidden="true" />

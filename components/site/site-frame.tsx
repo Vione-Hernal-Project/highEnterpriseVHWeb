@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { SiteFooter } from "@/components/site/footer";
 import { SiteHeader } from "@/components/site/header";
+import { SiteBanners } from "@/components/site/site-banners";
 import { PageTransition } from "@/components/site/page-transition";
 import { StoreMaintenanceView } from "@/components/site/store-maintenance-view";
 import { StorefrontSettingsProvider, type StorefrontPublicSettings } from "@/components/site/storefront-settings-context";
@@ -84,6 +85,7 @@ export function SiteFrame({ children, storefrontSettings }: Props) {
     <StorefrontSettingsProvider settings={currentStorefrontSettings}>
       <div className="vh-app-shell">
         <SiteHeader />
+        <SiteBanners />
         <main id="page-content" className="vh-main">
           <div className="container">
             <PageTransition>{children}</PageTransition>

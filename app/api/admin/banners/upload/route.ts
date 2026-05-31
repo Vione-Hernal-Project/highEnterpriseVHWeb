@@ -4,6 +4,7 @@ import { getCurrentUserContext } from "@/lib/auth";
 import { hasAdminAccess } from "@/lib/admin/access";
 import { normalizeBannerStorageKey } from "@/lib/banners";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
+import { isMediaUploadValidationError, verifyRasterImageUpload } from "@/lib/security/media-upload";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -14,12 +15,6 @@ const BANNER_MEDIA_UPLOAD_LIMIT = 40;
 
 function sanitizePathSegment(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-");
-}
-
-function getFileExtension(fileName: string) {
-  const lastDot = fileName.lastIndexOf(".");
-
-  return lastDot >= 0 ? fileName.slice(lastDot).replace(/[^a-zA-Z0-9.]/g, "") : "";
 }
 
 export async function POST(request: Request) {
@@ -73,24 +68,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Banner title is required before uploading images." }, { status: 400 });
     }
 
-    if (file.type && !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      return NextResponse.json({ error: "Only PNG, JPG, and WEBP image uploads are supported." }, { status: 400 });
-    }
-
-    const fileName = typeof (file as { name?: unknown }).name === "string" ? (file as { name: string }).name : "upload";
-    const extension = getFileExtension(fileName);
-
-    if (extension.toLowerCase() === ".svg") {
-      return NextResponse.json({ error: "SVG uploads are not supported for banner media." }, { status: 400 });
-    }
-
-    const objectPath = `banners/${title}/${slot}-${Date.now()}-${crypto.randomUUID()}${extension}`;
-    const admin = createSupabaseAdminClient();
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const { error: uploadError } = await admin.storage.from("product-media").upload(objectPath, bytes, {
+    const image = await verifyRasterImageUpload({ bytes, declaredType: file.type, label: "banner media" });
+    const objectPath = `banners/${title}/${slot}-${Date.now()}-${crypto.randomUUID()}${image.extension}`;
+    const admin = createSupabaseAdminClient();
+    const { error: uploadError } = await admin.storage.from("product-media").upload(objectPath, image.bytes, {
       cacheControl: "3600",
       upsert: false,
-      contentType: file.type || "application/octet-stream",
+      contentType: image.contentType,
     });
 
     if (uploadError) {
@@ -104,6 +89,10 @@ export async function POST(request: Request) {
       path: objectPath,
     });
   } catch (error) {
+    if (isMediaUploadValidationError(error)) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     return NextResponse.json({ error: getErrorMessage(error, "Unable to upload the image right now.") }, { status: 500 });
   }
 }

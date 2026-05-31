@@ -47,38 +47,50 @@ function getBannerStorageErrorResponse() {
   );
 }
 
+async function requireBannerWriteAccess() {
+  const { user, role } = await getCurrentUserContext();
+
+  if (!user) {
+    return { error: NextResponse.json({ error: "Authentication required." }, { status: 401 }) };
+  }
+
+  if (!hasAdminAccess(role, "content")) {
+    return { error: NextResponse.json({ error: "Admin access required." }, { status: 403 }) };
+  }
+
+  const userRateLimit = await applyRateLimit({
+    key: `admin:banners:write:user:${user.id}`,
+    limit: ADMIN_BANNER_WRITE_LIMIT,
+    windowMs: ADMIN_BANNER_WRITE_WINDOW_MS,
+  });
+
+  if (!userRateLimit.allowed) {
+    return {
+      error: NextResponse.json(
+        { error: "Too many banner update attempts were made from this admin account. Please wait a few minutes and try again." },
+        {
+          status: 429,
+          headers: buildRateLimitHeaders(userRateLimit.resetAt),
+        },
+      ),
+    };
+  }
+
+  return { user };
+}
+
 export async function POST(request: Request) {
   try {
-    const { user, role } = await getCurrentUserContext();
-
-    if (!user) {
-      return NextResponse.json({ error: "Authentication required." }, { status: 401 });
-    }
-
-    if (!hasAdminAccess(role, "content")) {
-      return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-    }
-
     const bodySizeError = getJsonBodySizeError(request, ADMIN_BANNER_BODY_LIMIT_BYTES);
 
     if (bodySizeError) {
       return NextResponse.json({ error: bodySizeError }, { status: 413 });
     }
 
-    const userRateLimit = await applyRateLimit({
-      key: `admin:banners:write:user:${user.id}`,
-      limit: ADMIN_BANNER_WRITE_LIMIT,
-      windowMs: ADMIN_BANNER_WRITE_WINDOW_MS,
-    });
+    const access = await requireBannerWriteAccess();
 
-    if (!userRateLimit.allowed) {
-      return NextResponse.json(
-        { error: "Too many banner update attempts were made from this admin account. Please wait a few minutes and try again." },
-        {
-          status: 429,
-          headers: buildRateLimitHeaders(userRateLimit.resetAt),
-        },
-      );
+    if ("error" in access) {
+      return access.error;
     }
 
     const body = await request.json().catch(() => null);
@@ -110,5 +122,104 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ error: getErrorMessage(error, "Unable to save the banner right now.") }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const bodySizeError = getJsonBodySizeError(request, ADMIN_BANNER_BODY_LIMIT_BYTES);
+
+    if (bodySizeError) {
+      return NextResponse.json({ error: bodySizeError }, { status: 413 });
+    }
+
+    const access = await requireBannerWriteAccess();
+
+    if ("error" in access) {
+      return access.error;
+    }
+
+    const body = await request.json().catch(() => null);
+    const id = typeof body?.id === "string" ? body.id : "";
+    const parsed = adminBannerSchema.safeParse(body);
+
+    if (!id) {
+      return NextResponse.json({ error: "Banner id is required." }, { status: 400 });
+    }
+
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid banner payload." }, { status: 400 });
+    }
+
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin.from("banners").update(buildBannerPayload(parsed.data)).eq("id", id).select("*").single();
+
+    if (error || !data) {
+      if (error && isMissingBannersTableError(new Error(error.message))) {
+        return getBannerStorageErrorResponse();
+      }
+
+      return NextResponse.json({ error: error?.message || "Unable to update the banner right now." }, { status: 500 });
+    }
+
+    revalidateTag(BANNER_CACHE_TAG, { expire: 0 });
+    revalidatePath("/admin/banners");
+    revalidatePath("/");
+    revalidatePath("/shop");
+    revalidatePath("/editorial");
+
+    return NextResponse.json({ banner: data });
+  } catch (error) {
+    if (isMissingBannersTableError(error)) {
+      return getBannerStorageErrorResponse();
+    }
+
+    return NextResponse.json({ error: getErrorMessage(error, "Unable to update the banner right now.") }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const access = await requireBannerWriteAccess();
+
+    if ("error" in access) {
+      return access.error;
+    }
+
+    const body = await request.json().catch(() => null);
+    const id = typeof body?.id === "string" ? body.id : "";
+
+    if (!id) {
+      return NextResponse.json({ error: "Banner id is required." }, { status: 400 });
+    }
+
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin.from("banners").delete().eq("id", id).select("id").maybeSingle();
+
+    if (error) {
+      if (isMissingBannersTableError(new Error(error.message))) {
+        return getBannerStorageErrorResponse();
+      }
+
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: "Banner not found." }, { status: 404 });
+    }
+
+    revalidateTag(BANNER_CACHE_TAG, { expire: 0 });
+    revalidatePath("/admin/banners");
+    revalidatePath("/");
+    revalidatePath("/shop");
+    revalidatePath("/editorial");
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (isMissingBannersTableError(error)) {
+      return getBannerStorageErrorResponse();
+    }
+
+    return NextResponse.json({ error: getErrorMessage(error, "Unable to delete the banner right now.") }, { status: 500 });
   }
 }

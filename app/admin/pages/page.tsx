@@ -39,7 +39,7 @@ export default async function AdminPagesPage() {
       status: page.status,
       tabKeys: [statusLabel],
       date: page.updatedAt || page.createdAt || null,
-      href: page.status === "published" && page.visibility === "public" ? page.href : undefined,
+      href: page.source === "cms" ? `/admin/pages/${page.id}` : page.href,
       searchText: [page.title, page.href, page.pageType, statusLabel].join(" "),
       sortText: page.title,
       facets: {
@@ -55,9 +55,9 @@ export default async function AdminPagesPage() {
         { kind: "status", text: statusLabel, tone: getStatusTone(page.status) },
         { kind: "text", text: page.source === "static" ? "Current route" : formatDateTime(page.updatedAt) },
         { kind: "text", text: formatAnalyticsNumber(views) },
-        page.status === "published" && page.visibility === "public"
-          ? { kind: "anchor", href: page.href, text: "View" }
-          : { kind: "muted", text: page.visibility === "public" ? "Not public" : "Private" },
+        page.source === "cms"
+          ? { kind: "link", href: `/admin/pages/${page.id}`, text: "Edit" }
+          : { kind: "anchor", href: page.href, text: "View" },
       ],
     };
   });

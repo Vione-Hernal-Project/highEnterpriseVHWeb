@@ -43,7 +43,7 @@ export default async function AdminBlogPage() {
       status: post.status,
       tabKeys: [statusLabel],
       date: post.publishAt || post.updatedAt || post.createdAt,
-      href: post.status === "published" && post.visibility === "public" ? post.href : undefined,
+      href: post.source === "cms" ? `/admin/blog/${post.id}` : post.href,
       searchText: [post.title, post.href, post.authorName, post.categories.join(" "), statusLabel].join(" "),
       sortText: post.title,
       facets: {
@@ -61,9 +61,9 @@ export default async function AdminBlogPage() {
         { kind: "status", text: statusLabel, tone: getStatusTone(post.status) },
         { kind: "text", text: formatAnalyticsNumber(views) },
         { kind: "text", text: post.publishAt ? formatDateTime(post.publishAt) : "Not scheduled" },
-        post.status === "published" && post.visibility === "public"
-          ? { kind: "anchor", href: post.href, text: "View" }
-          : { kind: "muted", text: post.visibility === "public" ? "Not public" : "Private" },
+        post.source === "cms"
+          ? { kind: "link", href: `/admin/blog/${post.id}`, text: "Edit" }
+          : { kind: "anchor", href: post.href, text: "View" },
       ],
     };
   });

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUserContext } from "@/lib/auth";
 import { hasAdminAccess } from "@/lib/admin/access";
 import { getErrorMessage, getJsonBodySizeError } from "@/lib/http";
+import { isMediaUploadValidationError, verifyMp4Upload, verifyRasterImageUpload } from "@/lib/security/media-upload";
 import { applyRateLimit, buildRateLimitHeaders } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -13,12 +14,6 @@ const REVIEW_MEDIA_UPLOAD_LIMIT = 40;
 
 function sanitizePathSegment(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9_-]+/g, "-");
-}
-
-function getFileExtension(fileName: string) {
-  const lastDot = fileName.lastIndexOf(".");
-
-  return lastDot >= 0 ? fileName.slice(lastDot).replace(/[^a-zA-Z0-9.]/g, "") : "";
 }
 
 export async function POST(request: Request) {
@@ -71,27 +66,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Choose a product before uploading review media." }, { status: 400 });
     }
 
-    const isImage = file.type ? file.type.startsWith("image/") : false;
-    const isVideo = file.type === "video/mp4";
+    const declaredType = file.type?.split(";")[0]?.trim().toLowerCase() || "";
 
-    if (!isImage && !isVideo) {
+    if (declaredType && !["image/png", "image/jpeg", "image/webp", "video/mp4"].includes(declaredType)) {
       return NextResponse.json({ error: "Only PNG, JPG, WEBP, or MP4 uploads are supported." }, { status: 400 });
     }
 
-    const fileName = typeof (file as { name?: unknown }).name === "string" ? (file as { name: string }).name : "upload";
-    const extension = getFileExtension(fileName);
-
-    if (file.type === "image/svg+xml" || extension.toLowerCase() === ".svg") {
-      return NextResponse.json({ error: "SVG uploads are not supported for review media." }, { status: 400 });
-    }
-
-    const objectPath = `reviews/${productId}/media-${Date.now()}-${crypto.randomUUID()}${extension}`;
-    const admin = createSupabaseAdminClient();
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const { error: uploadError } = await admin.storage.from("product-media").upload(objectPath, bytes, {
+    const media = declaredType === "video/mp4"
+      ? verifyMp4Upload({ bytes, declaredType, label: "review media" })
+      : await verifyRasterImageUpload({ bytes, declaredType, label: "review media" });
+    const objectPath = `reviews/${productId}/media-${Date.now()}-${crypto.randomUUID()}${media.extension}`;
+    const admin = createSupabaseAdminClient();
+    const { error: uploadError } = await admin.storage.from("product-media").upload(objectPath, media.bytes, {
       cacheControl: "3600",
       upsert: false,
-      contentType: file.type || "application/octet-stream",
+      contentType: media.contentType,
     });
 
     if (uploadError) {
@@ -105,6 +95,10 @@ export async function POST(request: Request) {
       path: objectPath,
     });
   } catch (error) {
+    if (isMediaUploadValidationError(error)) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     return NextResponse.json({ error: getErrorMessage(error, "Unable to upload the review media right now.") }, { status: 500 });
   }
 }
