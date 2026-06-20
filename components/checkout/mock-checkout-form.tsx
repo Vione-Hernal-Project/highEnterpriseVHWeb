@@ -733,13 +733,13 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
         ? manualMapLocation
           ? "Exact location marked"
           : checkoutLocationIsApproximate
-            ? "Approximate - mark exact drop-off"
+            ? "Approximate - right-click to mark drop-off"
             : "Drag, scroll, or right-click to adjust"
         : checkoutMapState === "not-found"
           ? "Address not found"
           : checkoutMapState === "needs-pin"
-            ? "Approximate - mark exact drop-off"
-          : "Complete address to preview";
+            ? "Approximate - right-click to mark drop-off"
+          : "Right-click the map to drop a pin";
   const checkoutMapEmptyTitle =
     checkoutMapState === "loading"
       ? "Locating address..."
@@ -747,15 +747,15 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
         ? "Address not found yet."
         : checkoutMapState === "needs-pin"
           ? "Exact pin needed."
-        : "Complete address to preview.";
+        : "Pin your delivery location.";
   const checkoutMapEmptyCopy =
     checkoutMapState === "loading"
       ? "Checking the delivery location from the address you entered."
       : checkoutMapState === "not-found"
-        ? "Try adding the street, barangay, city, province, postal code, and country."
+        ? "Search your address above, or right-click the map to drop a pin on your exact location."
         : checkoutMapState === "needs-pin"
           ? "This address only matched a general area. Right-click the exact gate, entrance, or drop-off point and choose Mark location."
-        : "Enter a street, city, province, postal code, and country to preview the delivery location.";
+        : "Search your address above, tap Use my location, or right-click the map to drop a pin.";
   const selectedDeliveryLocation = checkoutMapMarkers.length ? checkoutResolvedLocation : null;
   const postalAutofill = useMemo(() => resolveShippingPostalAutofill({ postalCode, country }), [country, postalCode]);
 
@@ -1787,6 +1787,18 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
                     previewLocation={checkoutPreviewLocation}
                     zoom={15}
                   />
+                  <div className="vh-checkout-map-card__guide">
+                    <p className="vh-checkout-map-card__guide-title">How to set your exact location</p>
+                    <ol>
+                      <li>
+                        <strong>Right-click</strong> (or press &amp; hold on mobile) anywhere on the map to drop a pin.
+                      </li>
+                      <li>
+                        Click <strong>Mark location</strong> on the pin to set your exact gate, entrance, or drop-off point.
+                      </li>
+                      <li>Drag or scroll the map to fine-tune, then re-mark if needed.</li>
+                    </ol>
+                  </div>
                 </div>
               </div>
 

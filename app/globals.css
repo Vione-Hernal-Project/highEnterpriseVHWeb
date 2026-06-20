@@ -12335,6 +12335,37 @@ label.vh-admin-toggle-row input:checked + span::after {
     #f4f0ea;
 }
 
+.vh-checkout-map-card__guide {
+  border-top: 1px solid #e7e2dc;
+  padding-top: 0.7rem;
+}
+
+.vh-checkout-map-card__guide-title {
+  margin: 0 0 0.4rem;
+  color: #756d64;
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.vh-checkout-map-card__guide ol {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.vh-checkout-map-card__guide li {
+  color: #56504a;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.vh-checkout-map-card__guide strong {
+  color: #111114;
+}
+
 .vh-address-search__row {
   display: flex;
   gap: 0.6rem;
