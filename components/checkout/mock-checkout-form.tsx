@@ -365,10 +365,18 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
   const [manualMapLocation, setManualMapLocation] = useState<GeocodeResult | null>(null);
   const [quoteRefreshNonce, setQuoteRefreshNonce] = useState(0);
   const [quoteNow, setQuoteNow] = useState(() => Date.now());
+  const [addressMode, setAddressMode] = useState<"search" | "manual">("search");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressSuggestions, setAddressSuggestions] = useState<GeocodeResult[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [geoLocating, setGeoLocating] = useState(false);
+  const [geoMessage, setGeoMessage] = useState("");
   const autoVerifyTimerRef = useRef<number | null>(null);
   const autoVerifyAttemptRef = useRef(0);
   const autoVerifyInFlightRef = useRef(false);
   const mapAddressUpdateRef = useRef(false);
+  const lastSelectedLabelRef = useRef("");
 
   const productMap = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const enabledPaymentOptions = useMemo(() => getEnabledPaymentMethodOptions(checkoutSettings), [checkoutSettings]);
@@ -679,13 +687,15 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
       ? { lat: geocodedCheckoutAddress.lat, lng: geocodedCheckoutAddress.lng }
       : undefined;
   const checkoutMapMarkers = useMemo<VhMapMarker[]>(() => {
-    if (!shouldResolveMapAddress) {
+    const location = checkoutResolvedLocation;
+
+    if (!location) {
       return [];
     }
 
-    const location = checkoutResolvedLocation;
-
-    if (!location || (!manualMapLocation && !checkoutAutoLocationIsPrecise)) {
+    // A manually picked/marked location (search result, dropped pin, or GPS) always
+    // gets a marker. Auto-geocoded locations only show once they resolve precisely.
+    if (!manualMapLocation && (!shouldResolveMapAddress || !checkoutAutoLocationIsPrecise)) {
       return [];
     }
 
@@ -693,18 +703,18 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
       {
         id: "checkout-shipping-address",
         label: "Shipping address",
-        description: shippingAddress,
+        description: manualMapLocation?.label || shippingAddress,
         lat: location.lat,
         lng: location.lng,
       },
     ];
   }, [checkoutAutoLocationIsPrecise, checkoutResolvedLocation, manualMapLocation, shippingAddress, shouldResolveMapAddress]);
-  const checkoutMapState = !shouldResolveMapAddress
-    ? "empty"
-    : mapResolving
-      ? "loading"
-      : checkoutMapMarkers.length
-        ? "found"
+  const checkoutMapState = checkoutMapMarkers.length
+    ? "found"
+    : !shouldResolveMapAddress
+      ? "empty"
+      : mapResolving
+        ? "loading"
         : mapResolveStatus === "not-found" || mapResolveStatus === "error"
           ? "not-found"
           : checkoutPreviewLocation
@@ -763,6 +773,13 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
     if (components.country) setCountry(components.country);
   }
 
+  function syncSearchBoxToLocation(label: string) {
+    lastSelectedLabelRef.current = label;
+    setAddressQuery(label);
+    setAddressSuggestions([]);
+    setShowSuggestions(false);
+  }
+
   async function markCheckoutLocation(location: { lat: number; lng: number }) {
     const fallbackLocation: GeocodeResult = {
       label: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`,
@@ -782,9 +799,55 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
       if (response.ok) {
         applyResolvedAddressComponents(resolvedLocation.components);
       }
+
+      syncSearchBoxToLocation(resolvedLocation.label);
     } catch {
       setManualMapLocation(fallbackLocation);
+      syncSearchBoxToLocation(fallbackLocation.label);
     }
+  }
+
+  function applySelectedSuggestion(result: GeocodeResult) {
+    mapAddressUpdateRef.current = true;
+
+    const components = result.components || {};
+    const street = components.addressLine1 || result.label.split(",")[0]?.trim() || "";
+
+    if (street) setAddress1(street);
+    if (components.city) setCity(components.city);
+    if (components.province) setProvince(components.province);
+    if (components.postalCode) setPostalCode(components.postalCode);
+    if (components.country) setCountry(components.country);
+
+    setManualMapLocation(result);
+    syncSearchBoxToLocation(result.label);
+    setGeoMessage("");
+  }
+
+  function handleUseMyLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setGeoMessage("Location isn't available on this device. Search your address instead.");
+      return;
+    }
+
+    setGeoLocating(true);
+    setGeoMessage("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          setAddressMode("search");
+          await markCheckoutLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        } finally {
+          setGeoLocating(false);
+        }
+      },
+      () => {
+        setGeoLocating(false);
+        setGeoMessage("We couldn't access your location. Allow location access or search your address.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    );
   }
   const localShippingPreview = useMemo(
     () =>
@@ -804,6 +867,13 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
   );
 
   useEffect(() => {
+    // In search mode the geocoded result owns city/province/postal. Only enrich
+    // from the postal-code lookup while editing manually, and never clear values
+    // that came from the map/search so switching to "Edit details" is safe.
+    if (addressMode !== "manual") {
+      return;
+    }
+
     if (postalAutofill.status === "matched") {
       setCity(postalAutofill.city);
       setProvince(postalAutofill.province);
@@ -811,13 +881,8 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
       if (!country || country === "Philippines") {
         setCountry(postalAutofill.country);
       }
-
-      return;
     }
-
-    setCity("");
-    setProvince("");
-  }, [country, postalAutofill.city, postalAutofill.country, postalAutofill.postalCode, postalAutofill.province, postalAutofill.status]);
+  }, [addressMode, country, postalAutofill.city, postalAutofill.country, postalAutofill.postalCode, postalAutofill.province, postalAutofill.status]);
 
   useEffect(() => {
     if (mapAddressUpdateRef.current) {
@@ -827,6 +892,44 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
 
     setManualMapLocation(null);
   }, [shippingAddress]);
+
+  useEffect(() => {
+    const query = addressQuery.trim();
+
+    if (addressMode !== "search" || query.length < 3 || query === lastSelectedLabelRef.current) {
+      setAddressSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSuggestionsLoading(true);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/maps/autocomplete?q=${encodeURIComponent(query)}`);
+        const payload = await readJsonSafely<{ results?: GeocodeResult[] }>(response);
+
+        if (!cancelled) {
+          setAddressSuggestions(payload?.results || []);
+          setShowSuggestions(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setAddressSuggestions([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setSuggestionsLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [addressMode, addressQuery]);
 
   useEffect(() => {
     if (submission) {
@@ -1003,6 +1106,13 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
     setProvince("");
     setPostalCode("");
     setCountry("Philippines");
+    setAddressMode("search");
+    setAddressQuery("");
+    setAddressSuggestions([]);
+    setShowSuggestions(false);
+    setManualMapLocation(null);
+    setGeoMessage("");
+    lastSelectedLabelRef.current = "";
     setShippingMethodCode("standard");
     setAmountMode("php");
     setEnteredAmount(pricing ? getDefaultCheckoutInput("php", pricing) : "");
@@ -1014,6 +1124,12 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
   function handleReview() {
     setError("");
     setSubmission(null);
+
+    if (!address1.trim() || !city.trim() || !province.trim() || postalCode.trim().length < 4 || !country.trim()) {
+      setError("Complete your delivery address. Search and select your location, then add your street, house number, or unit.");
+      setAddressMode("manual");
+      return;
+    }
 
     if (!formRef.current?.reportValidity()) {
       return;
@@ -1451,90 +1567,207 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
                 />
               </div>
 
-              <div className="vh-field">
-                <label htmlFor="checkout-address1">Address</label>
-                <input
-                  id="checkout-address1"
-                  name="shippingAddressLine1"
-                  type="text"
-                  className="vh-input"
-                  value={address1}
-                  onChange={(event) => setAddress1(event.target.value)}
-                  autoComplete="street-address"
-                  required
-                />
-                <p className="vh-payment-note">Street, house number, building, or unit must still be entered manually.</p>
-              </div>
-
-              <div className="vh-checkout-field-grid">
-                <div className="vh-field">
-                  <label htmlFor="checkout-city">City</label>
-                  <input
-                    id="checkout-city"
-                    name="shippingCity"
-                    type="text"
-                    className="vh-input"
-                    value={city}
-                    onChange={(event) => setCity(event.target.value)}
-                    required
-                  />
+              <div className="vh-field vh-address-search">
+                <label htmlFor="checkout-address-search">Delivery address</label>
+                <div className="vh-address-search__row">
+                  <div className="vh-address-search__input-wrap">
+                    <input
+                      id="checkout-address-search"
+                      type="text"
+                      className="vh-input"
+                      value={addressQuery}
+                      placeholder="Search your address, building, or landmark"
+                      autoComplete="off"
+                      onChange={(event) => {
+                        setAddressQuery(event.target.value);
+                        lastSelectedLabelRef.current = "";
+                      }}
+                      onFocus={() => {
+                        if (addressSuggestions.length) {
+                          setShowSuggestions(true);
+                        }
+                      }}
+                      onBlur={() => {
+                        window.setTimeout(() => setShowSuggestions(false), 150);
+                      }}
+                    />
+                    {showSuggestions && (suggestionsLoading || addressSuggestions.length > 0) ? (
+                      <ul className="vh-address-suggestions">
+                        {suggestionsLoading && addressSuggestions.length === 0 ? (
+                          <li className="vh-address-suggestions__status">Searching…</li>
+                        ) : null}
+                        {addressSuggestions.map((suggestion) => (
+                          <li key={suggestion.placeId || suggestion.label}>
+                            <button
+                              type="button"
+                              className="vh-address-suggestions__item"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                applySelectedSuggestion(suggestion);
+                              }}
+                            >
+                              {suggestion.label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="vh-button vh-button--secondary vh-address-search__locate"
+                    onClick={handleUseMyLocation}
+                    disabled={geoLocating}
+                  >
+                    {geoLocating ? "Locating…" : "Use my location"}
+                  </button>
                 </div>
-
-                <div className="vh-field">
-                  <label htmlFor="checkout-province">Province / State</label>
-                  <input
-                    id="checkout-province"
-                    name="shippingProvince"
-                    type="text"
-                    className="vh-input"
-                    value={province}
-                    onChange={(event) => setProvince(event.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="vh-checkout-field-grid">
-                <div className="vh-field">
-                  <label htmlFor="checkout-postal-code">Postal Code</label>
-                  <input
-                    id="checkout-postal-code"
-                    name="shippingPostalCode"
-                    type="text"
-                    className="vh-input"
-                    value={postalCode}
-                    onChange={(event) => setPostalCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
-                    required
-                  />
-                </div>
-
-                <div className="vh-field">
-                  <label htmlFor="checkout-country">Country</label>
-                  <input
-                    id="checkout-country"
-                    name="shippingCountry"
-                    type="text"
-                    className="vh-input"
-                    value={country}
-                    onChange={(event) => setCountry(event.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="vh-field">
                 <p className="vh-payment-note">
-                  {postalAutofill.status === "matched"
-                    ? `Address help: ${[
-                        postalAutofill.city || null,
-                        postalAutofill.province || null,
-                        postalAutofill.country || null,
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}${postalAutofill.zoneLabel ? ` · ${postalAutofill.zoneLabel}` : ""}`
-                    : `Address help: ${postalAutofill.message}`}
+                  {geoMessage || "Search like Grab/Angkas, drop a pin on the map, or use your current location."}
                 </p>
               </div>
+
+              {addressMode === "search" && (address1.trim() || city.trim() || postalCode.trim()) ? (
+                <div className="vh-field">
+                  <div className="vh-address-summary">
+                    <div className="vh-address-summary__header">
+                      <p className="vh-field__label">Delivery details</p>
+                      <button
+                        type="button"
+                        className="vh-address-summary__edit"
+                        onClick={() => setAddressMode("manual")}
+                      >
+                        Edit details
+                      </button>
+                    </div>
+                    <dl className="vh-address-summary__list">
+                      <div>
+                        <dt>Street / unit</dt>
+                        <dd>{address1 || "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>City</dt>
+                        <dd>{city || "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Province</dt>
+                        <dd>{province || "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Postal code</dt>
+                        <dd>{postalCode || "—"}</dd>
+                      </div>
+                      <div>
+                        <dt>Country</dt>
+                        <dd>{country || "—"}</dd>
+                      </div>
+                    </dl>
+                    <p className="vh-payment-note">
+                      {postalAutofill.status === "matched" && postalAutofill.zoneLabel
+                        ? `Shipping zone: ${postalAutofill.zoneLabel}`
+                        : "Tip: open Edit details to add your house number, unit, or barangay for an accurate drop-off."}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {addressMode === "manual" ? (
+                <>
+                  <div className="vh-field">
+                    <div className="vh-address-summary__header">
+                      <label htmlFor="checkout-address1">Address</label>
+                      <button
+                        type="button"
+                        className="vh-address-summary__edit"
+                        onClick={() => setAddressMode("search")}
+                      >
+                        Back to search
+                      </button>
+                    </div>
+                    <input
+                      id="checkout-address1"
+                      name="shippingAddressLine1"
+                      type="text"
+                      className="vh-input"
+                      value={address1}
+                      onChange={(event) => setAddress1(event.target.value)}
+                      autoComplete="street-address"
+                      required
+                    />
+                    <p className="vh-payment-note">Street, house number, building, or unit.</p>
+                  </div>
+
+                  <div className="vh-checkout-field-grid">
+                    <div className="vh-field">
+                      <label htmlFor="checkout-city">City</label>
+                      <input
+                        id="checkout-city"
+                        name="shippingCity"
+                        type="text"
+                        className="vh-input"
+                        value={city}
+                        onChange={(event) => setCity(event.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="vh-field">
+                      <label htmlFor="checkout-province">Province / State</label>
+                      <input
+                        id="checkout-province"
+                        name="shippingProvince"
+                        type="text"
+                        className="vh-input"
+                        value={province}
+                        onChange={(event) => setProvince(event.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="vh-checkout-field-grid">
+                    <div className="vh-field">
+                      <label htmlFor="checkout-postal-code">Postal Code</label>
+                      <input
+                        id="checkout-postal-code"
+                        name="shippingPostalCode"
+                        type="text"
+                        className="vh-input"
+                        value={postalCode}
+                        onChange={(event) => setPostalCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                        required
+                      />
+                    </div>
+
+                    <div className="vh-field">
+                      <label htmlFor="checkout-country">Country</label>
+                      <input
+                        id="checkout-country"
+                        name="shippingCountry"
+                        type="text"
+                        className="vh-input"
+                        value={country}
+                        onChange={(event) => setCountry(event.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="vh-field">
+                    <p className="vh-payment-note">
+                      {postalAutofill.status === "matched"
+                        ? `Address help: ${[
+                            postalAutofill.city || null,
+                            postalAutofill.province || null,
+                            postalAutofill.country || null,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")}${postalAutofill.zoneLabel ? ` · ${postalAutofill.zoneLabel}` : ""}`
+                        : `Address help: ${postalAutofill.message}`}
+                    </p>
+                  </div>
+                </>
+              ) : null}
 
               <div className="vh-field">
                 <div className="vh-checkout-map-card">
