@@ -181,7 +181,7 @@ function TopProductsPanel({ report }: { report: AdminReportData }) {
           {topProducts.map((product) => (
             <Link key={product.key} href="/admin/products" className="vh-admin-analytics-product-row">
               {product.image ? (
-                <img src={product.image} alt={product.name} />
+                <img loading="lazy" decoding="async" src={product.image} alt={product.name} />
               ) : (
                 <span aria-hidden="true">{product.name.slice(0, 1).toUpperCase()}</span>
               )}

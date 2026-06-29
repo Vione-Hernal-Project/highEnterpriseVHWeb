@@ -84,7 +84,7 @@ export default async function EditorialArticlePage({ params }: Props) {
         </div>
         {post.featuredImageUrl ? (
           <div className="storefront-app-media u-margin-b--xl">
-            <img src={post.featuredImageUrl} alt="" />
+            <img loading="lazy" decoding="async" src={post.featuredImageUrl} alt="" />
           </div>
         ) : null}
         <section className="vh-about-page__sections">

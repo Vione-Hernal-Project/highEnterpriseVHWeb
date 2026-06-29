@@ -244,7 +244,7 @@ export function AdminGeneralSettingsForm({ initialSettings }: Props) {
           <Field label="Phone Number" value={settings.phoneNumber} onChange={(value) => update("phoneNumber", value)} />
         </div>
         <div className="vh-admin-logo-preview vh-admin-logo-preview--settings">
-          <img src={settings.logoUrl || "/assets/images/vh-logo-v2.jpg"} alt="Vione Hernal logo" />
+          <img loading="lazy" decoding="async" src={settings.logoUrl || "/assets/images/vh-logo-v2.jpg"} alt="Vione Hernal logo" />
           <div>
             <button type="button" onClick={() => brandAssetInputRef.current?.click()} disabled={uploading}>
               {uploading ? "Uploading..." : "Upload Logo / Favicon"}

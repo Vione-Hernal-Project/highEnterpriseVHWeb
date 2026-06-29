@@ -13,7 +13,7 @@ export default function AffiliatePage() {
     <section className="storefront-app-view storefront-app-affiliate">
       <div className="storefront-app-affiliate__hero">
         <div className="storefront-app-affiliate__media">
-          <img src="/assets/images/affiliate-model.jpg" alt="Vione Hernal affiliate editorial" />
+          <img loading="lazy" decoding="async" src="/assets/images/affiliate-model.jpg" alt="Vione Hernal affiliate editorial" />
         </div>
         <div className="storefront-app-affiliate__intro">
           <p className="storefront-app-affiliate__eyebrow">Affiliate</p>

@@ -197,7 +197,7 @@ export function AdminShell({ children, ordersActionableCount = 0, adminRole, use
 
         <div className="vh-admin-sidebar__account">
           <div className="vh-admin-sidebar__monogram">
-            <img src={branding.logoUrl || "/assets/images/vh-logo-v2.jpg"} alt="" />
+            <img loading="lazy" decoding="async" src={branding.logoUrl || "/assets/images/vh-logo-v2.jpg"} alt="" />
           </div>
           <div>
             <strong>{branding.storeName}</strong>

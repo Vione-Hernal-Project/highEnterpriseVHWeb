@@ -67,7 +67,7 @@ export default async function CmsSitePage({ params }: Props) {
       </div>
       {page.featuredImageUrl ? (
         <div className="storefront-app-media u-margin-b--xl">
-          <img src={page.featuredImageUrl} alt="" />
+          <img loading="lazy" decoding="async" src={page.featuredImageUrl} alt="" />
         </div>
       ) : null}
       <section className="vh-about-page__sections">

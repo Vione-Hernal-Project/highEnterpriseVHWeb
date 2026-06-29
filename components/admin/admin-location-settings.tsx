@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Crosshair, Plus, Save, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { AdminBranchLocation, AdminGeneralSettings } from "@/lib/admin/settings";
@@ -8,6 +8,7 @@ import { getErrorMessage, getResponseErrorMessage, readJsonSafely } from "@/lib/
 import { cn } from "@/lib/utils";
 import { isPreciseGeocodeResult, useGeocodedAddress, type GeocodeResult } from "@/components/map/use-geocoded-address";
 import { VhInteractiveMap, type VhMapMarker } from "@/components/map/vh-interactive-map";
+import { AddressAutocomplete, type AddressSuggestion } from "@/components/map/address-autocomplete";
 
 const DEFAULT_LOGO = "/assets/images/vh-logo-v2.jpg";
 const PRIMARY_BRANCH_ID = "primary-store";
@@ -192,6 +193,8 @@ export function AdminLocationSettings({ initialSettings }: Props) {
   const [addressEditVersion, setAddressEditVersion] = useState(0);
   const [coordinateEditVersion, setCoordinateEditVersion] = useState(0);
   const [activeBranchId, setActiveBranchId] = useState(PRIMARY_BRANCH_ID);
+  const [mapJumpTarget, setMapJumpTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const [geolocating, setGeolocating] = useState(false);
   const activeBranch = useMemo(() => getActiveBranch(settings, activeBranchId), [activeBranchId, settings]);
   const activeAddress = useMemo(
     () => composeAddress(activeBranch),
@@ -230,6 +233,14 @@ export function AdminLocationSettings({ initialSettings }: Props) {
   );
   const activeBranchNeedsExactPin = Boolean(geocodedLocation && preferActiveAddressPreview && hasMappableActiveAddress && !geocodedLocationIsPrecise);
   const mapPreviewLocation = activeBranchNeedsExactPin ? { lat: geocodedLocation!.lat, lng: geocodedLocation!.lng } : undefined;
+  const activeBranchLat = numberFromCoordinate(activeBranch.latitude);
+  const activeBranchLng = numberFromCoordinate(activeBranch.longitude);
+  const activePinLocation =
+    activeBranchLat !== null && activeBranchLng !== null
+      ? { lat: activeBranchLat, lng: activeBranchLng }
+      : geocodedLocation
+        ? { lat: geocodedLocation.lat, lng: geocodedLocation.lng }
+        : null;
   const mapMarkers = useMemo(() => mapMarkersFromBranches(branches, settings.logoUrl), [branches, settings.logoUrl]);
   const mapEmptyTitle = geocoding
     ? "Locating branch address..."
@@ -248,8 +259,8 @@ export function AdminLocationSettings({ initialSettings }: Props) {
   const mapHelpText = geocoding
     ? "Locating branch address..."
     : activeBranchNeedsExactPin
-      ? "Approximate area found. Right-click the exact branch location to set the pin."
-    : "Left-drag to move, scroll to zoom, or right-click to mark the selected branch.";
+      ? "Approximate area found. Drag the map so the pin sits on the exact branch spot."
+    : "Search an address or use your location, then drag the map so the pin sits exactly on the branch.";
 
   useEffect(() => {
     if (!branches.some((branch) => branch.id === activeBranchId)) {
@@ -271,6 +282,68 @@ export function AdminLocationSettings({ initialSettings }: Props) {
     setCoordinateEditVersion(Date.now());
     setStatus("idle");
   }, [activeBranchId, geocodedLocation, geocodedLocationIsPrecise, hasMappableActiveAddress, preferActiveAddressPreview]);
+
+  // Recenter the map on the active branch's saved coordinates when switching branches.
+  useEffect(() => {
+    const branch = getActiveBranch(settings, activeBranchId);
+    const lat = numberFromCoordinate(branch.latitude);
+    const lng = numberFromCoordinate(branch.longitude);
+
+    if (lat !== null && lng !== null) {
+      setMapJumpTarget({ lat, lng });
+    }
+    // Only on branch switch; intentionally not depending on settings.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBranchId]);
+
+  // While the admin is typing the address, follow the geocoded area; once a pin
+  // is placed (coordinates set) we stop, so dragging the pin is never reverted.
+  useEffect(() => {
+    if (preferActiveAddressPreview && geocodedLocation) {
+      setMapJumpTarget({ lat: geocodedLocation.lat, lng: geocodedLocation.lng });
+    }
+  }, [preferActiveAddressPreview, geocodedLocation?.lat, geocodedLocation?.lng]);
+
+  function applyBranchSuggestion(suggestion: AddressSuggestion) {
+    const components = suggestion.components;
+
+    setSettings((current) =>
+      applyBranchPatch(current, activeBranchId, {
+        address: components.addressLine1 || getActiveBranch(current, activeBranchId).address,
+        city: components.city || getActiveBranch(current, activeBranchId).city,
+        stateProvince: components.province || getActiveBranch(current, activeBranchId).stateProvince,
+        postalCode: components.postalCode || getActiveBranch(current, activeBranchId).postalCode,
+        country: components.country || getActiveBranch(current, activeBranchId).country,
+        latitude: formatCoordinate(suggestion.lat),
+        longitude: formatCoordinate(suggestion.lng),
+      }),
+    );
+    setCoordinateEditVersion(Date.now());
+    setMapJumpTarget({ lat: suggestion.lat, lng: suggestion.lng });
+    setStatus("idle");
+  }
+
+  function useBranchCurrentLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setError("Location is not available on this device.");
+      return;
+    }
+
+    setGeolocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const location = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setMapJumpTarget(location);
+        await markSelectedBranchLocation(location);
+        setGeolocating(false);
+      },
+      () => {
+        setGeolocating(false);
+        setError("Could not get your current location. Allow location access and try again.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
 
   function updateActiveBranch(patch: Partial<AdminBranchLocation>, editKind: "address" | "coordinates" = "address") {
     const addressChanged =
@@ -401,7 +474,21 @@ export function AdminLocationSettings({ initialSettings }: Props) {
           <Field label="Country" value={activeBranch.country} onChange={(value) => updateActiveBranch({ country: value })} as="select">
             <option value="Philippines">Philippines</option>
           </Field>
-          <Field label="Store Address" value={activeBranch.address} onChange={(value) => updateActiveBranch({ address: value })} as="textarea" />
+          <div className="vh-admin-form-field">
+            <span>Store Address</span>
+            <AddressAutocomplete
+              value={activeBranch.address}
+              onValueChange={(value) => updateActiveBranch({ address: value })}
+              onSelect={applyBranchSuggestion}
+              context={{
+                city: activeBranch.city,
+                province: activeBranch.stateProvince,
+                postalCode: activeBranch.postalCode,
+                country: activeBranch.country,
+              }}
+              placeholder="Search building, street, or area"
+            />
+          </div>
           <Field label="State / Province" value={activeBranch.stateProvince} onChange={(value) => updateActiveBranch({ stateProvince: value })} />
           <Field label="City" value={activeBranch.city} onChange={(value) => updateActiveBranch({ city: value })} />
           <Field label="Postal Code" value={activeBranch.postalCode} onChange={(value) => updateActiveBranch({ postalCode: value })} />
@@ -417,10 +504,16 @@ export function AdminLocationSettings({ initialSettings }: Props) {
             <p>{mapHelpText}</p>
           </div>
         </div>
+        <div className="vh-admin-location-search-row">
+          <button type="button" className="vh-address-gps-button" onClick={useBranchCurrentLocation} disabled={geolocating}>
+            <Crosshair size={15} strokeWidth={1.9} aria-hidden="true" />
+            {geolocating ? "Locating..." : "Use current location"}
+          </button>
+        </div>
         <VhInteractiveMap
           ariaLabel="Vione Hernal branch map"
           className="vh-admin-location-map"
-          markers={mapMarkers}
+          markers={mapMarkers.filter((marker) => marker.id !== activeBranchId)}
           activeMarkerId={activeBranchId}
           markerStyle="logo-pin"
           emptyTitle={mapEmptyTitle}
@@ -428,6 +521,10 @@ export function AdminLocationSettings({ initialSettings }: Props) {
           onLocationMarked={markSelectedBranchLocation}
           onMarkerSelect={setActiveBranchId}
           previewLocation={mapPreviewLocation}
+          centerPinMode
+          pinLocation={activePinLocation}
+          onCenterCommit={markSelectedBranchLocation}
+          recenterTo={mapJumpTarget}
           zoom={13}
         />
         <div className="vh-admin-location-branches">

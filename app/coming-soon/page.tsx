@@ -11,7 +11,7 @@ export default async function ComingSoonPage({ searchParams }: Props) {
   return (
     <section className="storefront-app-view storefront-app-coming-soon">
       <div className="storefront-app-coming-soon__frame">
-        <img className="storefront-app-coming-soon__media" src="/assets/images/coming-soon-background.jpg" alt="" role="presentation" />
+        <img loading="lazy" decoding="async" className="storefront-app-coming-soon__media" src="/assets/images/coming-soon-background.jpg" alt="" role="presentation" />
         <video className="storefront-app-coming-soon__smoke" autoPlay muted loop playsInline preload="metadata" aria-hidden="true">
           <source src="/assets/videos/coming-soon-smoke-overlay.mp4" type="video/mp4" />
         </video>

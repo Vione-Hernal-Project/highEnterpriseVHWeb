@@ -32,6 +32,14 @@ type Props = {
   onMarkerSelect?: (markerId: string) => void;
   previewLocation?: { lat: number; lng: number };
   zoom?: number;
+  /** Enables the draggable delivery/branch pin. */
+  centerPinMode?: boolean;
+  /** The pin's geographic anchor. It stays on this spot while the map is panned. */
+  pinLocation?: { lat: number; lng: number } | null;
+  /** Fired when the pin is moved (dragged or tap-to-place) with the new location. */
+  onCenterCommit?: (location: { lat: number; lng: number }) => void | Promise<void>;
+  /** Controlled jump target — when this changes the map snaps to it (suggestion pick / GPS). */
+  recenterTo?: { lat: number; lng: number } | null;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -109,15 +117,24 @@ export function VhInteractiveMap({
   onMarkerSelect,
   previewLocation,
   zoom: preferredZoom = 14,
+  centerPinMode = false,
+  pinLocation,
+  onCenterCommit,
+  recenterTo,
 }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
+  const pinScreenRef = useRef({ x: 0, y: 0 });
   const dragRef = useRef<{
     pointerId: number;
     startClientX: number;
     startClientY: number;
     startWorldX: number;
     startWorldY: number;
+    moved: boolean;
   } | null>(null);
+  const centerRef = useRef(DEFAULT_CENTER);
+  const commitTimerRef = useRef<number | null>(null);
+  const pinDragRef = useRef<{ pointerId: number; startClientX: number; startClientY: number; offsetX: number; offsetY: number } | null>(null);
   const validMarkers = useMemo(() => markers.filter((marker) => isValidCoordinate(marker.lat, marker.lng)), [markers]);
   const activeMarker = activeMarkerId ? validMarkers.find((marker) => marker.id === activeMarkerId) || null : validMarkers[0] || null;
   const hasPreviewLocation = Boolean(previewLocation && isValidCoordinate(previewLocation.lat, previewLocation.lng));
@@ -126,6 +143,26 @@ export function VhInteractiveMap({
   const [center, setCenter] = useState(() => resolveInitialCenter(validMarkers, previewLocation || initialCenter));
   const [pendingMark, setPendingMark] = useState<{ lat: number; lng: number; x: number; y: number } | null>(null);
   const [marking, setMarking] = useState(false);
+  const [pinDragOffset, setPinDragOffset] = useState<{ x: number; y: number } | null>(null);
+  const [isPinHeld, setIsPinHeld] = useState(false);
+
+  centerRef.current = center;
+
+  // Controlled jump (suggestion picked or "use my location"): snap + zoom in for precise pinning.
+  useEffect(() => {
+    if (recenterTo && isValidCoordinate(recenterTo.lat, recenterTo.lng)) {
+      setCenter({ lat: recenterTo.lat, lng: recenterTo.lng });
+      setZoom((current) => Math.max(current, 16));
+    }
+  }, [recenterTo?.lat, recenterTo?.lng]);
+
+  useEffect(() => {
+    return () => {
+      if (commitTimerRef.current !== null) {
+        window.clearTimeout(commitTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const element = mapRef.current;
@@ -150,6 +187,12 @@ export function VhInteractiveMap({
   }, []);
 
   useEffect(() => {
+    // In center-pin mode the map center is controlled only by `recenterTo`
+    // (explicit jumps); never auto-snap, or the user can't position the pin.
+    if (centerPinMode) {
+      return;
+    }
+
     if (activeMarker) {
       setCenter({ lat: activeMarker.lat, lng: activeMarker.lng });
       return;
@@ -164,6 +207,7 @@ export function VhInteractiveMap({
       setCenter(initialCenter);
     }
   }, [
+    centerPinMode,
     activeMarker?.id,
     activeMarker?.lat,
     activeMarker?.lng,
@@ -252,6 +296,7 @@ export function VhInteractiveMap({
       startClientY: event.clientY,
       startWorldX: lngToWorldX(center.lng, zoom),
       startWorldY: latToWorldY(center.lat, zoom),
+      moved: false,
     };
   }
 
@@ -264,6 +309,11 @@ export function VhInteractiveMap({
 
     const deltaX = event.clientX - dragState.startClientX;
     const deltaY = event.clientY - dragState.startClientY;
+
+    if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+      dragState.moved = true;
+    }
+
     const nextWorldX = dragState.startWorldX - deltaX;
     const nextWorldY = dragState.startWorldY - deltaY;
 
@@ -274,13 +324,104 @@ export function VhInteractiveMap({
   }
 
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
-    if (dragRef.current?.pointerId === event.pointerId) {
-      dragRef.current = null;
+    const dragState = dragRef.current;
+
+    if (dragState?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const moved = dragState.moved;
+    dragRef.current = null;
+
+    if (!centerPinMode || !onCenterCommit) {
+      return;
+    }
+
+    // Panning the map does NOT move the pin — the pin stays anchored to its
+    // location (it scrolls with the map). Only a tap places the pin there.
+    if (moved) {
+      return;
+    }
+
+    if (commitTimerRef.current !== null) {
+      window.clearTimeout(commitTimerRef.current);
+    }
+
+    const tapped = coordinatesFromClientPoint(event.clientX, event.clientY, zoom);
+    const location = { lat: tapped.lat, lng: tapped.lng };
+
+    commitTimerRef.current = window.setTimeout(() => {
+      void onCenterCommit(location);
+    }, 120);
+  }
+
+  // Dragging the pin itself: it follows the finger/cursor; on release we recenter
+  // the map onto where the tip was dropped (so the pin moves in the drag direction).
+  function handlePinPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pinDragRef.current = { pointerId: event.pointerId, startClientX: event.clientX, startClientY: event.clientY, offsetX: 0, offsetY: 0 };
+    setPinDragOffset({ x: 0, y: 0 });
+    setIsPinHeld(true);
+  }
+
+  function handlePinPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const dragState = pinDragRef.current;
+
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.stopPropagation();
+    dragState.offsetX = event.clientX - dragState.startClientX;
+    dragState.offsetY = event.clientY - dragState.startClientY;
+    setPinDragOffset({ x: dragState.offsetX, y: dragState.offsetY });
+  }
+
+  function handlePinPointerUp(event: PointerEvent<HTMLDivElement>) {
+    const dragState = pinDragRef.current;
+
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.stopPropagation();
+    pinDragRef.current = null;
+    setPinDragOffset(null);
+    setIsPinHeld(false);
+
+    const rect = mapRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      return;
+    }
+
+    // The pin tip rests at its anchored screen position; add the drag offset to
+    // find where it was dropped. Do NOT recenter the map — the pin simply stays
+    // where the user dropped it.
+    const tipClientX = rect.left + pinScreenRef.current.x + dragState.offsetX;
+    const tipClientY = rect.top + pinScreenRef.current.y + dragState.offsetY;
+    const dropped = coordinatesFromClientPoint(tipClientX, tipClientY, zoom);
+    const location = { lat: dropped.lat, lng: dropped.lng };
+
+    if (onCenterCommit) {
+      if (commitTimerRef.current !== null) {
+        window.clearTimeout(commitTimerRef.current);
+      }
+
+      commitTimerRef.current = window.setTimeout(() => {
+        void onCenterCommit(location);
+      }, 150);
     }
   }
 
   function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
-    if (!onLocationMarked) {
+    // Center-pin mode uses drag-to-position, not right-click marking.
+    if (centerPinMode || !onLocationMarked) {
       return;
     }
 
@@ -311,6 +452,13 @@ export function VhInteractiveMap({
   const centerY = latToWorldY(center.lat, zoom);
   const topLeftX = centerX - size.width / 2;
   const topLeftY = centerY - size.height / 2;
+
+  // The draggable pin is anchored to its location (falls back to the map center
+  // before any location is set), so panning the map leaves the pin on its spot.
+  const pinAnchor = pinLocation && isValidCoordinate(pinLocation.lat, pinLocation.lng) ? pinLocation : center;
+  const pinScreenX = lngToWorldX(pinAnchor.lng, zoom) - topLeftX;
+  const pinScreenY = latToWorldY(pinAnchor.lat, zoom) - topLeftY;
+  pinScreenRef.current = { x: pinScreenX, y: pinScreenY };
   const minTileX = Math.floor(topLeftX / TILE_SIZE);
   const maxTileX = Math.floor((topLeftX + size.width) / TILE_SIZE);
   const minTileY = Math.floor(topLeftY / TILE_SIZE);
@@ -346,11 +494,11 @@ export function VhInteractiveMap({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {validMarkers.length > 0 || hasPreviewLocation ? (
+      {validMarkers.length > 0 || hasPreviewLocation || centerPinMode ? (
         <>
           <div className="vh-map__tiles" aria-hidden="true">
             {tiles.map((tile) => (
-              <img
+              <img loading="lazy" decoding="async"
                 key={tile.key}
                 className="vh-map__tile"
                 src={tile.url}
@@ -375,7 +523,7 @@ export function VhInteractiveMap({
                 onClick={() => onMarkerSelect?.(marker.id)}
                 onPointerDown={(event) => event.stopPropagation()}
               >
-                {markerStyle === "logo-pin" && marker.logoUrl ? <img src={marker.logoUrl} alt="" /> : <i />}
+                {markerStyle === "logo-pin" && marker.logoUrl ? <img loading="lazy" decoding="async" src={marker.logoUrl} alt="" /> : <i />}
               </button>
             );
           })}
@@ -390,7 +538,33 @@ export function VhInteractiveMap({
               </button>
             </div>
           ) : null}
-          {validMarkers.length === 0 || (hasPreviewLocation && activeMarkerId && !activeMarker) ? (
+          {centerPinMode ? (
+            <div
+              className={cn("vh-map__center-pin", isPinHeld && "vh-map__center-pin--held")}
+              style={{
+                left: pinScreenX + (pinDragOffset?.x ?? 0),
+                top: pinScreenY + (pinDragOffset?.y ?? 0),
+              }}
+              onPointerDown={handlePinPointerDown}
+              onPointerMove={handlePinPointerMove}
+              onPointerUp={handlePinPointerUp}
+              onPointerCancel={handlePinPointerUp}
+            >
+              <span className="vh-map__center-pin-body">
+                <svg className="vh-map__center-pin-svg" viewBox="0 0 28 36" width="30" height="38" aria-hidden="true">
+                  <path
+                    d="M14 1.6 C7 1.6 1.8 6.9 1.8 13.7 C1.8 22.9 14 34.4 14 34.4 C14 34.4 26.2 22.9 26.2 13.7 C26.2 6.9 21 1.6 14 1.6 Z"
+                    fill="#171513"
+                    stroke="#c8a96a"
+                    strokeWidth="1.2"
+                  />
+                  <circle cx="14" cy="13.5" r="5" fill="none" stroke="#c8a96a" strokeWidth="1.1" />
+                  <circle cx="14" cy="13.5" r="2.1" fill="#c8a96a" />
+                </svg>
+              </span>
+            </div>
+          ) : null}
+          {!centerPinMode && (validMarkers.length === 0 || (hasPreviewLocation && activeMarkerId && !activeMarker)) ? (
             <div className="vh-map__empty vh-map__empty--overlay">
               <MapPin size={22} strokeWidth={1.8} aria-hidden="true" />
               <strong>{emptyTitle}</strong>

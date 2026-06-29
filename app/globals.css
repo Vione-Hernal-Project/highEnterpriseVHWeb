@@ -197,8 +197,22 @@ textarea {
   }
 }
 
+/* YSL-style page transition: a soft fade on every navigation. Remounted per
+   route (key={pathname}) so it replays. Opacity-only — no transform — so it
+   stays GPU-cheap and never disturbs position:fixed/sticky descendants. The
+   reduced-motion block above neutralizes it via animation-duration. */
 .vh-page-transition {
-  display: contents;
+  animation: vh-page-enter 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes vh-page-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .vh-main .storefront-app-view {
@@ -2123,6 +2137,53 @@ textarea {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
   border-top: 1px solid #e7e2dc;
+}
+
+/* The headline "You Pay" line — stands out from the other rows. */
+.storefront-app-summary-row--em {
+  padding: 0.5rem 0;
+  border-top: 1px solid #ece7e1;
+  border-bottom: 1px solid #ece7e1;
+}
+
+.storefront-app-summary-row--em span {
+  font-weight: 650;
+  color: #111114;
+}
+
+.storefront-app-summary-row--em strong {
+  font-size: 1.05rem;
+}
+
+/* "View fee breakdown" toggle + the collapsible detail rows. */
+.vh-summary-breakdown-toggle {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #66615d;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.vh-summary-breakdown-toggle:hover {
+  color: #111114;
+}
+
+.vh-summary-breakdown {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 10px;
+  background: #faf8f5;
+}
+
+.vh-summary-breakdown .storefront-app-summary-row {
+  font-size: 0.78rem;
 }
 
 .vh-checkout-card,
@@ -12202,15 +12263,16 @@ label.vh-admin-toggle-row input:checked + span::after {
 
 .vh-map__attribution {
   position: absolute;
-  right: 0.7rem;
-  bottom: 0.55rem;
+  right: 0.45rem;
+  bottom: 0.35rem;
   z-index: 3;
-  padding: 0.25rem 0.45rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #626878;
-  font-size: 0.62rem;
-  font-weight: 650;
+  padding: 0.08rem 0.32rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  color: #9aa0ad;
+  font-size: 0.5rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   pointer-events: none;
 }
 
@@ -12281,6 +12343,222 @@ label.vh-admin-toggle-row input:checked + span::after {
 
 .vh-map__empty span {
   font-size: 0.74rem;
+}
+
+/* Grab-style center pin: solid dark pin, tip exactly at the map center, and
+   directly draggable to fine-tune the exact spot. */
+/* Outer = the precise point on the map (positioned via inline left/top to its
+   anchored location); it never lifts. */
+.vh-map__center-pin {
+  position: absolute;
+  z-index: 5;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  transform: translate(-50%, -100%);
+}
+
+.vh-map__center-pin--held {
+  cursor: grabbing;
+}
+
+/* The pin body lifts off the point while held and drops back on release
+   (Google-style). The transition animates the lift/drop. */
+.vh-map__center-pin-body {
+  display: block;
+  transform: translateY(0);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), filter 200ms ease;
+  filter: drop-shadow(0 3px 3px rgba(20, 24, 36, 0.32));
+}
+
+.vh-map__center-pin--held .vh-map__center-pin-body {
+  transform: translateY(-13px);
+  filter: drop-shadow(0 15px 11px rgba(20, 24, 36, 0.3));
+}
+
+.vh-map__center-pin-svg {
+  display: block;
+}
+
+/* Contact dot at the exact point — stays planted on the map while the pin lifts,
+   so it always reads as connected to a real location. */
+.vh-map__center-pin::after {
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #171513;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92), 0 1px 3px rgba(20, 24, 36, 0.45);
+  content: "";
+  transform: translateX(-50%);
+}
+
+/* The contact dot's shadow grows slightly as the pin lifts (depth cue). */
+.vh-map__center-pin--held::after {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92), 0 2px 6px rgba(20, 24, 36, 0.5);
+}
+
+/* Address autocomplete (search-as-you-type). Used on checkout + admin. */
+.vh-address-search {
+  position: relative;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.vh-address-search__label {
+  color: #2b2f3a;
+  font-size: 0.74rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.vh-address-search__field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.vh-address-search__icon {
+  position: absolute;
+  left: 0.72rem;
+  color: #8b8f9c;
+  pointer-events: none;
+}
+
+.vh-address-search__input {
+  width: 100%;
+  min-height: 2.7rem;
+  padding: 0.6rem 2.3rem 0.6rem 2.15rem;
+  border: 1px solid rgba(24, 27, 38, 0.16);
+  border-radius: 10px;
+  background: #fff;
+  color: #10131e;
+  font-size: 0.86rem;
+}
+
+.vh-address-search__input:focus {
+  outline: 0;
+  border-color: rgba(24, 27, 38, 0.45);
+  box-shadow: 0 0 0 3px rgba(24, 27, 38, 0.08);
+}
+
+.vh-address-search__spinner {
+  position: absolute;
+  right: 0.72rem;
+  color: #8b8f9c;
+  animation: vh-address-spin 0.8s linear infinite;
+}
+
+@keyframes vh-address-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vh-address-search__list {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  background: #fff;
+  border: 1px solid rgba(24, 27, 38, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 20px 42px rgba(20, 24, 36, 0.18);
+  max-height: 17rem;
+  overflow-y: auto;
+}
+
+.vh-address-search__option {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #10131e;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.vh-address-search__option svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+  color: #e94b6a;
+}
+
+.vh-address-search__option--active,
+.vh-address-search__option:hover {
+  background: #f4f2fb;
+}
+
+.vh-address-search__empty {
+  padding: 0.6rem;
+  color: #6c7281;
+  font-size: 0.76rem;
+}
+
+/* "Use my current location" button. */
+.vh-address-gps-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid rgba(24, 27, 38, 0.18);
+  border-radius: 999px;
+  background: #fff;
+  color: #10131e;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.vh-address-gps-button:hover {
+  border-color: rgba(24, 27, 38, 0.4);
+}
+
+.vh-address-gps-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+/* Search box + "use current location" laid out in one row above a map. */
+.vh-address-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.vh-address-search-row .vh-address-search,
+.vh-admin-location-search-row .vh-address-search {
+  flex: 1 1 16rem;
+}
+
+.vh-admin-location-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.vh-checkout-map-hint {
+  margin: 0.5rem 0 0;
+  color: #6c7281;
+  font-size: 0.72rem;
+  line-height: 1.4;
 }
 
 .vh-map__empty--overlay {

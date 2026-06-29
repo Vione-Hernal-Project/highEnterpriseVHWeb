@@ -210,7 +210,7 @@ export default async function AdminLedgerTransactionDetailPage({ params }: Props
                 <article key={item.id} className="vh-admin-ledger-detail-item">
                   <div className="vh-admin-ledger-detail-item__media">
                     {item.imageUrl ? (
-                      <img src={item.imageUrl} alt={item.productName} loading="lazy" />
+                      <img decoding="async" src={item.imageUrl} alt={item.productName} loading="lazy" />
                     ) : (
                       <span className="vh-admin-ledger-detail-item__placeholder">No image on record</span>
                     )}

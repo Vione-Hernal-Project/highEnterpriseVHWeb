@@ -276,7 +276,7 @@ export function WalletStatus() {
               <button type="button" className="vh-wallet-choice vh-wallet-choice--phantom" disabled={isAnyConnecting} onClick={handlePhantomConnect}>
                 {!hasPhantomWallet() ? <span className="vh-wallet-choice__badge vh-wallet-choice__badge--right">Install</span> : null}
                 <span className="vh-wallet-choice__logo vh-wallet-choice__logo--phantom">
-                  <img className="vh-wallet-choice__logo-img" src="/assets/images/phantom-logo.svg" alt="" aria-hidden="true" />
+                  <img loading="lazy" decoding="async" className="vh-wallet-choice__logo-img" src="/assets/images/phantom-logo.svg" alt="" aria-hidden="true" />
                 </span>
                 <span className="vh-wallet-choice__text">
                   <span className="vh-wallet-choice__network">Solana</span>

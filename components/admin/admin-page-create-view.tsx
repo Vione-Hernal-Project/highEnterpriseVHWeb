@@ -308,7 +308,7 @@ export function AdminPageCreateView({ parentOptions, page }: { parentOptions: Pa
               <p>Upload a featured image for this page.</p>
             </div>
             <div className="vh-admin-upload-panel vh-admin-page-upload-panel">
-              {imagePreview ? <img src={imagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
+              {imagePreview ? <img loading="lazy" decoding="async" src={imagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
               <strong>Upload featured image</strong>
               <small>PNG, JPG or WEBP. Recommended size: 1200x630px.</small>
               <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void updateImage(event)} />

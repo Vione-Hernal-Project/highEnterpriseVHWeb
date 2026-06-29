@@ -128,7 +128,7 @@ export default async function AdminProductCatalogPage() {
 
                       return (
                         <article className="vh-admin-catalog-card" key={product.id}>
-                          <img className="vh-admin-catalog-card__image" src={product.image} alt={product.name} />
+                          <img loading="lazy" decoding="async" className="vh-admin-catalog-card__image" src={product.image} alt={product.name} />
                           <div className="vh-admin-catalog-card__copy">
                             <div className="vh-admin-catalog-card__title-row">
                               <div>

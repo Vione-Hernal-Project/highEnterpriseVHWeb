@@ -176,7 +176,7 @@ function StoreInformation({ settings }: { settings: AdminGeneralSettings }) {
       <section className="vh-admin-panel">
         <h2>Store Logo</h2>
         <div className="vh-admin-logo-preview">
-          <img src={settings.logoUrl || "/assets/images/vh-logo-v2.jpg"} alt="Vione Hernal logo" />
+          <img loading="lazy" decoding="async" src={settings.logoUrl || "/assets/images/vh-logo-v2.jpg"} alt="Vione Hernal logo" />
           <small>Manage the active logo and favicon from General settings.</small>
         </div>
       </section>

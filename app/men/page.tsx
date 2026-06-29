@@ -83,7 +83,7 @@ export default async function MenPage() {
       <div className="vh-men-editorial" aria-label="Vione Hernal menswear editorial preview">
         <MenEditorialOverlayMotion />
         <figure className="vh-men-editorial__panel vh-men-editorial__panel--brand">
-          <img src="/assets/images/men/vione-hernal-liquid-graphic-clean.png" alt="" width="1085" height="1449" />
+          <img loading="lazy" decoding="async" src="/assets/images/men/vione-hernal-liquid-graphic-clean.png" alt="" width="1085" height="1449" />
           <figcaption className="vh-men-editorial__brand-overlay" aria-hidden="true">
             <span>Vione Hernal</span>
             <strong>#VioneHernal</strong>
@@ -92,21 +92,21 @@ export default async function MenPage() {
 
         <div className="vh-men-editorial__grid">
           <figure className="vh-men-editorial__panel vh-men-editorial__panel--city">
-            <img src="/assets/images/men/men-city-noir-look.jpg" alt="" width="485" height="621" />
+            <img loading="lazy" decoding="async" src="/assets/images/men/men-city-noir-look.jpg" alt="" width="485" height="621" />
             <figcaption className="vh-men-editorial__overlay">
               <span>City Form</span>
               <strong>Refined Utility</strong>
             </figcaption>
           </figure>
           <figure className="vh-men-editorial__panel vh-men-editorial__panel--portrait">
-            <img src="/assets/images/men/men-golf-resort-look.jpg" alt="" width="611" height="960" />
+            <img loading="lazy" decoding="async" src="/assets/images/men/men-golf-resort-look.jpg" alt="" width="611" height="960" />
             <figcaption className="vh-men-editorial__overlay vh-men-editorial__overlay--center">
               <span>Off Duty</span>
               <strong>Elevated Ease</strong>
             </figcaption>
           </figure>
           <figure className="vh-men-editorial__panel vh-men-editorial__panel--wide">
-            <img src="/assets/images/men/men-studio-cap-editorial.png" alt="" width="1537" height="1023" />
+            <img loading="lazy" decoding="async" src="/assets/images/men/men-studio-cap-editorial.png" alt="" width="1537" height="1023" />
             <figcaption className="vh-men-editorial__overlay vh-men-editorial__overlay--cap">
               <span>Everyday Luxury</span>
               <strong>Understated by Design</strong>

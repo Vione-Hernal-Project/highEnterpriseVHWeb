@@ -35,6 +35,8 @@ import {
   type GeocodeResult,
 } from "@/components/map/use-geocoded-address";
 import { VhInteractiveMap, type VhMapMarker } from "@/components/map/vh-interactive-map";
+import { AddressAutocomplete, type AddressSuggestion } from "@/components/map/address-autocomplete";
+import { Crosshair } from "lucide-react";
 
 type Props = {
   customerEmail: string;
@@ -227,6 +229,31 @@ function formatQuoteCountdown(seconds: number | null) {
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
+// Friendly, approximate display of a crypto amount label (e.g. "5.609650732 SOL"
+// → "≈ 5.6097 SOL"). Display-only — the exact amount the wallet charges is set
+// from the locked server quote and is confirmed in the wallet.
+function toFriendlyCrypto(label: string | null | undefined) {
+  if (!label) {
+    return "--";
+  }
+
+  const match = label.match(/^\s*([\d,]+(?:\.\d+)?)\s*(.*)$/);
+
+  if (!match) {
+    return label;
+  }
+
+  const value = Number(match[1].replace(/,/g, ""));
+
+  if (!Number.isFinite(value)) {
+    return label;
+  }
+
+  const rounded = (value >= 1 ? value.toFixed(4) : value.toFixed(6)).replace(/\.?0+$/, "");
+
+  return `≈ ${rounded} ${match[2]}`.trim();
+}
+
 function buildShippingAddress(parts: Array<string | null | undefined>) {
   return parts
     .map((part) => (part || "").trim())
@@ -363,6 +390,9 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
   const [checkoutSettings, setCheckoutSettings] = useState(initialCheckoutSettings);
   const [submission, setSubmission] = useState<SubmissionState | null>(null);
   const [manualMapLocation, setManualMapLocation] = useState<GeocodeResult | null>(null);
+  const [mapJumpTarget, setMapJumpTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const [geolocating, setGeolocating] = useState(false);
+  const [showFeeBreakdown, setShowFeeBreakdown] = useState(false);
   const [quoteRefreshNonce, setQuoteRefreshNonce] = useState(0);
   const [quoteNow, setQuoteNow] = useState(() => Date.now());
   const autoVerifyTimerRef = useRef<number | null>(null);
@@ -710,26 +740,18 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
           : checkoutPreviewLocation
             ? "needs-pin"
           : "empty";
-  const checkoutLocationIsApproximate = Boolean(
-    checkoutMapState === "found"
-      && !manualMapLocation
-      && checkoutResolvedLocation?.precision
-      && !["address"].includes(checkoutResolvedLocation.precision),
-  );
   const checkoutMapHeaderCopy =
     checkoutMapState === "loading"
       ? "Locating address"
       : checkoutMapState === "found"
         ? manualMapLocation
-          ? "Exact location marked"
-          : checkoutLocationIsApproximate
-            ? "Approximate - mark exact drop-off"
-            : "Drag, scroll, or right-click to adjust"
+          ? "Pinned — drag the map to fine-tune"
+          : "Drag the map so the pin sits on your spot"
         : checkoutMapState === "not-found"
           ? "Address not found"
           : checkoutMapState === "needs-pin"
-            ? "Approximate - mark exact drop-off"
-          : "Complete address to preview";
+            ? "Drag the map so the pin sits on your spot"
+          : "Search or use your location to start";
   const checkoutMapEmptyTitle =
     checkoutMapState === "loading"
       ? "Locating address..."
@@ -757,10 +779,11 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
     mapAddressUpdateRef.current = true;
 
     if (components.addressLine1) setAddress1(components.addressLine1);
-    if (components.city) setCity(components.city);
-    if (components.province) setProvince(components.province);
     if (components.postalCode) setPostalCode(components.postalCode);
     if (components.country) setCountry(components.country);
+    // City and province are derived from the postal code via the curated PH
+    // autofill (reliable for Metro Manila). The geocoder often returns the wrong
+    // values there (e.g. "Pasig" for both), so we don't overwrite them here.
   }
 
   async function markCheckoutLocation(location: { lat: number; lng: number }) {
@@ -777,7 +800,9 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
       const payload = await readJsonSafely<{ result?: GeocodeResult | null }>(response);
       const resolvedLocation = payload?.result || fallbackLocation;
 
-      setManualMapLocation(resolvedLocation);
+      // Keep the exact dropped coordinates for the pin; use reverse-geocode only
+      // for the address text so the pin never snaps away from where it was placed.
+      setManualMapLocation({ ...resolvedLocation, lat: location.lat, lng: location.lng });
 
       if (response.ok) {
         applyResolvedAddressComponents(resolvedLocation.components);
@@ -785,6 +810,42 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
     } catch {
       setManualMapLocation(fallbackLocation);
     }
+  }
+
+  function applyCheckoutSuggestion(suggestion: AddressSuggestion) {
+    applyResolvedAddressComponents(suggestion.components);
+    setManualMapLocation({
+      label: suggestion.label,
+      lat: suggestion.lat,
+      lng: suggestion.lng,
+      placeId: suggestion.placeId,
+      precision: suggestion.precision || "address",
+      provider: "mapbox",
+      components: suggestion.components,
+    });
+    setMapJumpTarget({ lat: suggestion.lat, lng: suggestion.lng });
+  }
+
+  function useCheckoutCurrentLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setError("Location is not available on this device.");
+      return;
+    }
+
+    setGeolocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const location = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setMapJumpTarget(location);
+        await markCheckoutLocation(location);
+        setGeolocating(false);
+      },
+      () => {
+        setGeolocating(false);
+        setError("Could not get your location. Allow location access and try again.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   }
   const localShippingPreview = useMemo(
     () =>
@@ -827,6 +888,15 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
 
     setManualMapLocation(null);
   }, [shippingAddress]);
+
+  // Center the map on the typed address only until the user has placed a pin
+  // (suggestion / GPS / drag). Once a manual location exists, stop jumping so
+  // dragging the pin is never reverted.
+  useEffect(() => {
+    if (!manualMapLocation && geocodedCheckoutAddress) {
+      setMapJumpTarget({ lat: geocodedCheckoutAddress.lat, lng: geocodedCheckoutAddress.lng });
+    }
+  }, [manualMapLocation, geocodedCheckoutAddress?.lat, geocodedCheckoutAddress?.lng]);
 
   useEffect(() => {
     if (submission) {
@@ -1453,17 +1523,17 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
 
               <div className="vh-field">
                 <label htmlFor="checkout-address1">Address</label>
-                <input
-                  id="checkout-address1"
-                  name="shippingAddressLine1"
-                  type="text"
-                  className="vh-input"
+                <AddressAutocomplete
                   value={address1}
-                  onChange={(event) => setAddress1(event.target.value)}
-                  autoComplete="street-address"
-                  required
+                  onValueChange={setAddress1}
+                  onSelect={applyCheckoutSuggestion}
+                  context={{ city, province, postalCode, country }}
+                  placeholder="Search building, street, or area"
                 />
-                <p className="vh-payment-note">Street, house number, building, or unit must still be entered manually.</p>
+                <p className="vh-payment-note">
+                  Search to auto-fill your address, then add your house/unit number. City, province, and postal code fill in
+                  automatically.
+                </p>
               </div>
 
               <div className="vh-checkout-field-grid">
@@ -1539,21 +1609,41 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
               <div className="vh-field">
                 <div className="vh-checkout-map-card">
                   <div className="vh-checkout-map-card__header">
-                    <p className="vh-field__label">Map Preview</p>
+                    <p className="vh-field__label">Delivery Location</p>
                     <span>{checkoutMapHeaderCopy}</span>
+                  </div>
+                  <div className="vh-address-search-row vh-address-search-row--gps-only">
+                    <button
+                      type="button"
+                      className="vh-address-gps-button"
+                      onClick={useCheckoutCurrentLocation}
+                      disabled={geolocating}
+                    >
+                      <Crosshair size={15} strokeWidth={1.9} aria-hidden="true" />
+                      {geolocating ? "Locating..." : "Use current location"}
+                    </button>
                   </div>
                   <VhInteractiveMap
                     ariaLabel="Checkout shipping address map"
                     className="vh-checkout-map"
-                    markers={checkoutMapMarkers}
-                    activeMarkerId="checkout-shipping-address"
+                    markers={[]}
                     markerStyle="pin"
                     emptyTitle={checkoutMapEmptyTitle}
                     emptyCopy={checkoutMapEmptyCopy}
                     onLocationMarked={markCheckoutLocation}
-                    previewLocation={checkoutPreviewLocation}
+                    centerPinMode
+                    pinLocation={
+                      checkoutResolvedLocation
+                        ? { lat: checkoutResolvedLocation.lat, lng: checkoutResolvedLocation.lng }
+                        : null
+                    }
+                    onCenterCommit={markCheckoutLocation}
+                    recenterTo={mapJumpTarget}
                     zoom={15}
                   />
+                  <p className="vh-checkout-map-hint">
+                    Search your address or tap “Use current location,” then drag the map so the pin sits exactly on your door.
+                  </p>
                 </div>
               </div>
 
@@ -1668,46 +1758,12 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
                 {pricing ? (
                   <>
                     <div className="vh-pricing-panel__row">
-                      <span>Product Price in PHP</span>
-                      <strong>{pricing.subtotalPhpLabel}</strong>
-                    </div>
-                    {pricing.discountPhpCents > 0 ? (
-                      <div className="vh-pricing-panel__row">
-                        <span>Coupon Discount{pricing.couponCode ? ` (${pricing.couponCode})` : ""}</span>
-                        <strong>-{pricing.discountPhpLabel}</strong>
-                      </div>
-                    ) : null}
-                    {pricing.taxLabel ? (
-                      <div className="vh-pricing-panel__row">
-                        <span>Tax ({pricing.taxLabel})</span>
-                        <strong>{pricing.taxPhpLabel}</strong>
-                      </div>
-                    ) : null}
-                    <div className="vh-pricing-panel__row">
                       <span>Order Total</span>
                       <strong>{pricing.totalPhpLabel}</strong>
                     </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Estimated USD Value</span>
-                      <strong>{pricing.estimatedUsdLabel}</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Crypto Equivalent</span>
-                      <strong>{pricing.baseCryptoLabel}</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Network Fee Estimate</span>
-                      <strong>{pricing.networkFeeEstimateLabel}</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Market Buffer</span>
-                      <strong>
-                        {pricing.slippageBufferAmountLabel} ({pricing.slippageBufferLabel})
-                      </strong>
-                    </div>
                     <div className="vh-pricing-panel__row vh-pricing-panel__row--total">
-                      <span>Estimated Total</span>
-                      <strong>{pricing.estimatedTotalLabel}</strong>
+                      <span>You Pay</span>
+                      <strong>{toFriendlyCrypto(pricing.estimatedTotalLabel)}</strong>
                     </div>
                     <div className="vh-pricing-panel__row">
                       <span>Quote Expires</span>
@@ -1717,32 +1773,8 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
                 ) : (
                   <>
                     <div className="vh-pricing-panel__row">
-                      <span>Product Price in PHP</span>
-                      <strong>{subtotalLabel}</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
                       <span>Order Total</span>
                       <strong>{totalLabel}</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Estimated USD Value</span>
-                      <strong>--</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Crypto Equivalent</span>
-                      <strong>--</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Network Fee Estimate</span>
-                      <strong>--</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row">
-                      <span>Market Buffer</span>
-                      <strong>--</strong>
-                    </div>
-                    <div className="vh-pricing-panel__row vh-pricing-panel__row--total">
-                      <span>Estimated Total</span>
-                      <strong>--</strong>
                     </div>
                     <p className="vh-checkout-quote-note vh-payment-note">
                       {paymentMethod ? "Loading the live crypto quote." : "Choose a payment method to load the live quote."}
@@ -1751,8 +1783,7 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
                 )}
 
                 {quoteError ? <p className="vh-checkout-quote-note vh-payment-note vh-payment-note--error">{quoteError}</p> : null}
-                <p className="vh-checkout-quote-note vh-payment-note">Final network fee may vary slightly at wallet confirmation.</p>
-                <p className="vh-checkout-quote-note vh-payment-note">{CRYPTO_NETWORK_FEE_NOTE}</p>
+                <p className="vh-checkout-quote-note vh-payment-note">Full breakdown is in your order summary · the exact amount is confirmed in your wallet.</p>
                 {pricing ? (
                   <button type="button" className="vh-quote-refresh" disabled={quoteLoading} onClick={refreshQuote}>
                     {quoteLoading ? "Refreshing Quote..." : quoteExpired ? "Refresh Expired Quote" : "Refresh Quote"}
@@ -2052,30 +2083,9 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
               <span>Payment Method</span>
               <strong>{submission?.cryptoSymbol ?? (paymentMethod ? getPaymentMethodLabel(paymentMethod) : "Choose network")}</strong>
             </div>
-            <div className="storefront-app-summary-row">
-              <span>Required {submission?.cryptoSymbol ?? (paymentMethod ? getPaymentMethodLabel(paymentMethod) : "Crypto")}</span>
-              <strong>{submission?.requiredEthLabel ?? pricing?.requiredCryptoLabel ?? pricing?.requiredEthLabel ?? "--"}</strong>
-            </div>
-            <div className="storefront-app-summary-row">
-              <span>Crypto Equivalent</span>
-              <strong>{submission?.baseCryptoLabel ?? pricing?.baseCryptoLabel ?? "--"}</strong>
-            </div>
-            <div className="storefront-app-summary-row">
-              <span>Network Fee Estimate</span>
-              <strong>{submission?.networkFeeEstimateLabel ?? pricing?.networkFeeEstimateLabel ?? "--"}</strong>
-            </div>
-            <div className="storefront-app-summary-row">
-              <span>Market Buffer</span>
-              <strong>
-                {submission?.slippageBufferAmountLabel ?? pricing?.slippageBufferAmountLabel ?? "--"}
-                {submission?.slippageBufferLabel || pricing?.slippageBufferLabel
-                  ? ` (${submission?.slippageBufferLabel ?? pricing?.slippageBufferLabel})`
-                  : ""}
-              </strong>
-            </div>
-            <div className="storefront-app-summary-row">
-              <span>Estimated Total</span>
-              <strong>{submission?.estimatedTotalLabel ?? pricing?.estimatedTotalLabel ?? "--"}</strong>
+            <div className="storefront-app-summary-row storefront-app-summary-row--em">
+              <span>You Pay</span>
+              <strong>{toFriendlyCrypto(submission?.estimatedTotalLabel ?? pricing?.estimatedTotalLabel)}</strong>
             </div>
             <div className="storefront-app-summary-row">
               <span>Rate</span>
@@ -2085,12 +2095,50 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
               <span>Quote Expires</span>
               <strong>{submission?.quoteExpiresAt ? formatQuoteTime(submission.quoteExpiresAt) : formatQuoteCountdown(quoteSecondsRemaining)}</strong>
             </div>
+
+            {(submission || pricing) ? (
+              <>
+                <button
+                  type="button"
+                  className="vh-summary-breakdown-toggle"
+                  aria-expanded={showFeeBreakdown}
+                  onClick={() => setShowFeeBreakdown((open) => !open)}
+                >
+                  {showFeeBreakdown ? "Hide fee breakdown" : "View fee breakdown"}
+                </button>
+                {showFeeBreakdown ? (
+                  <div className="vh-summary-breakdown">
+                    <div className="storefront-app-summary-row">
+                      <span>Amount in {submission?.cryptoSymbol ?? (paymentMethod ? getPaymentMethodLabel(paymentMethod) : "crypto")}</span>
+                      <strong>{submission?.baseCryptoLabel ?? pricing?.baseCryptoLabel ?? "--"}</strong>
+                    </div>
+                    <div className="storefront-app-summary-row">
+                      <span>Exact amount required</span>
+                      <strong>{submission?.requiredEthLabel ?? pricing?.requiredCryptoLabel ?? pricing?.requiredEthLabel ?? "--"}</strong>
+                    </div>
+                    <div className="storefront-app-summary-row">
+                      <span>Network fee</span>
+                      <strong>{submission?.networkFeeEstimateLabel ?? pricing?.networkFeeEstimateLabel ?? "--"}</strong>
+                    </div>
+                    <div className="storefront-app-summary-row">
+                      <span>Price protection</span>
+                      <strong>
+                        {submission?.slippageBufferAmountLabel ?? pricing?.slippageBufferAmountLabel ?? "--"}
+                        {submission?.slippageBufferLabel || pricing?.slippageBufferLabel
+                          ? ` (${submission?.slippageBufferLabel ?? pricing?.slippageBufferLabel})`
+                          : ""}
+                      </strong>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
             {!submission && pricing ? (
               <button type="button" className="vh-quote-refresh" disabled={quoteLoading} onClick={refreshQuote}>
                 {quoteLoading ? "Refreshing Quote..." : quoteExpired ? "Refresh Expired Quote" : "Refresh Quote"}
               </button>
             ) : null}
-            <p className="vh-payment-note">Final network fee may vary slightly at wallet confirmation.</p>
             <p className="vh-payment-note">{CRYPTO_NETWORK_FEE_NOTE}</p>
             <p className="vh-payment-note">
               {shippingMessage || pricing?.shippingMessage || localShippingPreview.message}

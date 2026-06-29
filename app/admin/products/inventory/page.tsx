@@ -120,7 +120,7 @@ export default async function AdminProductInventoryPage() {
                     <td><input type="checkbox" aria-label={`Select ${row.product.name}`} /></td>
                     <td>
                       <div className="vh-admin-product-cell">
-                        <img src={row.product.image} alt={row.product.name} />
+                        <img loading="lazy" decoding="async" src={row.product.image} alt={row.product.name} />
                         <span>
                           <strong>{row.product.name}</strong>
                           <small>{row.product.description}</small>

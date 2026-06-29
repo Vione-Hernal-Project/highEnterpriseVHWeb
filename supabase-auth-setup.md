@@ -60,11 +60,11 @@ In Supabase Dashboard:
 
 Use the files in:
 
-- [supabase/email-templates/confirm-signup.html](../supabase/email-templates/confirm-signup.html)
-- [supabase/email-templates/magic-link.html](../supabase/email-templates/magic-link.html)
-- [supabase/email-templates/reset-password.html](../supabase/email-templates/reset-password.html)
-- [supabase/email-templates/invite-user.html](../supabase/email-templates/invite-user.html)
-- [supabase/email-templates/change-email.html](../supabase/email-templates/change-email.html)
+- [supabase/email-templates/confirm-signup.html](supabase/email-templates/confirm-signup.html)
+- [supabase/email-templates/magic-link.html](supabase/email-templates/magic-link.html)
+- [supabase/email-templates/reset-password.html](supabase/email-templates/reset-password.html)
+- [supabase/email-templates/invite-user.html](supabase/email-templates/invite-user.html)
+- [supabase/email-templates/change-email.html](supabase/email-templates/change-email.html)
 
 Suggested subjects:
 

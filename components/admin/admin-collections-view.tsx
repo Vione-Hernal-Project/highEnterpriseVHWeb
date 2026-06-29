@@ -395,7 +395,7 @@ export function AdminCollectionsView({ collections, productCount, uncategorizedP
                     </td>
                     <td>
                       <div className="vh-admin-product-cell">
-                        <img src={collection.image} alt="" />
+                        <img loading="lazy" decoding="async" src={collection.image} alt="" />
                         <span>
                           <strong>{collection.name}</strong>
                           <small>{collection.categoryTypeLabel}</small>

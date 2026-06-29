@@ -36,7 +36,7 @@ export async function LandingPage() {
         <WomenEditorialOverlayMotion />
         <li className="story-hero__screen story-hero__split-video u-clearfix ui-list__item u-margin-b--lg">
           {heroBackgroundSrc ? (
-            <img
+            <img decoding="async"
               className="heroslide__background story-hero__img"
               width="2100"
               height="1401"
@@ -46,7 +46,7 @@ export async function LandingPage() {
             />
           ) : null}
           <div className="story-hero__video-pane" aria-hidden="true">
-            <img
+            <img decoding="async"
               className="story-hero__video"
               src="/assets/images/vione-hernal-black-sandals-brand-plates.jpg"
               alt=""
@@ -76,7 +76,7 @@ export async function LandingPage() {
             </Link>
           </div>
           <div className="story-hero__secondary-pane" aria-hidden="true">
-            <img
+            <img decoding="async"
               className="story-hero__secondary-image"
               src="/assets/images/model-4.jpg"
               alt=""
@@ -89,7 +89,7 @@ export async function LandingPage() {
 
         <li className="story-hero__screen story-hero__editorial-row u-clearfix ui-list__item u-margin-b--lg">
           <div className="story-hero__relocated-pane" aria-hidden="true">
-            <img
+            <img decoding="async"
               className="story-hero__relocated-image"
               src="/assets/images/vione-hernal-black-vest-model-natural-lighting.png"
               alt=""
@@ -110,7 +110,7 @@ export async function LandingPage() {
             </Link>
           </div>
           <div className="story-hero__spring-pane" aria-hidden="true">
-            <img className="story-hero__spring-image" src="/assets/images/women-editorial-model-k.png" alt="" role="presentation" width="668" height="891.29" />
+            <img decoding="async" className="story-hero__spring-image" src="/assets/images/women-editorial-model-k.png" alt="" role="presentation" width="668" height="891.29" />
           </div>
           <div className="story-hero__spring-copy">
             <h2 className="story-hero__spring-title">
@@ -150,7 +150,7 @@ export async function LandingPage() {
         </li>
 
         <li className="story-hero__screen u-clearfix ui-list__item u-margin-b--lg">
-          <img className="heroslide__background story-hero__img" width="2100" height="1401" src="/assets/images/model-2.png" alt="" role="presentation" />
+          <img decoding="async" className="heroslide__background story-hero__img" width="2100" height="1401" src="/assets/images/model-2.png" alt="" role="presentation" />
         </li>
       </ul>
 

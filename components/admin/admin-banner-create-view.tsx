@@ -334,7 +334,7 @@ export function AdminBannerCreateView({ banner }: { banner?: AdminBannerFormInit
             <div className="vh-admin-form-field">
               <span>Banner Image <b>*</b></span>
               <div className="vh-admin-upload-panel vh-admin-wide-upload-panel">
-                {imagePreview ? <img src={imagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
+                {imagePreview ? <img loading="lazy" decoding="async" src={imagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
                 <strong>Upload banner image</strong>
                 <small>PNG, JPG or WEBP. Recommended size: 1920x600px.</small>
                 <input ref={desktopInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void updateImage("desktop", event)} />
@@ -346,7 +346,7 @@ export function AdminBannerCreateView({ banner }: { banner?: AdminBannerFormInit
             <div className="vh-admin-form-field">
               <span>Mobile Image <em>(Optional)</em></span>
               <div className="vh-admin-upload-panel vh-admin-wide-upload-panel">
-                {mobileImagePreview ? <img src={mobileImagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
+                {mobileImagePreview ? <img loading="lazy" decoding="async" src={mobileImagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
                 <strong>Upload mobile image</strong>
                 <small>PNG, JPG or WEBP. Recommended size: 768x1024px.</small>
                 <input ref={mobileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void updateImage("mobile", event)} />

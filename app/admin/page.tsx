@@ -244,7 +244,7 @@ export default async function AdminPage() {
             {topProducts.length ? (
               topProducts.map((product) => (
                 <Link href="/admin/products" key={product.id} className="vh-admin-product-row">
-                  <img src={product.image} alt={product.name} />
+                  <img loading="lazy" decoding="async" src={product.image} alt={product.name} />
                   <div>
                     <strong>{product.name}</strong>
                     <span>{formatAmountWithUnit(product.pricePhpCents / 100, "PHP")}</span>
@@ -335,7 +335,7 @@ export default async function AdminPage() {
             {lowStockProducts.length ? (
               lowStockProducts.slice(0, 5).map((product) => (
                 <Link href="/admin/products" key={product.id} className="vh-admin-product-row">
-                  <img src={product.image} alt={product.name} />
+                  <img loading="lazy" decoding="async" src={product.image} alt={product.name} />
                   <div>
                     <strong>{product.name}</strong>
                     <span>SKU: {product.id}</span>

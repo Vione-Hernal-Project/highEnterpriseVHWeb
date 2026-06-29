@@ -14,7 +14,7 @@ export function StoreMaintenanceView({ settings }: Props) {
 
   return (
     <main className="vh-store-maintenance" id="page-content">
-      <img
+      <img loading="lazy" decoding="async"
         className="vh-store-maintenance__image"
         src="/assets/images/women-editorial-model-k.png"
         alt=""

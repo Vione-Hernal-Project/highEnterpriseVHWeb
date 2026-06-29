@@ -70,7 +70,11 @@ export function SiteFrame({ children, storefrontSettings }: Props) {
   }, [isAdminRoute]);
 
   if (isAdminRoute) {
-    return <div className="vh-admin-root-frame">{children}</div>;
+    return (
+      <div className="vh-admin-root-frame">
+        <PageTransition>{children}</PageTransition>
+      </div>
+    );
   }
 
   if (storeIsPaused) {

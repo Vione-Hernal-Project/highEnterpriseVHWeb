@@ -36,7 +36,7 @@ function BannerContent({ banner }: { banner: PublicBanner }) {
 
   return (
     <>
-      {imageUrl ? <img src={imageUrl} alt="" /> : null}
+      {imageUrl ? <img loading="lazy" decoding="async" src={imageUrl} alt="" /> : null}
       <span className="vh-site-banner__copy">
         {banner.subheading ? <small>{banner.subheading}</small> : null}
         <strong>{banner.heading || banner.title}</strong>

@@ -190,7 +190,7 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
                       <td><input type="checkbox" aria-label={`Select ${product.name}`} /></td>
                       <td>
                         <div className="vh-admin-product-cell">
-                          <img src={product.image} alt={product.name} />
+                          <img loading="lazy" decoding="async" src={product.image} alt={product.name} />
                           <span>
                             <strong>{product.name}</strong>
                             <small>{product.description}</small>

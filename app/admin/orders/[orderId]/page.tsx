@@ -362,7 +362,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
             {displayItems.length ? (
               displayItems.map((item) => (
                 <article className="vh-admin-order-item" key={item.id}>
-                  <img src={item.imageUrl} alt="" />
+                  <img loading="lazy" decoding="async" src={item.imageUrl} alt="" />
                   <div>
                     <strong>{item.line}</strong>
                   </div>

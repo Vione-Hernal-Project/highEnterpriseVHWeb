@@ -6,10 +6,11 @@
   position: relative;
   overflow: hidden;
   background: #fff;
-  --story-hero-media-width: 668px;
-  --story-hero-media-height: 891.31px;
-  height: var(--story-hero-media-height);
-  min-height: var(--story-hero-media-height);
+  /* Scale the whole hero by ratio + establish a container so the two panes and
+     the overlay copy scale together at any zoom (design width = 1336px, i.e.
+     two 668px panes side by side). Replaces the old fixed 891.31px height. */
+  aspect-ratio: 1336 / 891.31;
+  container-type: inline-size;
 }
 
 .story-hero__split-video > .story-hero__img {
@@ -20,8 +21,8 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: var(--story-hero-media-width);
-  height: var(--story-hero-media-height);
+  width: 50%;
+  height: 100%;
   overflow: hidden;
   z-index: 1;
   pointer-events: none;
@@ -41,36 +42,39 @@
   object-fit: cover;
 }
 
+/* Overlay copy sized in cqw (1cqw = 1% of the 1336px hero) so it scales with
+   the panes at every zoom. Reference px: top 48 / left 43.2 / max-width 288 /
+   title 52 (mb 24) / description 16 (mb 20) / link 16. */
 .story-hero__split-video .story-hero__copy-overlay {
   position: absolute;
-  top: 3rem;
-  left: 2.7rem;
+  top: 3.593cqw;
+  left: 3.234cqw;
   z-index: 3;
-  max-width: 18rem;
+  max-width: 21.557cqw;
   color: #fff;
   pointer-events: none;
 }
 
 .story-hero__split-video .story-hero__copy-title {
-  margin: 0 0 1.5rem;
+  margin: 0 0 1.796cqw;
   color: inherit;
-  font-size: 3.25rem;
+  font-size: 3.892cqw;
   font-weight: 400;
   line-height: 0.97;
   letter-spacing: -0.03em;
 }
 
 .story-hero__split-video .story-hero__copy-description {
-  margin: 0 0 1.25rem;
+  margin: 0 0 1.497cqw;
   color: inherit;
-  font-size: 1rem;
+  font-size: 1.198cqw;
   line-height: 1.34;
 }
 
 .story-hero__split-video .story-hero__copy-link {
   display: inline-block;
   color: inherit;
-  font-size: 1rem;
+  font-size: 1.198cqw;
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 0.12em;
@@ -82,8 +86,8 @@
   top: 0;
   right: 0;
   left: auto;
-  width: var(--story-hero-media-width);
-  height: var(--story-hero-media-height);
+  width: 50%;
+  height: 100%;
   background: #fff;
   overflow: hidden;
   z-index: 1;
@@ -209,14 +213,18 @@
   overflow: hidden;
   background: #fff;
   aspect-ratio: 2100 / 1401;
+  /* Establish a container so the desktop spring overlay scales with the row
+     width (which is 1336px at the 91.5rem container cap) instead of using
+     fixed px that overflow when the viewport shrinks under browser zoom. */
+  container-type: inline-size;
 }
 
 .story-hero__spring-pane {
   position: absolute;
   top: 0;
   right: 0;
-  width: 668px;
-  height: 891.29px;
+  width: 50%;
+  height: 100%;
   overflow: hidden;
   z-index: 1;
   pointer-events: none;
@@ -276,10 +284,15 @@
 }
 
 @media (min-width: 769px) {
+  /* All horizontal/size values below are expressed in cqw (1cqw = 1% of the
+     1336px editorial row) so the overlay scales proportionally at every zoom
+     level and width. Reference px: top 48 / right 384 / width 248 /
+     title 37.12 / desc 13.44 / link 12.48 / margins 13.6 & 15.2. */
   .vh-home-page .story-hero__spring-copy {
-    top: 3rem;
-    right: calc(668px - 2.25rem - 15.5rem);
+    top: 3.593cqw;
+    right: 28.743cqw;
     left: auto;
+    width: 18.563cqw;
     z-index: 4;
     color: #fff;
     text-align: left;
@@ -291,15 +304,17 @@
   }
 
   .vh-home-page .story-hero__spring-title {
-    font-size: 2.32rem;
+    margin: 0 0 1.018cqw;
+    font-size: 2.778cqw;
   }
 
   .vh-home-page .story-hero__spring-description {
-    font-size: 0.84rem;
+    margin: 0 0 1.138cqw;
+    font-size: 1.006cqw;
   }
 
   .vh-home-page .story-hero__spring-link {
-    font-size: 0.78rem;
+    font-size: 0.934cqw;
   }
 
   .story-hero__spring-copy-mobile {
@@ -1277,7 +1292,6 @@
   transition:
     opacity 180ms ease,
     transform 180ms ease;
-  will-change: transform;
 }
 
 .products-grid__item .product__image-container {

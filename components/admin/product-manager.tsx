@@ -597,7 +597,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
           />
           {previewImage ? (
             <div className="vh-product-media-preview-row">
-              <img className="vh-product-media-preview" src={previewImage} alt={form.name || "Main product preview"} />
+              <img loading="lazy" decoding="async" className="vh-product-media-preview" src={previewImage} alt={form.name || "Main product preview"} />
               <div style={{ display: "grid", gap: "0.65rem" }}>
                 <div className="vh-product-media-note">Main image saved and ready to publish.</div>
                 <button
@@ -629,7 +629,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
           />
           {form.hoverImageUrl ? (
             <div className="vh-product-media-preview-row">
-              <img className="vh-product-media-preview" src={previewHoverImage} alt="" />
+              <img loading="lazy" decoding="async" className="vh-product-media-preview" src={previewHoverImage} alt="" />
               <div style={{ display: "grid", gap: "0.65rem" }}>
                 <div className="vh-product-media-note">Hover image saved and ready to publish.</div>
                 <button
@@ -664,7 +664,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
             <div className="vh-product-gallery-grid">
               {form.galleryImageUrls.map((galleryImageUrl, index) => (
                 <div key={`${galleryImageUrl}-${index}`} className="vh-product-gallery-item">
-                  <img className="vh-product-gallery-thumb" src={galleryImageUrl} alt="" />
+                  <img loading="lazy" decoding="async" className="vh-product-gallery-thumb" src={galleryImageUrl} alt="" />
                   <button
                     type="button"
                     className="vh-button vh-button--ghost"
@@ -824,7 +824,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
           <div className="vh-editorial-summary">
             <div className="vh-editorial-summary__media">
               {previewImage ? (
-                <img src={previewImage} alt={form.name || "Product preview"} />
+                <img loading="lazy" decoding="async" src={previewImage} alt={form.name || "Product preview"} />
               ) : (
                 <div
                   style={{
@@ -867,7 +867,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
               <p className="vh-field__label" style={{ marginBottom: "0.75rem" }}>
                 Hover Preview
               </p>
-              <img src={previewHoverImage} alt="" style={{ width: "160px", height: "214px", objectFit: "cover", background: "#f6f3ef" }} />
+              <img loading="lazy" decoding="async" src={previewHoverImage} alt="" style={{ width: "160px", height: "214px", objectFit: "cover", background: "#f6f3ef" }} />
             </div>
           ) : null}
         </section>
@@ -914,7 +914,7 @@ export function ProductManager({ initialProducts, collectionOptions = [] }: Prop
                             display: "inline-block",
                           }}
                         />
-                        <img className="vh-product-option__image" src={product.image} alt={product.name} />
+                        <img loading="lazy" decoding="async" className="vh-product-option__image" src={product.image} alt={product.name} />
                         <span className="vh-product-option__copy">
                           <span className="vh-product-option__brand">{product.brand}</span>
                           <span className="vh-product-option__name">{product.name}</span>

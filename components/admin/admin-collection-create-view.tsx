@@ -229,7 +229,7 @@ export function AdminCollectionCreateView() {
             <div className="vh-admin-form-field">
               <span>Collection Image <b>*</b></span>
               <div className="vh-admin-upload-panel">
-                {imagePreview ? <img src={imagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
+                {imagePreview ? <img loading="lazy" decoding="async" src={imagePreview} alt="" /> : <UploadCloud size={34} strokeWidth={1.7} aria-hidden="true" />}
                 <strong>Upload collection image</strong>
                 <small>PNG, JPG or WEBP. Recommended size: 1200x800px.</small>
                 <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void updateImage(event)} />
