@@ -6,6 +6,20 @@ import { NextResponse } from "next/server";
 
 const MAPBOX_FORWARD_ENDPOINT = "https://api.mapbox.com/search/geocode/v6/forward";
 const MAX_QUERY_LENGTH = 256;
+// When the user's area is known, only keep suggestions within this radius so a
+// same-named street in a different province/city is filtered out.
+const MAX_RESULT_KM = 30;
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(a)));
+}
 
 export type AddressSuggestion = {
   label: string;
@@ -115,9 +129,16 @@ export async function GET(request: Request) {
     }
 
     const data = (await response.json()) as MapboxResponse;
-    const results = (data.features || [])
+    const parsed = (data.features || [])
       .map(parseFeature)
       .filter((result): result is AddressSuggestion => Boolean(result));
+
+    // When we know the user's area (proximity), drop results that are far away
+    // (e.g. a same-named street in another province) so the list stays relevant.
+    const hasProximity = Number.isFinite(proximityLat) && Number.isFinite(proximityLng);
+    const results = hasProximity
+      ? parsed.filter((result) => haversineKm(proximityLat, proximityLng, result.lat, result.lng) <= MAX_RESULT_KM)
+      : parsed;
 
     return NextResponse.json({ results });
   } catch {

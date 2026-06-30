@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin } from "lucide-react";
+import { MapPin, Minus, Plus } from "lucide-react";
 import { PointerEvent, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { cn } from "@/lib/utils";
@@ -124,6 +124,8 @@ export function VhInteractiveMap({
 }: Props) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const pinScreenRef = useRef({ x: 0, y: 0 });
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ startDist: number; startZoom: number } | null>(null);
   const dragRef = useRef<{
     pointerId: number;
     startClientX: number;
@@ -240,9 +242,10 @@ export function VhInteractiveMap({
     };
   }, [center.lat, center.lng, size.height, size.width, zoom]);
 
-  const zoomAtClientPoint = useCallback((clientX: number, clientY: number, deltaY: number) => {
-    const direction = deltaY < 0 ? 1 : -1;
-    const nextZoom = clamp(zoom + direction, MIN_ZOOM, MAX_ZOOM);
+  // Zoom to a target level, keeping the given screen point steady. Shared by the
+  // scroll wheel (desktop), pinch (mobile), and the +/- buttons (both).
+  const zoomToLevelAtPoint = useCallback((targetZoom: number, clientX: number, clientY: number) => {
+    const nextZoom = clamp(Math.round(targetZoom), MIN_ZOOM, MAX_ZOOM);
 
     if (nextZoom === zoom) {
       return;
@@ -261,6 +264,15 @@ export function VhInteractiveMap({
     });
   }, [coordinatesFromClientPoint, size.height, size.width, zoom]);
 
+  // Zoom in/out around the map center (used by the on-screen +/- buttons).
+  function zoomByButton(direction: number) {
+    const rect = mapRef.current?.getBoundingClientRect();
+    const clientX = (rect?.left ?? 0) + size.width / 2;
+    const clientY = (rect?.top ?? 0) + size.height / 2;
+
+    zoomToLevelAtPoint(zoom + direction, clientX, clientY);
+  }
+
   useEffect(() => {
     const element = mapRef.current;
 
@@ -271,13 +283,13 @@ export function VhInteractiveMap({
     const handleNativeWheel = (event: globalThis.WheelEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      zoomAtClientPoint(event.clientX, event.clientY, event.deltaY);
+      zoomToLevelAtPoint(zoom + (event.deltaY < 0 ? 1 : -1), event.clientX, event.clientY);
     };
 
     element.addEventListener("wheel", handleNativeWheel, { passive: false });
 
     return () => element.removeEventListener("wheel", handleNativeWheel);
-  }, [zoomAtClientPoint]);
+  }, [zoomToLevelAtPoint, zoom]);
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) {
@@ -290,6 +302,17 @@ export function VhInteractiveMap({
 
     event.currentTarget.setPointerCapture(event.pointerId);
     setPendingMark(null);
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    // Two fingers down = pinch-to-zoom; stop panning and record the baseline.
+    if (pointersRef.current.size >= 2) {
+      dragRef.current = null;
+      const points = Array.from(pointersRef.current.values());
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      pinchRef.current = { startDist: distance || 1, startZoom: zoom };
+      return;
+    }
+
     dragRef.current = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
@@ -301,6 +324,24 @@ export function VhInteractiveMap({
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    // Pinch zoom: derive the target level from how far the two fingers spread.
+    if (pinchRef.current && pointersRef.current.size >= 2) {
+      const points = Array.from(pointersRef.current.values());
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+
+      if (distance > 0) {
+        const midX = (points[0].x + points[1].x) / 2;
+        const midY = (points[0].y + points[1].y) / 2;
+        zoomToLevelAtPoint(pinchRef.current.startZoom + Math.log2(distance / pinchRef.current.startDist), midX, midY);
+      }
+
+      return;
+    }
+
     const dragState = dragRef.current;
 
     if (!dragState || dragState.pointerId !== event.pointerId) {
@@ -324,6 +365,18 @@ export function VhInteractiveMap({
   }
 
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(event.pointerId);
+
+    // End of a pinch: clear it (and stop any pan) once fewer than two fingers remain.
+    if (pinchRef.current) {
+      if (pointersRef.current.size < 2) {
+        pinchRef.current = null;
+        dragRef.current = null;
+      }
+
+      return;
+    }
+
     const dragState = dragRef.current;
 
     if (dragState?.pointerId !== event.pointerId) {
@@ -343,16 +396,9 @@ export function VhInteractiveMap({
       return;
     }
 
-    if (commitTimerRef.current !== null) {
-      window.clearTimeout(commitTimerRef.current);
-    }
-
     const tapped = coordinatesFromClientPoint(event.clientX, event.clientY, zoom);
-    const location = { lat: tapped.lat, lng: tapped.lng };
 
-    commitTimerRef.current = window.setTimeout(() => {
-      void onCenterCommit(location);
-    }, 120);
+    void onCenterCommit({ lat: tapped.lat, lng: tapped.lng });
   }
 
   // Dragging the pin itself: it follows the finger/cursor; on release we recenter
@@ -406,16 +452,12 @@ export function VhInteractiveMap({
     const tipClientX = rect.left + pinScreenRef.current.x + dragState.offsetX;
     const tipClientY = rect.top + pinScreenRef.current.y + dragState.offsetY;
     const dropped = coordinatesFromClientPoint(tipClientX, tipClientY, zoom);
-    const location = { lat: dropped.lat, lng: dropped.lng };
 
+    // Commit immediately (no debounce) so the parent can set the pin's new
+    // location in the same render — otherwise the pin snaps back to the old
+    // anchor for a moment before the address resolves.
     if (onCenterCommit) {
-      if (commitTimerRef.current !== null) {
-        window.clearTimeout(commitTimerRef.current);
-      }
-
-      commitTimerRef.current = window.setTimeout(() => {
-        void onCenterCommit(location);
-      }, 150);
+      void onCenterCommit({ lat: dropped.lat, lng: dropped.lng });
     }
   }
 
@@ -490,7 +532,6 @@ export function VhInteractiveMap({
       onContextMenu={handleContextMenu}
       onPointerCancel={handlePointerUp}
       onPointerDown={handlePointerDown}
-      onPointerLeave={handlePointerUp}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
@@ -571,6 +612,26 @@ export function VhInteractiveMap({
               <span>{emptyCopy}</span>
             </div>
           ) : null}
+          <div className="vh-map__zoom" onPointerDown={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="vh-map__zoom-btn"
+              aria-label="Zoom in"
+              disabled={zoom >= MAX_ZOOM}
+              onClick={() => zoomByButton(1)}
+            >
+              <Plus size={18} strokeWidth={2.2} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="vh-map__zoom-btn"
+              aria-label="Zoom out"
+              disabled={zoom <= MIN_ZOOM}
+              onClick={() => zoomByButton(-1)}
+            >
+              <Minus size={18} strokeWidth={2.2} aria-hidden="true" />
+            </button>
+          </div>
           <span className="vh-map__attribution">{getAttributionLabel()}</span>
         </>
       ) : (

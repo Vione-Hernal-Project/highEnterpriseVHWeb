@@ -12347,6 +12347,40 @@ label.vh-admin-toggle-row input:checked + span::after {
 
 /* Grab-style center pin: solid dark pin, tip exactly at the map center, and
    directly draggable to fine-tune the exact spot. */
+/* Zoom +/- controls — give touch devices (no scroll wheel) a way to zoom. */
+.vh-map__zoom {
+  position: absolute;
+  right: 0.6rem;
+  top: 0.6rem;
+  z-index: 4;
+  display: grid;
+  gap: 1px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(20, 24, 36, 0.18);
+}
+
+.vh-map__zoom-btn {
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border: 0;
+  background: rgba(255, 255, 255, 0.97);
+  color: #1a1a1a;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.vh-map__zoom-btn:hover {
+  background: #fff;
+}
+
+.vh-map__zoom-btn:disabled {
+  color: #b8bcc6;
+  cursor: default;
+}
+
 /* Outer = the precise point on the map (positioned via inline left/top to its
    anchored location); it never lifts. */
 .vh-map__center-pin {

@@ -795,6 +795,10 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
       precision: "coordinate",
     };
 
+    // Pin to the dropped spot immediately (optimistic) so it doesn't snap back
+    // to the previous anchor while the reverse-geocode is in flight.
+    setManualMapLocation(fallbackLocation);
+
     try {
       const response = await fetch(`/api/maps/reverse-geocode?lat=${encodeURIComponent(location.lat)}&lng=${encodeURIComponent(location.lng)}`);
       const payload = await readJsonSafely<{ result?: GeocodeResult | null }>(response);
@@ -1528,6 +1532,11 @@ export function MockCheckoutForm({ customerEmail, products, checkoutSettings: in
                   onValueChange={setAddress1}
                   onSelect={applyCheckoutSuggestion}
                   context={{ city, province, postalCode, country }}
+                  proximity={
+                    checkoutResolvedLocation
+                      ? { lat: checkoutResolvedLocation.lat, lng: checkoutResolvedLocation.lng }
+                      : null
+                  }
                   placeholder="Search building, street, or area"
                 />
                 <p className="vh-payment-note">

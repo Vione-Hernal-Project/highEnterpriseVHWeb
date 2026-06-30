@@ -390,6 +390,16 @@ export function AdminLocationSettings({ initialSettings }: Props) {
   }
 
   async function markSelectedBranchLocation(location: { lat: number; lng: number }) {
+    // Pin the coordinates immediately (optimistic) so the pin doesn't snap back
+    // to the previous spot while the reverse-geocode is in flight.
+    setSettings((current) =>
+      applyBranchPatch(current, activeBranchId, {
+        latitude: formatCoordinate(location.lat),
+        longitude: formatCoordinate(location.lng),
+      }),
+    );
+    setCoordinateEditVersion(Date.now());
+
     let resolvedLocation: GeocodeResult | null = null;
 
     try {
@@ -486,6 +496,7 @@ export function AdminLocationSettings({ initialSettings }: Props) {
                 postalCode: activeBranch.postalCode,
                 country: activeBranch.country,
               }}
+              proximity={activePinLocation}
               placeholder="Search building, street, or area"
             />
           </div>
